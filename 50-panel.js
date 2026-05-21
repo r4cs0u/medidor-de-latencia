@@ -1,0 +1,260 @@
+(function () {
+  const ML = window.MedLat;
+
+  function fmt(ts) {
+    const d = new Date(ts);
+    return d.getHours().toString().padStart(2,'0') + ':' +
+           d.getMinutes().toString().padStart(2,'0') + ':' +
+           d.getSeconds().toString().padStart(2,'0') + '.' +
+           d.getMilliseconds().toString().padStart(3,'0');
+  }
+
+  function init() {
+    // Remove instância anterior
+    document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove());
+
+    // ── Painel principal ──────────────────────────────────
+    const panel = document.createElement('div');
+    panel.id = 'ml-panel';
+    panel.style.cssText = [
+      'position:fixed;top:10px;right:10px;z-index:99999',
+      'background:#0e0e1aee;border:1px solid #2a2a3a',
+      'border-radius:8px;padding:8px 12px',
+      'box-shadow:0 4px 16px #000c',
+      'font-family:monospace;font-size:11px;color:#ccc',
+      'width:320px;user-select:none',
+    ].join(';');
+
+    // ── Header arrastável ─────────────────────────────────
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;cursor:move';
+    const ttl = document.createElement('span');
+    ttl.textContent = '📡 MEDIDOR DE LATÊNCIA';
+    ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px';
+    const btnX = document.createElement('button');
+    btnX.textContent = '✕';
+    btnX.style.cssText = 'background:#e94560;border:none;color:#fff;border-radius:4px;padding:0 6px;cursor:pointer;font-size:11px';
+    btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove()); };
+    hdr.append(ttl, btnX);
+    panel.appendChild(hdr);
+
+    // Drag do painel
+    let pdrag=false, pox=0, poy=0;
+    hdr.addEventListener('mousedown', e => { pdrag=true; pox=e.clientX-panel.offsetLeft; poy=e.clientY-panel.offsetTop; });
+    window.addEventListener('mousemove', e => { if(!pdrag) return; panel.style.right='auto'; panel.style.left=Math.max(0,e.clientX-pox)+'px'; panel.style.top=Math.max(0,e.clientY-poy)+'px'; });
+    window.addEventListener('mouseup', () => pdrag=false);
+
+    // ── Controles: Probe W + Gravar ──────────────────────
+    const ctrlRow = document.createElement('div');
+    ctrlRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #1e1e30';
+
+    const szLabel = document.createElement('span');
+    szLabel.textContent = 'Probe W:';
+    szLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap';
+
+    function mkBtn(txt, bg, cb) {
+      const b = document.createElement('button');
+      b.textContent = txt;
+      b.style.cssText = `background:${bg};border:none;color:#fff;border-radius:4px;padding:1px 7px;cursor:pointer;font-size:12px;font-family:monospace`;
+      b.onclick = cb;
+      return b;
+    }
+
+    const szVal = document.createElement('span');
+    szVal.style.cssText = 'font-size:11px;color:#fff;min-width:32px;text-align:center;font-weight:bold';
+    szVal.textContent = ML.state.probeW + 'px';
+
+    const btnMinus = mkBtn('−', '#1e3a5f', () => {
+      ML.state.probeW = Math.max(16, ML.state.probeW - 8);
+      szVal.textContent = ML.state.probeW + 'px';
+      ML.CHANNELS.forEach(ch => ch.active && ch.resize && ch.resize());
+    });
+    const btnPlus = mkBtn('+', '#1e3a5f', () => {
+      ML.state.probeW = Math.min(200, ML.state.probeW + 8);
+      szVal.textContent = ML.state.probeW + 'px';
+      ML.CHANNELS.forEach(ch => ch.active && ch.resize && ch.resize());
+    });
+
+    // Seletor de duração do buffer
+    const durLabel = document.createElement('span');
+    durLabel.textContent = 'Buf:';
+    durLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap;margin-left:4px';
+    const durSel = document.createElement('select');
+    durSel.style.cssText = 'background:#1e1e30;border:1px solid #333;color:#ccc;font-size:9px;border-radius:3px;padding:1px 2px';
+    [30, 60, 120, 300].forEach(v => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = v + 's';
+      if (v === ML.BUFFER_SECONDS) o.selected = true;
+      durSel.appendChild(o);
+    });
+    durSel.onchange = () => { ML.BUFFER_SECONDS = parseInt(durSel.value); };
+
+    const btnRec = document.createElement('button');
+    btnRec.style.cssText = 'margin-left:auto;background:#1a7a1a;border:none;color:#fff;border-radius:5px;padding:3px 10px;cursor:pointer;font-size:10px;font-family:monospace;font-weight:bold;box-shadow:0 0 6px #1a7a1a88';
+    btnRec.textContent = '● GRAVAR';
+    btnRec.onclick = () => {
+      if (!ML.state.recording) {
+        ML.recorder.start();
+        btnRec.textContent = '■ PARAR';
+        btnRec.style.background = '#7a1a1a';
+        btnRec.style.boxShadow = '0 0 6px #7a1a1a88';
+        statusEl.textContent = 'Gravando...';
+        statusEl.style.color = '#44ff88';
+        btnAnalyze.disabled = true;
+      } else {
+        ML.recorder.stop();
+        btnRec.textContent = '● GRAVAR';
+        btnRec.style.background = '#1a7a1a';
+        btnRec.style.boxShadow = '0 0 6px #1a7a1a88';
+        statusEl.textContent = 'Pronto para analisar (' + ML.CHANNELS.filter(c=>c.active).map(c=>c.buffer.length+' pts').join(', ') + ')';
+        statusEl.style.color = '#ffd700';
+        btnAnalyze.disabled = false;
+      }
+    };
+
+    ctrlRow.append(szLabel, btnMinus, szVal, btnPlus, durLabel, durSel, btnRec);
+    panel.appendChild(ctrlRow);
+
+    // ── Grid de canais ────────────────────────────────────
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-bottom:8px';
+
+    ML.CHANNELS.forEach(ch => {
+      const row = document.createElement('div');
+      row.style.cssText = [
+        'display:flex;align-items:center;gap:5px;padding:3px 4px;border-radius:5px',
+        `border:1px solid ${ch.active ? ch.color+'55' : '#1e1e30'}`,
+        `background:${ch.active ? ch.color+'0a' : 'transparent'}`,
+        `transition:all .2s;opacity:${ch.active ? 1 : .45}`,
+      ].join(';');
+
+      const tog = document.createElement('button');
+      tog.style.cssText = `width:14px;height:14px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active?ch.color:'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
+      tog.title = 'Ativar/desativar';
+      tog.onclick = () => {
+        ch.active = !ch.active;
+        tog.style.background = ch.active ? ch.color : 'transparent';
+        row.style.border  = `1px solid ${ch.active ? ch.color+'55' : '#1e1e30'}`;
+        row.style.background = ch.active ? ch.color+'0a' : 'transparent';
+        row.style.opacity = ch.active ? 1 : .45;
+        ch.probe.style.display = ch.active ? 'block' : 'none';
+        if (!ch.active) ch.prevLum = null;
+      };
+
+      const lbl = document.createElement('input');
+      lbl.value = ch.label;
+      lbl.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;width:95px;outline:none;cursor:text`;
+      lbl.addEventListener('change', () => {
+        ch.label = lbl.value;
+        if (ch.probeLabel) ch.probeLabel.textContent = lbl.value;
+      });
+
+      const lumEl = document.createElement('span');
+      lumEl.style.cssText = `color:${ch.color};font-size:13px;font-weight:bold;min-width:28px;text-align:right`;
+      lumEl.textContent = '--';
+      ch.lumEl = lumEl;
+
+      const ptsEl = document.createElement('span');
+      ptsEl.style.cssText = 'color:#555;font-size:8px;margin-left:2px;white-space:nowrap';
+      ptsEl.textContent = '0pt';
+      ch.ptsEl = ptsEl;
+
+      row.append(tog, lbl, lumEl, ptsEl);
+      grid.appendChild(row);
+    });
+    panel.appendChild(grid);
+
+    // ── Seção de análise ──────────────────────────────────
+    const sep = document.createElement('div');
+    sep.style.cssText = 'border-top:1px solid #2a2a3a;margin:4px 0 6px';
+    panel.appendChild(sep);
+
+    const cmpLabel = document.createElement('div');
+    cmpLabel.style.cssText = 'font-size:9px;color:#888;margin-bottom:5px';
+    cmpLabel.textContent = 'ANALISAR: canal A vs canal B';
+    panel.appendChild(cmpLabel);
+
+    // Seletores de canal
+    const selRow = document.createElement('div');
+    selRow.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center';
+
+    function mkSel(defaultIdx) {
+      const s = document.createElement('select');
+      s.style.cssText = 'flex:1;background:#1e1e30;border:1px solid #333;color:#ccc;font-size:10px;border-radius:4px;padding:2px 4px';
+      ML.CHANNELS.forEach((ch, i) => {
+        const o = document.createElement('option');
+        o.value = i; o.textContent = ch.label;
+        if (i === defaultIdx) o.selected = true;
+        s.appendChild(o);
+      });
+      return s;
+    }
+
+    const selA = mkSel(0);
+    const vsSpan = document.createElement('span');
+    vsSpan.textContent = 'vs';
+    vsSpan.style.cssText = 'font-size:10px;color:#555';
+    const selB = mkSel(1);
+
+    // Seletor de janela de lag máximo
+    const lagLabel = document.createElement('span');
+    lagLabel.textContent = 'Max lag:';
+    lagLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap';
+    const lagSel = document.createElement('select');
+    lagSel.style.cssText = 'background:#1e1e30;border:1px solid #333;color:#ccc;font-size:9px;border-radius:3px;padding:1px 2px';
+    [5000, 15000, 30000, 60000].forEach(v => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = (v/1000)+'s';
+      if (v === 30000) o.selected = true;
+      lagSel.appendChild(o);
+    });
+
+    selRow.append(selA, vsSpan, selB, lagLabel, lagSel);
+    panel.appendChild(selRow);
+
+    const btnAnalyze = document.createElement('button');
+    btnAnalyze.textContent = '⚡ ANALISAR';
+    btnAnalyze.disabled = true;
+    btnAnalyze.style.cssText = 'width:100%;background:#1a3a7a;border:none;color:#fff;border-radius:5px;padding:5px;cursor:pointer;font-size:11px;font-family:monospace;font-weight:bold;margin-bottom:6px;opacity:.5';
+    btnAnalyze.onclick = async () => {
+      const chA = ML.CHANNELS[parseInt(selA.value)];
+      const chB = ML.CHANNELS[parseInt(selB.value)];
+      if (chA === chB) { alert('Selecione canais diferentes.'); return; }
+      statusEl.textContent = 'Calculando correlação...';
+      const result = ML.correlator.analyze(chA, chB, parseInt(lagSel.value));
+      statusEl.textContent = result.error || result.description;
+      statusEl.style.color = result.error ? '#ff4444' : '#ffd700';
+      if (!result.error) ML.chart.show(result);
+    };
+    btnAnalyze.addEventListener('click', () => {}, false);
+    // Habilita botão quando não gravando
+    Object.defineProperty(btnAnalyze, 'disabled', {
+      set(v) { this._disabled = v; this.style.opacity = v ? .5 : 1; this.style.cursor = v ? 'not-allowed' : 'pointer'; },
+      get() { return this._disabled; },
+    });
+    btnAnalyze.disabled = true;
+    panel.appendChild(btnAnalyze);
+
+    // ── Status ────────────────────────────────────────────
+    const statusEl = document.createElement('div');
+    statusEl.style.cssText = 'font-size:9px;color:#888;margin-top:2px;text-align:center;font-style:italic';
+    statusEl.textContent = 'Posicione os probes nos vídeos e clique ● GRAVAR';
+    panel.appendChild(statusEl);
+
+    document.body.appendChild(panel);
+
+    // Reencaminha referência do botão para fora do closure de recorder.stop()
+    ML._ui = { btnRec, btnAnalyze, statusEl };
+
+    // Atualiza contagem de pontos no painel a cada segundo
+    setInterval(() => {
+      ML.CHANNELS.forEach(ch => {
+        if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length + 'pt';
+      });
+    }, 1000);
+
+    console.log('[MedLat] 50-panel carregado.');
+  }
+
+  ML.panel = { init };
+})();
