@@ -11,10 +11,10 @@
 
   window.MedLat = {
     CHANNELS: [
-      { id:'ch0', label:'Tela 1', color:'#00d4ff', active:false },
-      { id:'ch1', label:'Tela 2', color:'#ff4444', active:false },
-      { id:'ch2', label:'Tela 3', color:'#44ff88', active:false },
-      { id:'ch3', label:'Tela 4', color:'#ffd700', active:false },
+      { id:'ch0', label:'Referência', color:'#00d4ff', active:false },
+      { id:'ch1', label:'Tela 2',     color:'#ff4444', active:false },
+      { id:'ch2', label:'Tela 3',     color:'#44ff88', active:false },
+      { id:'ch3', label:'Tela 4',     color:'#ffd700', active:false },
     ],
 
     INTERVAL_MS:    33,
@@ -24,7 +24,9 @@
     state: {
       running:   false,
       recording: false,
-      probeW:    64,
+      probeW:    64,      // tamanho padrão global (pode ser sobreposto por ch.probeW)
+      snapGrid:  true,    // arrastar com snap magnético ligado por padrão
+      snapSize:  20,      // tamanho da célula do grid em px (ajuste via console)
     },
 
     stop() { this.state.running = false; },
@@ -36,6 +38,7 @@
     ch.off     = null;
     ch.ctx     = null;
     ch.probe   = null;
+    ch.probeW  = null;   // null = usa ML.state.probeW; número = tamanho individual
   });
 
   console.log('[MedLat] 00-core carregado.');
