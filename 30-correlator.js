@@ -45,11 +45,11 @@
       return { error: 'Dados insuficientes (mínimo 30 amostras por canal).' };
     }
 
-    const maxLagSamples = Math.ceil((maxLagMs || 60000) / ML.INTERVAL_MS);
+    const maxLagSamples = Math.ceil((maxLagMs || 30000) / ML.INTERVAL_MS);
     const corr          = crossCorrelation(serA.lum, serB.lum, maxLagSamples);
 
     // Pico de correlação
-    const peak    = corr.reduce((best, cur) => cur.r > best.r ? cur : best, corr[0]);
+    const peak     = corr.reduce((best, cur) => cur.r > best.r ? cur : best, corr[0]);
     const offsetMs = peak.lag * ML.INTERVAL_MS;
     const confidence = peak.r; // -1 a 1
 
@@ -61,7 +61,6 @@
       labelB: serB.label,
       serA,
       serB,
-      // Texto descritivo
       description: offsetMs > 0
         ? `${serA.label} está ${Math.abs(offsetMs)}ms atrasado em relação a ${serB.label}`
         : offsetMs < 0
@@ -70,7 +69,45 @@
     };
   }
 
-  ML.correlator = { analyze, crossCorrelation, normalize };
+  /**
+   * Analisa todos os canais ativos contra o canal de referência (índice 0).
+   * Retorna array de resultados ordenados por índice de canal.
+   */
+  function analyzeAll(maxLagMs) {
+    const chRef = ML.CHANNELS[0];
+    const results = [];
+
+    // Referência sempre offset 0
+    results.push({
+      channel: chRef,
+      label: chRef.label,
+      offsetMs: 0,
+      confidence: 1,
+      isReference: true,
+    });
+
+    ML.CHANNELS.slice(1).forEach(ch => {
+      if (!ch.active) {
+        results.push({ channel: ch, label: ch.label, skipped: true });
+        return;
+      }
+      const r = analyze(chRef, ch, maxLagMs);
+      results.push({
+        channel: ch,
+        label: ch.label,
+        offsetMs: r.error ? null : r.offsetMs,
+        confidence: r.error ? null : r.confidence,
+        error: r.error || null,
+        corr: r.corr || null,
+        serA: r.serA || null,
+        serB: r.serB || null,
+      });
+    });
+
+    return results;
+  }
+
+  ML.correlator = { analyze, analyzeAll, crossCorrelation, normalize };
 
   console.log('[MedLat] 30-correlator carregado.');
 })();
