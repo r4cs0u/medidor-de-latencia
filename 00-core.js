@@ -6,14 +6,10 @@
   window.MedLat = {
     // ── Configuração dos canais ─────────────────────────────
     CHANNELS: [
-      { id:'ch0', label:'CLARO CABO',    color:'#00d4ff', active:true  },
-      { id:'ch1', label:'SKY',           color:'#ff4444', active:true  },
-      { id:'ch2', label:'GLOBO RJ AR',   color:'#44ff88', active:false },
-      { id:'ch3', label:'GLOBO GPLAY',   color:'#ffd700', active:false },
-      { id:'ch4', label:'SPORTV GPLAY',  color:'#ff88ff', active:false },
-      { id:'ch5', label:'GLOBO PGM',     color:'#ff9944', active:false },
-      { id:'ch6', label:'SPORTV PGM',    color:'#aaffff', active:false },
-      { id:'ch7', label:'GETV PGM',      color:'#cc88ff', active:false },
+      { id:'ch0', label:'Tela 1', color:'#00d4ff', active:true  },
+      { id:'ch1', label:'Tela 2', color:'#ff4444', active:true  },
+      { id:'ch2', label:'Tela 3', color:'#44ff88', active:true  },
+      { id:'ch3', label:'Tela 4', color:'#ffd700', active:true  },
     ],
 
     // ── Constantes ─────────────────────────────────────────
