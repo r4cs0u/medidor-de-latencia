@@ -15,7 +15,6 @@
       if (el) el.remove();
     });
 
-    // ── Painel principal ──────────────────────────────────
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
     panel.style.cssText = [
@@ -27,14 +26,14 @@
       'width:340px;user-select:none',
     ].join(';');
 
-    // ── Header arrastável ─────────────────────────────────
+    // Header arrastável
     const hdr = document.createElement('div');
     hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;cursor:move';
     const ttl = document.createElement('span');
-    ttl.textContent = '📡 MEDIDOR DE LATÊNCIA';
+    ttl.textContent = '\uD83D\uDCE1 MEDIDOR DE LAT\u00CANCIA';
     ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px';
     const btnX = document.createElement('button');
-    btnX.textContent = '✕';
+    btnX.textContent = '\u2715';
     btnX.style.cssText = 'background:#e94560;border:none;color:#fff;border-radius:4px;padding:0 6px;cursor:pointer;font-size:11px';
     btnX.onclick = () => {
       ML.recorder.stop();
@@ -43,15 +42,14 @@
     hdr.append(ttl, btnX);
     panel.appendChild(hdr);
 
-    // Drag do painel
     let pdrag=false, pox=0, poy=0;
     hdr.addEventListener('mousedown', e => { pdrag=true; pox=e.clientX-panel.offsetLeft; poy=e.clientY-panel.offsetTop; });
     window.addEventListener('mousemove', e => { if(!pdrag) return; panel.style.right='auto'; panel.style.left=Math.max(0,e.clientX-pox)+'px'; panel.style.top=Math.max(0,e.clientY-poy)+'px'; });
     window.addEventListener('mouseup', () => pdrag=false);
 
-    // ── Controles superiores: Global W + Buf + Gravar ─────
+    // Linha 1: Global W
     const ctrlRow = document.createElement('div');
-    ctrlRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #1e1e30';
+    ctrlRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:5px;padding-bottom:5px;border-bottom:1px solid #1e1e30';
 
     function mkBtn(txt, bg, cb) {
       const b = document.createElement('button');
@@ -69,20 +67,15 @@
     szVal.style.cssText = 'font-size:11px;color:#fff;min-width:32px;text-align:center;font-weight:bold';
     szVal.textContent = ML.state.probeW + 'px';
 
-    const btnMinus = mkBtn('−', '#1e3a5f', () => {
+    const btnMinus = mkBtn('\u2212', '#1e3a5f', () => {
       ML.state.probeW = Math.max(16, ML.state.probeW - 8);
       szVal.textContent = ML.state.probeW + 'px';
-      // Só afeta canais sem override individual
-      ML.CHANNELS.forEach(ch => {
-        if (ch.active && ch.resize && ch.probeW == null) ch.resize();
-      });
+      ML.CHANNELS.forEach(ch => { if (ch.active && ch.resize && ch.probeW == null) ch.resize(); });
     });
     const btnPlus = mkBtn('+', '#1e3a5f', () => {
       ML.state.probeW = Math.min(500, ML.state.probeW + 8);
       szVal.textContent = ML.state.probeW + 'px';
-      ML.CHANNELS.forEach(ch => {
-        if (ch.active && ch.resize && ch.probeW == null) ch.resize();
-      });
+      ML.CHANNELS.forEach(ch => { if (ch.active && ch.resize && ch.probeW == null) ch.resize(); });
     });
 
     const durLabel = document.createElement('span');
@@ -100,11 +93,11 @@
 
     const btnRec = document.createElement('button');
     btnRec.style.cssText = 'margin-left:auto;background:#1a7a1a;border:none;color:#fff;border-radius:5px;padding:3px 10px;cursor:pointer;font-size:10px;font-family:monospace;font-weight:bold;box-shadow:0 0 6px #1a7a1a88';
-    btnRec.textContent = '● GRAVAR';
+    btnRec.textContent = '\u25CF GRAVAR';
     btnRec.onclick = () => {
       if (!ML.state.recording) {
         ML.recorder.start();
-        btnRec.textContent = '■ PARAR';
+        btnRec.textContent = '\u25A0 PARAR';
         btnRec.style.background = '#7a1a1a';
         btnRec.style.boxShadow = '0 0 6px #7a1a1a88';
         statusEl.textContent = 'Gravando...';
@@ -112,7 +105,7 @@
         btnAnalyze.disabled = true;
       } else {
         ML.recorder.stop();
-        btnRec.textContent = '● GRAVAR';
+        btnRec.textContent = '\u25CF GRAVAR';
         btnRec.style.background = '#1a7a1a';
         btnRec.style.boxShadow = '0 0 6px #1a7a1a88';
         statusEl.textContent = 'Pronto para analisar (' + ML.CHANNELS.filter(c=>c.active).map(c=>c.buffer.length+' pts').join(', ') + ')';
@@ -124,8 +117,58 @@
     ctrlRow.append(szLabel, btnMinus, szVal, btnPlus, durLabel, durSel, btnRec);
     panel.appendChild(ctrlRow);
 
-    // ── Grid de canais ────────────────────────────────────
-    // Layout por linha: ● [label] [szInput px] [lum] [pts]
+    // Linha 2: controles de Snap
+    const snapRow = document.createElement('div');
+    snapRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #1e1e30';
+
+    // Toggle snap grid
+    const btnSnap = document.createElement('button');
+    function updateSnapBtn() {
+      btnSnap.textContent = ML.state.snapGrid ? '\u229E SNAP ON' : '\u229F SNAP OFF';
+      btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#2a2a3a';
+      btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#888';
+      btnSnap.style.boxShadow = ML.state.snapGrid ? '0 0 5px #44ff8855' : 'none';
+    }
+    btnSnap.style.cssText = 'border:1px solid #333;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:9px;font-family:monospace;font-weight:bold;white-space:nowrap';
+    btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); };
+    updateSnapBtn();
+
+    // Tamanho do grid
+    const gridLabel = document.createElement('span');
+    gridLabel.textContent = 'Grid:';
+    gridLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap';
+
+    const gridInput = document.createElement('input');
+    gridInput.type = 'number';
+    gridInput.min = 4; gridInput.max = 100; gridInput.step = 4;
+    gridInput.value = ML.state.snapSize;
+    gridInput.style.cssText = 'background:#111827;border:1px solid #2a3a50;color:#aed6f1;font:bold 10px monospace;width:36px;border-radius:3px;padding:1px 3px;text-align:center;outline:none';
+    gridInput.addEventListener('change', () => {
+      ML.state.snapSize = Math.max(4, Math.min(100, parseInt(gridInput.value) || 20));
+      gridInput.value = ML.state.snapSize;
+    });
+    gridInput.addEventListener('focus', () => gridInput.style.borderColor = '#00d4ff88');
+    gridInput.addEventListener('blur',  () => gridInput.style.borderColor = '#2a3a50');
+    const gridPx = document.createElement('span');
+    gridPx.textContent = 'px';
+    gridPx.style.cssText = 'font-size:9px;color:#556';
+
+    // Toggle colisão
+    const btnCol = document.createElement('button');
+    function updateColBtn() {
+      btnCol.textContent = ML.state.noOverlap ? '\u26D4 COL ON' : '\u26AA COL OFF';
+      btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#2a2a3a';
+      btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#888';
+      btnCol.style.boxShadow = ML.state.noOverlap ? '0 0 5px #ff884455' : 'none';
+    }
+    btnCol.style.cssText = 'border:1px solid #333;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:9px;font-family:monospace;font-weight:bold;white-space:nowrap;margin-left:auto';
+    btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); };
+    updateColBtn();
+
+    snapRow.append(btnSnap, gridLabel, gridInput, gridPx, btnCol);
+    panel.appendChild(snapRow);
+
+    // Grid de canais: ● [label] [szInput px(h)] [lum] [pts]
     const grid = document.createElement('div');
     grid.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-bottom:8px';
 
@@ -138,7 +181,6 @@
         `transition:all .2s;opacity:${ch.active ? 1 : .45}`,
       ].join(';');
 
-      // Botão toggle (círculo colorido)
       const tog = document.createElement('button');
       tog.style.cssText = `width:14px;height:14px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active?ch.color:'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
       tog.title = 'Ativar/desativar';
@@ -152,7 +194,6 @@
         if (!ch.active) ch.prevLum = null;
       };
 
-      // Label editável
       const lbl = document.createElement('input');
       lbl.value = ch.label;
       lbl.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;width:78px;outline:none;cursor:text;flex-shrink:0`;
@@ -161,26 +202,21 @@
         if (ch.probeLabel) ch.probeLabel.textContent = lbl.value;
       });
 
-      // ── Controle de tamanho individual ──────────────────
       const szWrap = document.createElement('div');
       szWrap.style.cssText = 'display:flex;align-items:center;gap:1px;flex-shrink:0';
 
       const szInput = document.createElement('input');
-      szInput.type = 'number';
-      szInput.min  = 16;
-      szInput.max  = 500;
-      szInput.step = 8;
+      szInput.type = 'number'; szInput.min = 16; szInput.max = 500; szInput.step = 8;
       szInput.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
-      szInput.title = 'Largura do probe (16–500px). Altura calculada em 16:9.';
-      szInput.style.cssText = [
-        'background:#111827;border:1px solid #2a3a50;color:#aed6f1',
-        'font:bold 10px monospace;width:40px;border-radius:3px',
-        'padding:1px 3px;text-align:center;outline:none',
-        '-moz-appearance:textfield',   // remove setas nativas Firefox
-      ].join(';');
-      // Remove setas nativas Chrome/Safari
+      szInput.title = 'Largura do probe (16\u2013500px). Altura calculada em 16:9.';
+      szInput.style.cssText = 'background:#111827;border:1px solid #2a3a50;color:#aed6f1;font:bold 10px monospace;width:40px;border-radius:3px;padding:1px 3px;text-align:center;outline:none;-moz-appearance:textfield';
       szInput.addEventListener('focus', () => szInput.style.borderColor = '#00d4ff88');
       szInput.addEventListener('blur',  () => szInput.style.borderColor = '#2a3a50');
+
+      const szPxLbl = document.createElement('span');
+      const initH = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) * (9/16));
+      szPxLbl.textContent = 'px (' + initH + 'h)';
+      szPxLbl.style.cssText = 'font-size:8px;color:#556;white-space:nowrap;margin-left:2px';
 
       function applySize(v) {
         const clamped = Math.max(16, Math.min(500, Math.round(v / 8) * 8));
@@ -189,27 +225,19 @@
         if (ch.active && ch.resize) ch.resize();
         szPxLbl.textContent = 'px (' + Math.round(clamped * (9/16)) + 'h)';
       }
-
       szInput.addEventListener('change', () => applySize(parseInt(szInput.value) || ML.state.probeW));
       szInput.addEventListener('keydown', e => {
         if (e.key === 'ArrowUp')   { e.preventDefault(); applySize((parseInt(szInput.value)||16) + 8); }
         if (e.key === 'ArrowDown') { e.preventDefault(); applySize((parseInt(szInput.value)||16) - 8); }
       });
 
-      const szPxLbl = document.createElement('span');
-      const initH = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) * (9/16));
-      szPxLbl.textContent = 'px (' + initH + 'h)';
-      szPxLbl.style.cssText = 'font-size:8px;color:#556;white-space:nowrap;margin-left:2px';
-
       szWrap.append(szInput, szPxLbl);
 
-      // Lum
       const lumEl = document.createElement('span');
       lumEl.style.cssText = `color:${ch.color};font-size:13px;font-weight:bold;min-width:28px;text-align:right;margin-left:auto`;
       lumEl.textContent = '--';
       ch.lumEl = lumEl;
 
-      // Pts
       const ptsEl = document.createElement('span');
       ptsEl.style.cssText = 'color:#555;font-size:8px;margin-left:2px;white-space:nowrap';
       ptsEl.textContent = '0pt';
@@ -220,7 +248,7 @@
     });
     panel.appendChild(grid);
 
-    // ── Seção de análise ──────────────────────────────────
+    // Seção de análise
     const sep = document.createElement('div');
     sep.style.cssText = 'border-top:1px solid #2a2a3a;margin:4px 0 6px';
     panel.appendChild(sep);
@@ -267,13 +295,13 @@
     panel.appendChild(selRow);
 
     const btnAnalyze = document.createElement('button');
-    btnAnalyze.textContent = '⚡ ANALISAR';
+    btnAnalyze.textContent = '\u26A1 ANALISAR';
     btnAnalyze.style.cssText = 'width:100%;background:#1a3a7a;border:none;color:#fff;border-radius:5px;padding:5px;cursor:pointer;font-size:11px;font-family:monospace;font-weight:bold;margin-bottom:6px;opacity:.5';
     btnAnalyze.onclick = async () => {
       const chA = ML.CHANNELS[parseInt(selA.value)];
       const chB = ML.CHANNELS[parseInt(selB.value)];
       if (chA === chB) { alert('Selecione canais diferentes.'); return; }
-      statusEl.textContent = 'Calculando correlação...';
+      statusEl.textContent = 'Calculando correla\u00E7\u00E3o...';
       const result = ML.correlator.analyze(chA, chB, parseInt(lagSel.value));
       statusEl.textContent = result.error || result.description;
       statusEl.style.color = result.error ? '#ff4444' : '#ffd700';
@@ -286,20 +314,16 @@
     btnAnalyze.disabled = true;
     panel.appendChild(btnAnalyze);
 
-    // ── Status ────────────────────────────────────────────
     const statusEl = document.createElement('div');
     statusEl.style.cssText = 'font-size:9px;color:#888;margin-top:2px;text-align:center;font-style:italic';
-    statusEl.textContent = 'Posicione os probes nos vídeos e clique ● GRAVAR';
+    statusEl.textContent = 'Posicione os probes nos v\u00EDdeos e clique \u25CF GRAVAR';
     panel.appendChild(statusEl);
 
     document.body.appendChild(panel);
-
     ML._ui = { btnRec, btnAnalyze, statusEl };
 
     setInterval(() => {
-      ML.CHANNELS.forEach(ch => {
-        if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length + 'pt';
-      });
+      ML.CHANNELS.forEach(ch => { if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length + 'pt'; });
     }, 1000);
 
     console.log('[MedLat] 50-panel carregado.');
