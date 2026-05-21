@@ -1,8 +1,11 @@
 (function () {
   const ML = window.MedLat;
 
+  // Buffer e maxLag padrão fixados em 30s
+  const DEFAULT_LAG_MS = 30000;
+
   /**
-   * Normaliza array para média 0 e desvio padrão 1.
+   * Normaliza array para média 0 e desvio padrão 1 (z-score).
    */
   function normalize(arr) {
     const n    = arr.length;
@@ -12,13 +15,25 @@
   }
 
   /**
-   * Cross-correlation por força bruta.
-   * Retorna array de coeficientes para lags de -maxLag a +maxLag amostras.
-   * Positivo = chA está adiantado em relação a chB.
+   * Recorta as séries para uma janela relevante:
+   * usa no máximo (2 × maxLagSamples + buffer de segurança) amostras finais.
+   * Isso evita que variações locais sejam diluídas por um buffer muito longo.
+   */
+  function windowedSlice(arr, maxLagSamples) {
+    const windowSize = Math.min(arr.length, maxLagSamples * 3);
+    return arr.slice(arr.length - windowSize);
+  }
+
+  /**
+   * Cross-correlation por força bruta sobre janelas recortadas.
+   * Retorna array de { lag, r } para lags de -maxLag a +maxLag amostras.
    */
   function crossCorrelation(a, b, maxLagSamples) {
-    const na = normalize(a);
-    const nb = normalize(b);
+    // Recorta para janela relevante antes de normalizar
+    const wa = windowedSlice(a, maxLagSamples);
+    const wb = windowedSlice(b, maxLagSamples);
+    const na = normalize(wa);
+    const nb = normalize(wb);
     const n  = Math.min(na.length, nb.length);
     maxLagSamples = Math.min(maxLagSamples, n - 1);
     const result = [];
@@ -34,8 +49,33 @@
   }
 
   /**
+   * Seleciona o pico mais confiável da correlação.
+   *
+   * Estratégia (guard band):
+   * 1. Encontra o pico global (maior r).
+   * 2. Define threshold = 80% do pico global.
+   * 3. Entre todos os picos acima do threshold, escolhe o de menor |lag| absoluto.
+   *    Isso evita picos espúrios distantes causados por periodicidade do conteúdo.
+   */
+  function selectRobustPeak(corr) {
+    const globalPeak = corr.reduce((best, cur) => cur.r > best.r ? cur : best, corr[0]);
+    const threshold  = globalPeak.r * 0.80;
+
+    // Candidatos acima de 80% do pico global
+    const candidates = corr.filter(c => c.r >= threshold);
+
+    // Prefere o candidato com menor lag absoluto (mais próximo de 0)
+    const robust = candidates.reduce((best, cur) =>
+      Math.abs(cur.lag) < Math.abs(best.lag) ? cur : best,
+      candidates[0]
+    );
+
+    return robust;
+  }
+
+  /**
    * Analisa dois canais e retorna o offset em ms.
-   * chA vs chB — se offset > 0, chA está atrasado em relação a chB.
+   * chRef vs chB — se offsetMs > 0, chB está atrasado em relação à referência.
    */
   function analyze(chA, chB, maxLagMs) {
     const serA = ML.recorder.getSeries(chA);
@@ -45,13 +85,12 @@
       return { error: 'Dados insuficientes (mínimo 30 amostras por canal).' };
     }
 
-    const maxLagSamples = Math.ceil((maxLagMs || 30000) / ML.INTERVAL_MS);
-    const corr          = crossCorrelation(serA.lum, serB.lum, maxLagSamples);
-
-    // Pico de correlação
-    const peak     = corr.reduce((best, cur) => cur.r > best.r ? cur : best, corr[0]);
-    const offsetMs = peak.lag * ML.INTERVAL_MS;
-    const confidence = peak.r; // -1 a 1
+    const effectiveLagMs  = Math.min(maxLagMs || DEFAULT_LAG_MS, DEFAULT_LAG_MS);
+    const maxLagSamples   = Math.ceil(effectiveLagMs / ML.INTERVAL_MS);
+    const corr            = crossCorrelation(serA.lum, serB.lum, maxLagSamples);
+    const peak            = selectRobustPeak(corr);
+    const offsetMs        = peak.lag * ML.INTERVAL_MS;
+    const confidence      = peak.r;
 
     return {
       offsetMs,
@@ -62,9 +101,9 @@
       serA,
       serB,
       description: offsetMs > 0
-        ? `${serA.label} está ${Math.abs(offsetMs)}ms atrasado em relação a ${serB.label}`
+        ? `${serB.label} está ${Math.abs(offsetMs)}ms atrasado em relação a ${serA.label}`
         : offsetMs < 0
-          ? `${serB.label} está ${Math.abs(offsetMs)}ms atrasado em relação a ${serA.label}`
+          ? `${serA.label} está ${Math.abs(offsetMs)}ms atrasado em relação a ${serB.label}`
           : 'Canais sincronizados',
     };
   }
@@ -77,7 +116,6 @@
     const chRef = ML.CHANNELS[0];
     const results = [];
 
-    // Referência sempre offset 0
     results.push({
       channel: chRef,
       label: chRef.label,
