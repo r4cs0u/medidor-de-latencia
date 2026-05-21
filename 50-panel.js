@@ -10,7 +10,6 @@
   }
 
   function init() {
-    // Remove apenas painel e overlay — probes são preservados
     ['ml-panel', 'ml-chart-overlay'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.remove();
@@ -25,7 +24,7 @@
       'border-radius:8px;padding:8px 12px',
       'box-shadow:0 4px 16px #000c',
       'font-family:monospace;font-size:11px;color:#ccc',
-      'width:320px;user-select:none',
+      'width:340px;user-select:none',
     ].join(';');
 
     // ── Header arrastável ─────────────────────────────────
@@ -39,7 +38,6 @@
     btnX.style.cssText = 'background:#e94560;border:none;color:#fff;border-radius:4px;padding:0 6px;cursor:pointer;font-size:11px';
     btnX.onclick = () => {
       ML.recorder.stop();
-      // Ao fechar, remove tudo incluindo probes
       document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove());
     };
     hdr.append(ttl, btnX);
@@ -51,13 +49,9 @@
     window.addEventListener('mousemove', e => { if(!pdrag) return; panel.style.right='auto'; panel.style.left=Math.max(0,e.clientX-pox)+'px'; panel.style.top=Math.max(0,e.clientY-poy)+'px'; });
     window.addEventListener('mouseup', () => pdrag=false);
 
-    // ── Controles: Probe W + Gravar ──────────────────────
+    // ── Controles superiores: Global W + Buf + Gravar ─────
     const ctrlRow = document.createElement('div');
     ctrlRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #1e1e30';
-
-    const szLabel = document.createElement('span');
-    szLabel.textContent = 'Probe W:';
-    szLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap';
 
     function mkBtn(txt, bg, cb) {
       const b = document.createElement('button');
@@ -67,6 +61,10 @@
       return b;
     }
 
+    const szLabel = document.createElement('span');
+    szLabel.textContent = 'Global W:';
+    szLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap';
+
     const szVal = document.createElement('span');
     szVal.style.cssText = 'font-size:11px;color:#fff;min-width:32px;text-align:center;font-weight:bold';
     szVal.textContent = ML.state.probeW + 'px';
@@ -74,12 +72,17 @@
     const btnMinus = mkBtn('−', '#1e3a5f', () => {
       ML.state.probeW = Math.max(16, ML.state.probeW - 8);
       szVal.textContent = ML.state.probeW + 'px';
-      ML.CHANNELS.forEach(ch => ch.active && ch.resize && ch.resize());
+      // Só afeta canais sem override individual
+      ML.CHANNELS.forEach(ch => {
+        if (ch.active && ch.resize && ch.probeW == null) ch.resize();
+      });
     });
     const btnPlus = mkBtn('+', '#1e3a5f', () => {
-      ML.state.probeW = Math.min(200, ML.state.probeW + 8);
+      ML.state.probeW = Math.min(500, ML.state.probeW + 8);
       szVal.textContent = ML.state.probeW + 'px';
-      ML.CHANNELS.forEach(ch => ch.active && ch.resize && ch.resize());
+      ML.CHANNELS.forEach(ch => {
+        if (ch.active && ch.resize && ch.probeW == null) ch.resize();
+      });
     });
 
     const durLabel = document.createElement('span');
@@ -122,6 +125,7 @@
     panel.appendChild(ctrlRow);
 
     // ── Grid de canais ────────────────────────────────────
+    // Layout por linha: ● [label] [szInput px] [lum] [pts]
     const grid = document.createElement('div');
     grid.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-bottom:8px';
 
@@ -134,38 +138,84 @@
         `transition:all .2s;opacity:${ch.active ? 1 : .45}`,
       ].join(';');
 
+      // Botão toggle (círculo colorido)
       const tog = document.createElement('button');
       tog.style.cssText = `width:14px;height:14px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active?ch.color:'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
       tog.title = 'Ativar/desativar';
       tog.onclick = () => {
         ch.active = !ch.active;
         tog.style.background = ch.active ? ch.color : 'transparent';
-        row.style.border  = `1px solid ${ch.active ? ch.color+'55' : '#1e1e30'}`;
+        row.style.border     = `1px solid ${ch.active ? ch.color+'55' : '#1e1e30'}`;
         row.style.background = ch.active ? ch.color+'0a' : 'transparent';
-        row.style.opacity = ch.active ? 1 : .45;
+        row.style.opacity    = ch.active ? 1 : .45;
         ch.probe.style.display = ch.active ? 'block' : 'none';
         if (!ch.active) ch.prevLum = null;
       };
 
+      // Label editável
       const lbl = document.createElement('input');
       lbl.value = ch.label;
-      lbl.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;width:95px;outline:none;cursor:text`;
+      lbl.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;width:78px;outline:none;cursor:text;flex-shrink:0`;
       lbl.addEventListener('change', () => {
         ch.label = lbl.value;
         if (ch.probeLabel) ch.probeLabel.textContent = lbl.value;
       });
 
+      // ── Controle de tamanho individual ──────────────────
+      const szWrap = document.createElement('div');
+      szWrap.style.cssText = 'display:flex;align-items:center;gap:1px;flex-shrink:0';
+
+      const szInput = document.createElement('input');
+      szInput.type = 'number';
+      szInput.min  = 16;
+      szInput.max  = 500;
+      szInput.step = 8;
+      szInput.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
+      szInput.title = 'Largura do probe (16–500px). Altura calculada em 16:9.';
+      szInput.style.cssText = [
+        'background:#111827;border:1px solid #2a3a50;color:#aed6f1',
+        'font:bold 10px monospace;width:40px;border-radius:3px',
+        'padding:1px 3px;text-align:center;outline:none',
+        '-moz-appearance:textfield',   // remove setas nativas Firefox
+      ].join(';');
+      // Remove setas nativas Chrome/Safari
+      szInput.addEventListener('focus', () => szInput.style.borderColor = '#00d4ff88');
+      szInput.addEventListener('blur',  () => szInput.style.borderColor = '#2a3a50');
+
+      function applySize(v) {
+        const clamped = Math.max(16, Math.min(500, Math.round(v / 8) * 8));
+        szInput.value = clamped;
+        ch.probeW = clamped;
+        if (ch.active && ch.resize) ch.resize();
+        szPxLbl.textContent = 'px (' + Math.round(clamped * (9/16)) + 'h)';
+      }
+
+      szInput.addEventListener('change', () => applySize(parseInt(szInput.value) || ML.state.probeW));
+      szInput.addEventListener('keydown', e => {
+        if (e.key === 'ArrowUp')   { e.preventDefault(); applySize((parseInt(szInput.value)||16) + 8); }
+        if (e.key === 'ArrowDown') { e.preventDefault(); applySize((parseInt(szInput.value)||16) - 8); }
+      });
+
+      const szPxLbl = document.createElement('span');
+      const initH = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) * (9/16));
+      szPxLbl.textContent = 'px (' + initH + 'h)';
+      szPxLbl.style.cssText = 'font-size:8px;color:#556;white-space:nowrap;margin-left:2px';
+
+      szWrap.append(szInput, szPxLbl);
+
+      // Lum
       const lumEl = document.createElement('span');
-      lumEl.style.cssText = `color:${ch.color};font-size:13px;font-weight:bold;min-width:28px;text-align:right`;
+      lumEl.style.cssText = `color:${ch.color};font-size:13px;font-weight:bold;min-width:28px;text-align:right;margin-left:auto`;
       lumEl.textContent = '--';
       ch.lumEl = lumEl;
 
+      // Pts
       const ptsEl = document.createElement('span');
       ptsEl.style.cssText = 'color:#555;font-size:8px;margin-left:2px;white-space:nowrap';
       ptsEl.textContent = '0pt';
       ch.ptsEl = ptsEl;
 
-      row.append(tog, lbl, lumEl, ptsEl);
+      row.append(tog, lbl, szWrap, lumEl, ptsEl);
       grid.appendChild(row);
     });
     panel.appendChild(grid);
