@@ -1,14 +1,6 @@
 (function () {
   const ML = window.MedLat;
 
-  function fmt(ts) {
-    const d = new Date(ts);
-    return d.getHours().toString().padStart(2,'0') + ':' +
-           d.getMinutes().toString().padStart(2,'0') + ':' +
-           d.getSeconds().toString().padStart(2,'0') + '.' +
-           d.getMilliseconds().toString().padStart(3,'0');
-  }
-
   function init() {
     ['ml-panel', 'ml-chart-overlay'].forEach(id => {
       const el = document.getElementById(id);
@@ -18,23 +10,30 @@
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
     panel.style.cssText = [
-      'position:fixed;top:10px;right:10px;z-index:99999',
-      'background:#0e0e1aee;border:1px solid #2a2a3a',
-      'border-radius:8px;padding:8px 12px',
-      'box-shadow:0 4px 16px #000c',
-      'font-family:monospace;font-size:11px;color:#ccc',
-      'width:340px;user-select:none',
+      'position:fixed;top:6px;left:50%;transform:translateX(-50%);z-index:99999',
+      'background:#0e0e1af2;border:1px solid #252535',
+      'border-radius:6px',
+      'box-shadow:0 3px 14px #000d',
+      'font-family:monospace;font-size:10px;color:#bbb',
+      'user-select:none;min-width:820px;max-width:98vw',
     ].join(';');
 
-    // Header arrastável
+    // ── Header ───────────────────────────────────────────────────────────────────────
     const hdr = document.createElement('div');
-    hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;cursor:move';
+    hdr.style.cssText = [
+      'display:flex;justify-content:space-between;align-items:center',
+      'padding:3px 8px 3px;cursor:move',
+      'border-bottom:1px solid #1a1a2a',
+      'background:#09091499;border-radius:6px 6px 0 0',
+    ].join(';');
+
     const ttl = document.createElement('span');
     ttl.textContent = '\uD83D\uDCE1 MEDIDOR DE LAT\u00CANCIA';
-    ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px';
+    ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:9px;letter-spacing:.08em';
+
     const btnX = document.createElement('button');
     btnX.textContent = '\u2715';
-    btnX.style.cssText = 'background:#e94560;border:none;color:#fff;border-radius:4px;padding:0 6px;cursor:pointer;font-size:11px';
+    btnX.style.cssText = 'background:#c0334d;border:none;color:#fff;border-radius:3px;padding:0 5px;cursor:pointer;font-size:10px;line-height:15px';
     btnX.onclick = () => {
       ML.recorder.stop();
       document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove());
@@ -42,346 +41,296 @@
     hdr.append(ttl, btnX);
     panel.appendChild(hdr);
 
-    let pdrag=false, pox=0, poy=0;
-    hdr.addEventListener('mousedown', e => { pdrag=true; pox=e.clientX-panel.offsetLeft; poy=e.clientY-panel.offsetTop; });
-    window.addEventListener('mousemove', e => { if(!pdrag) return; panel.style.right='auto'; panel.style.left=Math.max(0,e.clientX-pox)+'px'; panel.style.top=Math.max(0,e.clientY-poy)+'px'; });
-    window.addEventListener('mouseup', () => pdrag=false);
+    // drag
+    let pdrag = false, pox = 0, poy = 0;
+    hdr.addEventListener('mousedown', e => {
+      pdrag = true;
+      panel.style.transform = 'none';
+      pox = e.clientX - panel.offsetLeft;
+      poy = e.clientY - panel.offsetTop;
+    });
+    window.addEventListener('mousemove', e => {
+      if (!pdrag) return;
+      panel.style.left = Math.max(0, e.clientX - pox) + 'px';
+      panel.style.top  = Math.max(0, e.clientY - poy) + 'px';
+    });
+    window.addEventListener('mouseup', () => pdrag = false);
 
-    // Linha 1: Global W + Buffer + Gravar
-    const ctrlRow = document.createElement('div');
-    ctrlRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:5px;padding-bottom:5px;border-bottom:1px solid #1e1e30';
+    // ── Corpo ─────────────────────────────────────────────────────────────────────
+    const body = document.createElement('div');
+    body.style.cssText = 'display:flex;align-items:stretch';
+    panel.appendChild(body);
 
-    function mkBtn(txt, bg, cb) {
+    // helpers
+    function col(minW) {
+      const d = document.createElement('div');
+      d.style.cssText = `display:flex;flex-direction:column;justify-content:center;gap:3px;padding:4px 8px;min-width:${minW}px;border-right:1px solid #1a1a2a`;
+      return d;
+    }
+    function colHdr(txt) {
+      const s = document.createElement('div');
+      s.textContent = txt;
+      s.style.cssText = 'font-size:7px;color:#444;letter-spacing:.1em;font-weight:bold;text-transform:uppercase;margin-bottom:1px';
+      return s;
+    }
+    function mkBtn(txt, bg) {
       const b = document.createElement('button');
       b.textContent = txt;
-      b.style.cssText = `background:${bg};border:none;color:#fff;border-radius:4px;padding:1px 7px;cursor:pointer;font-size:12px;font-family:monospace`;
-      b.onclick = cb;
+      b.style.cssText = `background:${bg};border:1px solid ${bg}66;color:#ddd;border-radius:3px;padding:1px 6px;cursor:pointer;font-size:8px;font-family:monospace;font-weight:bold;white-space:nowrap`;
       return b;
     }
+    function lbl(txt) {
+      const s = document.createElement('span');
+      s.textContent = txt;
+      s.style.cssText = 'font-size:8px;color:#666;white-space:nowrap';
+      return s;
+    }
+    function row(gap) {
+      const d = document.createElement('div');
+      d.style.cssText = `display:flex;align-items:center;gap:${gap||3}px`;
+      return d;
+    }
 
-    const szLabel = document.createElement('span');
-    szLabel.textContent = 'Global W:';
-    szLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap';
+    // ── Col 1: Telas ─────────────────────────────────────────────────────────────────
+    const c1 = col(88);
+    c1.appendChild(colHdr('Telas'));
 
-    const szVal = document.createElement('span');
-    szVal.style.cssText = 'font-size:11px;color:#fff;min-width:32px;text-align:center;font-weight:bold';
-    szVal.textContent = ML.state.probeW + 'px';
+    const qtLbl = lbl('Qt. Telas: --');
+    setInterval(() => { qtLbl.textContent = 'Qt. Telas: ' + ML.CHANNELS.filter(c => c.active).length; }, 1000);
+    qtLbl.textContent = 'Qt. Telas: ' + ML.CHANNELS.filter(c => c.active).length;
 
-    const btnMinus = mkBtn('\u2212', '#1e3a5f', () => {
-      ML.state.probeW = Math.max(16, ML.state.probeW - 2);
-      szVal.textContent = ML.state.probeW + 'px';
-      ML.CHANNELS.forEach(ch => { if (ch.active && ch.resize && ch.probeW == null) ch.resize(); });
-    });
-    const btnPlus = mkBtn('+', '#1e3a5f', () => {
-      ML.state.probeW = Math.min(500, ML.state.probeW + 2);
-      szVal.textContent = ML.state.probeW + 'px';
-      ML.CHANNELS.forEach(ch => { if (ch.active && ch.resize && ch.probeW == null) ch.resize(); });
-    });
+    const pxRow = row(2);
+    pxRow.appendChild(lbl('PX'));
+    const pxVal = document.createElement('span');
+    pxVal.style.cssText = 'font-size:9px;color:#ddd;font-weight:bold;min-width:22px;text-align:center';
+    pxVal.textContent = ML.state.probeW;
+    const bM = mkBtn('\u2212', '#1a2f4a'), bP = mkBtn('+', '#1a2f4a');
+    bM.onclick = () => { ML.state.probeW = Math.max(16, ML.state.probeW - 2); pxVal.textContent = ML.state.probeW; ML.CHANNELS.forEach(ch => { if (ch.active && ch.resize && ch.probeW == null) ch.resize(); }); };
+    bP.onclick = () => { ML.state.probeW = Math.min(500, ML.state.probeW + 2); pxVal.textContent = ML.state.probeW; ML.CHANNELS.forEach(ch => { if (ch.active && ch.resize && ch.probeW == null) ch.resize(); }); };
+    pxRow.append(bM, pxVal, bP);
 
-    const durLabel = document.createElement('span');
-    durLabel.textContent = 'Buf:';
-    durLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap;margin-left:4px';
+    const bufRow = row(3);
+    bufRow.appendChild(lbl('Buf'));
     const durSel = document.createElement('select');
-    durSel.style.cssText = 'background:#1e1e30;border:1px solid #333;color:#ccc;font-size:9px;border-radius:3px;padding:1px 2px';
-    // Opções: 5, 15, 30s (45s removido — instabilidade na correlação)
-    [5, 15, 30].forEach(v => {
-      const o = document.createElement('option');
-      o.value = v; o.textContent = v + 's';
-      if (v === 30) o.selected = true;
-      durSel.appendChild(o);
-    });
+    durSel.style.cssText = 'background:#15152a;border:1px solid #2a2a3a;color:#aaa;font-size:8px;border-radius:3px;padding:0 2px;flex:1';
+    // 45s removido — instabilidade na correlação
+    [5, 15, 30].forEach(v => { const o=document.createElement('option'); o.value=v; o.textContent=v+'s'; if(v===30) o.selected=true; durSel.appendChild(o); });
     durSel.onchange = () => { ML.BUFFER_SECONDS = parseInt(durSel.value); };
+    bufRow.append(durSel);
+
+    c1.append(qtLbl, pxRow, bufRow);
+    body.appendChild(c1);
+
+    // ── Col 2: Grid ─────────────────────────────────────────────────────────────────
+    const c2 = col(82);
+    c2.appendChild(colHdr('Grid'));
+
+    const btnSnap = mkBtn('', '#0d4f3c');
+    function updSnap() {
+      btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF';
+      btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#222233';
+      btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#555';
+    }
+    btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updSnap(); };
+    updSnap();
+
+    const btnCol2 = mkBtn('', '#3a1a0d');
+    function updCol() {
+      btnCol2.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF';
+      btnCol2.style.background = ML.state.noOverlap ? '#3a1a0d' : '#222233';
+      btnCol2.style.color = ML.state.noOverlap ? '#ff8844' : '#555';
+    }
+    btnCol2.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updCol(); };
+    updCol();
+
+    const gRow = row(3);
+    gRow.appendChild(lbl('GRID'));
+    const gInp = document.createElement('input');
+    gInp.type='number'; gInp.min=2; gInp.max=100; gInp.step=2; gInp.value=ML.state.snapSize;
+    gInp.style.cssText = 'background:#0f1520;border:1px solid #222f40;color:#8cc;font:bold 9px monospace;width:32px;border-radius:3px;padding:0 2px;text-align:center;outline:none';
+    gInp.addEventListener('change', () => { ML.state.snapSize = Math.max(2, Math.min(100, parseInt(gInp.value)||20)); gInp.value=ML.state.snapSize; });
+    gInp.addEventListener('focus', () => gInp.style.borderColor='#00d4ff66');
+    gInp.addEventListener('blur',  () => gInp.style.borderColor='#222f40');
+    gRow.append(gInp, lbl('px'));
+
+    c2.append(btnSnap, btnCol2, gRow);
+    body.appendChild(c2);
+
+    // ── Col 3+4: Detalhamento ─────────────────────────────────────────────────────────────
+    const cDet = document.createElement('div');
+    cDet.style.cssText = 'display:flex;flex-direction:column;padding:4px 8px;border-right:1px solid #1a1a2a;flex:1;min-width:380px';
+    cDet.appendChild(colHdr('Detalhamento'));
+
+    const chanGrid = document.createElement('div');
+    chanGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:1px 6px';
+    cDet.appendChild(chanGrid);
+
+    function miniHdr() {
+      const r = document.createElement('div');
+      r.style.cssText = 'display:flex;align-items:center;font-size:7px;color:#3a3a50;margin-bottom:1px';
+      [['flex:1',''], ['28px','Lum'], ['24px','pt'], ['46px','offset'], ['42px','conf']].forEach(([w, t]) => {
+        const s = document.createElement('span');
+        s.textContent = t;
+        s.style.cssText = `${w.includes(':') ? w : 'width:'+w};text-align:right;${t?'text-decoration:underline':'flex:1'}`;
+        r.appendChild(s);
+      });
+      return r;
+    }
+
+    function buildSubCol(idxs) {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;flex-direction:column;gap:1px';
+      wrap.appendChild(miniHdr());
+      idxs.forEach(i => {
+        const ch = ML.CHANNELS[i];
+        if (!ch) return;
+        const isRef = (i === 0);
+
+        const r = document.createElement('div');
+        r.style.cssText = [
+          'display:flex;align-items:center;padding:1px 2px;border-radius:3px',
+          `border:1px solid ${ch.color}28`,
+          `background:${ch.color}06`,
+          `transition:opacity .2s;opacity:${ch.active ? 1 : .35}`,
+        ].join(';');
+        ch._panelRow = r;
+
+        const tog = document.createElement('button');
+        tog.style.cssText = `width:8px;height:8px;border-radius:50%;border:1.5px solid ${ch.color};background:${ch.active?ch.color:'transparent'};cursor:pointer;flex-shrink:0;padding:0;margin-right:3px`;
+        tog.onclick = () => {
+          ch.active = !ch.active;
+          tog.style.background = ch.active ? ch.color : 'transparent';
+          r.style.opacity = ch.active ? 1 : .35;
+          ch.probe.style.display = ch.active ? 'block' : 'none';
+          if (!ch.active) ch.prevLum = null;
+        };
+
+        const li = document.createElement('input');
+        li.value = isRef ? '\u2605 ' + ch.label : ch.label;
+        li.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;width:56px;outline:none;cursor:text;flex:1`;
+        li.addEventListener('change', () => { ch.label = li.value.replace(/^\u2605\s*/,''); if(ch.probeLabel) ch.probeLabel.textContent=ch.label; });
+
+        const lumEl = document.createElement('span');
+        lumEl.style.cssText = `color:${ch.color};font-size:10px;font-weight:bold;width:28px;text-align:right`;
+        lumEl.textContent = '--';
+        ch.lumEl = lumEl;
+
+        const ptsEl = document.createElement('span');
+        ptsEl.style.cssText = 'color:#444;font-size:7px;width:24px;text-align:right';
+        ptsEl.textContent = '0';
+        ch.ptsEl = ptsEl;
+
+        const offEl = document.createElement('span');
+        offEl.style.cssText = 'color:#666;font-size:8px;width:46px;text-align:right;font-weight:bold';
+        offEl.textContent = isRef ? '0.000s' : '--';
+        ch.offsetEl = offEl;
+
+        const confEl = document.createElement('span');
+        confEl.style.cssText = 'color:#666;font-size:8px;width:42px;text-align:right';
+        confEl.textContent = isRef ? '100%' : '--';
+        ch.confEl = confEl;
+
+        r.append(tog, li, lumEl, ptsEl, offEl, confEl);
+        wrap.appendChild(r);
+      });
+      return wrap;
+    }
+
+    chanGrid.append(buildSubCol([0,1,3]), buildSubCol([2,4,5]));
+    body.appendChild(cDet);
+
+    // ── Col 5: Análise ─────────────────────────────────────────────────────────────────
+    const cAn = document.createElement('div');
+    cAn.style.cssText = 'display:flex;flex-direction:column;justify-content:center;gap:4px;padding:4px 8px;min-width:92px';
+    cAn.appendChild(colHdr('Analise'));
 
     const btnRec = document.createElement('button');
-    btnRec.style.cssText = 'margin-left:auto;background:#1a7a1a;border:none;color:#fff;border-radius:5px;padding:3px 10px;cursor:pointer;font-size:10px;font-family:monospace;font-weight:bold;box-shadow:0 0 6px #1a7a1a88';
-    btnRec.textContent = '\u25CF GRAVAR';
+    btnRec.style.cssText = 'background:#155215;border:1px solid #1a7a1a66;color:#9fef9f;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:9px;font-family:monospace;font-weight:bold;white-space:nowrap';
+    btnRec.textContent = '\u25cf GRAVAR';
     btnRec.onclick = () => {
       if (!ML.state.recording) {
         ML.recorder.start();
-        btnRec.textContent = '\u25A0 PARAR';
-        btnRec.style.background = '#7a1a1a';
-        btnRec.style.boxShadow = '0 0 6px #7a1a1a88';
+        btnRec.textContent = '\u25a0 PARAR';
+        btnRec.style.background = '#521212';
+        btnRec.style.borderColor = '#7a1a1a66';
+        btnRec.style.color = '#ffaaaa';
         statusEl.textContent = 'Gravando...';
         statusEl.style.color = '#44ff88';
         btnAnalyze.disabled = true;
-        clearResultsTable();
+        ML.CHANNELS.forEach(ch => {
+          if (ch.offsetEl && ML.CHANNELS.indexOf(ch) !== 0) ch.offsetEl.textContent = '--';
+          if (ch.confEl   && ML.CHANNELS.indexOf(ch) !== 0) ch.confEl.textContent = '--';
+        });
       } else {
         ML.recorder.stop();
-        btnRec.textContent = '\u25CF GRAVAR';
-        btnRec.style.background = '#1a7a1a';
-        btnRec.style.boxShadow = '0 0 6px #1a7a1a88';
-        statusEl.textContent = 'Pronto para analisar (' + ML.CHANNELS.filter(c=>c.active).map(c=>c.buffer.length+' pts').join(', ') + ')';
+        btnRec.textContent = '\u25cf GRAVAR';
+        btnRec.style.background = '#155215';
+        btnRec.style.borderColor = '#1a7a1a66';
+        btnRec.style.color = '#9fef9f';
+        statusEl.textContent = 'Pronto (' + ML.CHANNELS.filter(c => c.active).map(c => c.buffer.length + 'pt').join(', ') + ')';
         statusEl.style.color = '#ffd700';
         btnAnalyze.disabled = false;
       }
     };
 
-    ctrlRow.append(szLabel, btnMinus, szVal, btnPlus, durLabel, durSel, btnRec);
-    panel.appendChild(ctrlRow);
-
-    // Linha 2: Snap
-    const snapRow = document.createElement('div');
-    snapRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #1e1e30';
-
-    const btnSnap = document.createElement('button');
-    function updateSnapBtn() {
-      btnSnap.textContent = ML.state.snapGrid ? '\u229E SNAP ON' : '\u229F SNAP OFF';
-      btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#2a2a3a';
-      btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#888';
-      btnSnap.style.boxShadow = ML.state.snapGrid ? '0 0 5px #44ff8855' : 'none';
-    }
-    btnSnap.style.cssText = 'border:1px solid #333;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:9px;font-family:monospace;font-weight:bold;white-space:nowrap';
-    btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); };
-    updateSnapBtn();
-
-    const gridLabel = document.createElement('span');
-    gridLabel.textContent = 'Grid:';
-    gridLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap';
-
-    const gridInput = document.createElement('input');
-    gridInput.type = 'number';
-    gridInput.min = 2; gridInput.max = 100; gridInput.step = 2;
-    gridInput.value = ML.state.snapSize;
-    gridInput.style.cssText = 'background:#111827;border:1px solid #2a3a50;color:#aed6f1;font:bold 10px monospace;width:36px;border-radius:3px;padding:1px 3px;text-align:center;outline:none';
-    gridInput.addEventListener('change', () => {
-      ML.state.snapSize = Math.max(2, Math.min(100, parseInt(gridInput.value) || 20));
-      gridInput.value = ML.state.snapSize;
-    });
-    gridInput.addEventListener('focus', () => gridInput.style.borderColor = '#00d4ff88');
-    gridInput.addEventListener('blur',  () => gridInput.style.borderColor = '#2a3a50');
-    const gridPx = document.createElement('span');
-    gridPx.textContent = 'px';
-    gridPx.style.cssText = 'font-size:9px;color:#556';
-
-    const btnCol = document.createElement('button');
-    function updateColBtn() {
-      btnCol.textContent = ML.state.noOverlap ? '\u26D4 COL ON' : '\u26AA COL OFF';
-      btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#2a2a3a';
-      btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#888';
-      btnCol.style.boxShadow = ML.state.noOverlap ? '0 0 5px #ff884455' : 'none';
-    }
-    btnCol.style.cssText = 'border:1px solid #333;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:9px;font-family:monospace;font-weight:bold;white-space:nowrap;margin-left:auto';
-    btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); };
-    updateColBtn();
-
-    snapRow.append(btnSnap, gridLabel, gridInput, gridPx, btnCol);
-    panel.appendChild(snapRow);
-
-    // Grid de canais
-    const grid = document.createElement('div');
-    grid.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-bottom:8px';
-
-    ML.CHANNELS.forEach(ch => {
-      const row = document.createElement('div');
-      row.style.cssText = [
-        'display:flex;align-items:center;gap:5px;padding:3px 4px;border-radius:5px',
-        `border:1px solid ${ch.active ? ch.color+'55' : '#1e1e30'}`,
-        `background:${ch.active ? ch.color+'0a' : 'transparent'}`,
-        `transition:all .2s;opacity:${ch.active ? 1 : .45}`,
-      ].join(';');
-
-      const tog = document.createElement('button');
-      tog.style.cssText = `width:14px;height:14px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active?ch.color:'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
-      tog.title = 'Ativar/desativar';
-      tog.onclick = () => {
-        ch.active = !ch.active;
-        tog.style.background = ch.active ? ch.color : 'transparent';
-        row.style.border     = `1px solid ${ch.active ? ch.color+'55' : '#1e1e30'}`;
-        row.style.background = ch.active ? ch.color+'0a' : 'transparent';
-        row.style.opacity    = ch.active ? 1 : .45;
-        ch.probe.style.display = ch.active ? 'block' : 'none';
-        if (!ch.active) ch.prevLum = null;
-      };
-
-      const lbl = document.createElement('input');
-      lbl.value = ch.label;
-      lbl.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;width:78px;outline:none;cursor:text;flex-shrink:0`;
-      lbl.addEventListener('change', () => {
-        ch.label = lbl.value;
-        if (ch.probeLabel) ch.probeLabel.textContent = lbl.value;
-      });
-
-      const szWrap = document.createElement('div');
-      szWrap.style.cssText = 'display:flex;align-items:center;gap:1px;flex-shrink:0';
-
-      const szInput = document.createElement('input');
-      szInput.type = 'number'; szInput.min = 16; szInput.max = 500; szInput.step = 2;
-      szInput.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
-      szInput.title = 'Largura do probe (16\u2013500px). Altura calculada em 16:9.';
-      szInput.style.cssText = 'background:#111827;border:1px solid #2a3a50;color:#aed6f1;font:bold 10px monospace;width:40px;border-radius:3px;padding:1px 3px;text-align:center;outline:none;-moz-appearance:textfield';
-      szInput.addEventListener('focus', () => szInput.style.borderColor = '#00d4ff88');
-      szInput.addEventListener('blur',  () => szInput.style.borderColor = '#2a3a50');
-
-      const szPxLbl = document.createElement('span');
-      const initH = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) * (9/16));
-      szPxLbl.textContent = 'px (' + initH + 'h)';
-      szPxLbl.style.cssText = 'font-size:8px;color:#556;white-space:nowrap;margin-left:2px';
-
-      function applySize(v) {
-        const clamped = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
-        szInput.value = clamped;
-        ch.probeW = clamped;
-        if (ch.active && ch.resize) ch.resize();
-        szPxLbl.textContent = 'px (' + Math.round(clamped * (9/16)) + 'h)';
-      }
-      szInput.addEventListener('change', () => applySize(parseInt(szInput.value) || ML.state.probeW));
-      szInput.addEventListener('keydown', e => {
-        if (e.key === 'ArrowUp')   { e.preventDefault(); applySize((parseInt(szInput.value)||16) + 2); }
-        if (e.key === 'ArrowDown') { e.preventDefault(); applySize((parseInt(szInput.value)||16) - 2); }
-      });
-
-      szWrap.append(szInput, szPxLbl);
-
-      const lumEl = document.createElement('span');
-      lumEl.style.cssText = `color:${ch.color};font-size:13px;font-weight:bold;min-width:28px;text-align:right;margin-left:auto`;
-      lumEl.textContent = '--';
-      ch.lumEl = lumEl;
-
-      const ptsEl = document.createElement('span');
-      ptsEl.style.cssText = 'color:#555;font-size:8px;margin-left:2px;white-space:nowrap';
-      ptsEl.textContent = '0pt';
-      ch.ptsEl = ptsEl;
-
-      row.append(tog, lbl, szWrap, lumEl, ptsEl);
-      grid.appendChild(row);
-    });
-    panel.appendChild(grid);
-
-    // Separador
-    const sep = document.createElement('div');
-    sep.style.cssText = 'border-top:1px solid #2a2a3a;margin:4px 0 6px';
-    panel.appendChild(sep);
-
-    // Linha de controles de análise
-    const analyzeRow = document.createElement('div');
-    analyzeRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:6px';
-
-    const lagLabel = document.createElement('span');
-    lagLabel.textContent = 'Max lag:';
-    lagLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap';
-
-    const lagSel = document.createElement('select');
-    lagSel.style.cssText = 'background:#1e1e30;border:1px solid #333;color:#ccc;font-size:9px;border-radius:3px;padding:1px 2px';
-    // Opções: 5, 15, 30s (45s removido)
-    [5000, 15000, 30000].forEach(v => {
-      const o = document.createElement('option');
-      o.value = v; o.textContent = (v/1000)+'s';
-      if (v === 30000) o.selected = true;
-      lagSel.appendChild(o);
-    });
-
     const btnAnalyze = document.createElement('button');
-    btnAnalyze.textContent = '\u26A1 ANALISAR TUDO';
-    btnAnalyze.style.cssText = 'flex:1;background:#1a3a7a;border:none;color:#fff;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:10px;font-family:monospace;font-weight:bold;opacity:.5';
+    btnAnalyze.textContent = '\u26a1 ANALISAR';
+    btnAnalyze.style.cssText = 'background:#112050;border:1px solid #1a3a7a66;color:#8ab4f8;border-radius:4px;padding:3px 8px;cursor:not-allowed;font-size:9px;font-family:monospace;font-weight:bold;opacity:.4;white-space:nowrap';
     btnAnalyze.onclick = async () => {
-      statusEl.textContent = 'Calculando correla\u00E7\u00F5es...';
+      statusEl.textContent = 'Calculando...';
       statusEl.style.color = '#aaa';
       const maxLagMs = parseInt(lagSel.value);
       const results = ML.correlator.analyzeAll(maxLagMs);
-      renderResultsTable(results);
+      results.forEach(r => {
+        const ch = r.channel;
+        if (!ch || r.isReference) return;
+        if (ch.offsetEl) {
+          if (r.skipped || r.error) { ch.offsetEl.textContent = r.error ? 'ERR' : '--'; ch.offsetEl.style.color = r.error ? '#ff4444' : '#444'; }
+          else { const s = r.offsetMs/1000; const sg = s>0?'+':''; ch.offsetEl.textContent = sg+s.toFixed(3)+'s'; ch.offsetEl.style.color = Math.abs(s)<.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#ff8844'; }
+        }
+        if (ch.confEl) {
+          if (r.confidence != null && !r.error && !r.skipped) { ch.confEl.textContent = Math.round(r.confidence*100)+'%'; ch.confEl.style.color = r.confidence>.6?'#44ff88':r.confidence>.3?'#ffd700':'#ff4444'; }
+          else ch.confEl.textContent = '--';
+        }
+      });
       const first = results.find(r => !r.isReference && !r.error && !r.skipped);
-      if (first) {
-        const r = ML.correlator.analyze(ML.CHANNELS[0], first.channel, maxLagMs);
-        if (!r.error) ML.chart.show(r);
-      }
+      if (first) { const r = ML.correlator.analyze(ML.CHANNELS[0], first.channel, maxLagMs); if (!r.error) ML.chart.show(r); }
       const errs = results.filter(r => r.error);
-      statusEl.textContent = errs.length
-        ? errs.map(r => r.label + ': ' + r.error).join(' | ')
-        : 'An\u00E1lise conclu\u00EDda';
+      statusEl.textContent = errs.length ? errs.map(r => r.label+': '+r.error).join(' | ') : 'An\u00e1lise conclu\u00edda';
       statusEl.style.color = errs.length ? '#ff8844' : '#44ff88';
     };
     Object.defineProperty(btnAnalyze, 'disabled', {
-      set(v) { this._disabled = v; this.style.opacity = v ? .5 : 1; this.style.cursor = v ? 'not-allowed' : 'pointer'; },
+      set(v) { this._disabled=v; this.style.opacity=v?.4:1; this.style.cursor=v?'not-allowed':'pointer'; },
       get() { return this._disabled; },
     });
     btnAnalyze.disabled = true;
 
-    analyzeRow.append(lagLabel, lagSel, btnAnalyze);
-    panel.appendChild(analyzeRow);
+    const lagRow2 = row(3);
+    lagRow2.appendChild(lbl('Max lag'));
+    const lagSel = document.createElement('select');
+    lagSel.style.cssText = 'background:#15152a;border:1px solid #2a2a3a;color:#aaa;font-size:8px;border-radius:3px;padding:0 2px;flex:1';
+    // 45s removido — instabilidade na correlação
+    [5000, 15000, 30000].forEach(v => { const o=document.createElement('option'); o.value=v; o.textContent=(v/1000)+'s'; if(v===30000) o.selected=true; lagSel.appendChild(o); });
+    lagRow2.append(lagSel);
 
-    // Tabela de resultados
-    const tableWrap = document.createElement('div');
-    tableWrap.style.cssText = 'margin-bottom:6px';
+    cAn.append(btnRec, btnAnalyze, lagRow2);
+    body.appendChild(cAn);
 
-    const table = document.createElement('table');
-    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
-
-    const thead = document.createElement('thead');
-    thead.innerHTML = `<tr>
-      <th style="text-align:left;color:#555;padding:2px 3px;border-bottom:1px solid #2a2a3a">CANAL</th>
-      <th style="text-align:right;color:#555;padding:2px 3px;border-bottom:1px solid #2a2a3a">OFFSET</th>
-      <th style="text-align:right;color:#555;padding:2px 3px;border-bottom:1px solid #2a2a3a">CONF.</th>
-    </tr>`;
-    table.appendChild(thead);
-
-    const tbody = document.createElement('tbody');
-    table.appendChild(tbody);
-    tableWrap.appendChild(table);
-    panel.appendChild(tableWrap);
-
-    function clearResultsTable() {
-      tbody.innerHTML = '';
-    }
-
-    function renderResultsTable(results) {
-      tbody.innerHTML = '';
-      results.forEach(r => {
-        const tr = document.createElement('tr');
-        const color = r.channel ? r.channel.color : '#aaa';
-
-        const tdLabel = document.createElement('td');
-        tdLabel.style.cssText = `padding:3px 3px;color:${color};font-weight:bold`;
-        tdLabel.textContent = (r.isReference ? '\u2605 ' : '') + r.label;
-
-        const tdOffset = document.createElement('td');
-        tdOffset.style.cssText = 'padding:3px 3px;text-align:right;font-weight:bold';
-        if (r.isReference) {
-          tdOffset.textContent = '0.000s';
-          tdOffset.style.color = '#44ff88';
-        } else if (r.skipped) {
-          tdOffset.textContent = '--';
-          tdOffset.style.color = '#555';
-        } else if (r.error) {
-          tdOffset.textContent = 'ERRO';
-          tdOffset.style.color = '#ff4444';
-        } else {
-          const s = r.offsetMs / 1000;
-          const sign = s > 0 ? '+' : '';
-          tdOffset.textContent = sign + s.toFixed(3) + 's';
-          tdOffset.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
-        }
-
-        const tdConf = document.createElement('td');
-        tdConf.style.cssText = 'padding:3px 3px;text-align:right;color:#888';
-        if (r.isReference) {
-          tdConf.textContent = '100%';
-          tdConf.style.color = '#44ff88';
-        } else if (r.confidence != null) {
-          tdConf.textContent = Math.round(r.confidence * 100) + '%';
-          tdConf.style.color = r.confidence > 0.6 ? '#44ff88' : r.confidence > 0.3 ? '#ffd700' : '#ff4444';
-        } else {
-          tdConf.textContent = '--';
-        }
-
-        tr.append(tdLabel, tdOffset, tdConf);
-        tbody.appendChild(tr);
-      });
-    }
-
-    // Status
+    // ── Status bar ───────────────────────────────────────────────────────────────────
     const statusEl = document.createElement('div');
-    statusEl.style.cssText = 'font-size:9px;color:#888;margin-top:2px;text-align:center;font-style:italic';
-    statusEl.textContent = 'Posicione os probes nos v\u00EDdeos e clique \u25CF GRAVAR';
+    statusEl.style.cssText = [
+      'font-size:8px;color:#555;padding:2px 10px 3px',
+      'border-top:1px solid #1a1a2a;text-align:center;font-style:italic',
+      'background:#07070f99;border-radius:0 0 6px 6px',
+    ].join(';');
+    statusEl.textContent = 'Posicione os probes nos v\u00eddeos e clique \u25cf GRAVAR';
     panel.appendChild(statusEl);
 
     document.body.appendChild(panel);
     ML._ui = { btnRec, btnAnalyze, statusEl };
 
-    setInterval(() => {
-      ML.CHANNELS.forEach(ch => { if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length + 'pt'; });
-    }, 1000);
-
-    console.log('[MedLat] 50-panel carregado.');
+    setInterval(() => { ML.CHANNELS.forEach(ch => { if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length; }); }, 1000);
+    console.log('[MedLat] 50-panel carregado (slim).');
   }
 
   ML.panel = { init };
