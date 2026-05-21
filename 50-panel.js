@@ -10,8 +10,11 @@
   }
 
   function init() {
-    // Remove instância anterior
-    document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove());
+    // Remove apenas painel e overlay — probes são preservados
+    ['ml-panel', 'ml-chart-overlay'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    });
 
     // ── Painel principal ──────────────────────────────────
     const panel = document.createElement('div');
@@ -34,7 +37,11 @@
     const btnX = document.createElement('button');
     btnX.textContent = '✕';
     btnX.style.cssText = 'background:#e94560;border:none;color:#fff;border-radius:4px;padding:0 6px;cursor:pointer;font-size:11px';
-    btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove()); };
+    btnX.onclick = () => {
+      ML.recorder.stop();
+      // Ao fechar, remove tudo incluindo probes
+      document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove());
+    };
     hdr.append(ttl, btnX);
     panel.appendChild(hdr);
 
@@ -75,7 +82,6 @@
       ML.CHANNELS.forEach(ch => ch.active && ch.resize && ch.resize());
     });
 
-    // Seletor de duração do buffer
     const durLabel = document.createElement('span');
     durLabel.textContent = 'Buf:';
     durLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap;margin-left:4px';
@@ -174,7 +180,6 @@
     cmpLabel.textContent = 'ANALISAR: canal A vs canal B';
     panel.appendChild(cmpLabel);
 
-    // Seletores de canal
     const selRow = document.createElement('div');
     selRow.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center';
 
@@ -196,7 +201,6 @@
     vsSpan.style.cssText = 'font-size:10px;color:#555';
     const selB = mkSel(1);
 
-    // Seletor de janela de lag máximo
     const lagLabel = document.createElement('span');
     lagLabel.textContent = 'Max lag:';
     lagLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap';
@@ -214,7 +218,6 @@
 
     const btnAnalyze = document.createElement('button');
     btnAnalyze.textContent = '⚡ ANALISAR';
-    btnAnalyze.disabled = true;
     btnAnalyze.style.cssText = 'width:100%;background:#1a3a7a;border:none;color:#fff;border-radius:5px;padding:5px;cursor:pointer;font-size:11px;font-family:monospace;font-weight:bold;margin-bottom:6px;opacity:.5';
     btnAnalyze.onclick = async () => {
       const chA = ML.CHANNELS[parseInt(selA.value)];
@@ -226,8 +229,6 @@
       statusEl.style.color = result.error ? '#ff4444' : '#ffd700';
       if (!result.error) ML.chart.show(result);
     };
-    btnAnalyze.addEventListener('click', () => {}, false);
-    // Habilita botão quando não gravando
     Object.defineProperty(btnAnalyze, 'disabled', {
       set(v) { this._disabled = v; this.style.opacity = v ? .5 : 1; this.style.cursor = v ? 'not-allowed' : 'pointer'; },
       get() { return this._disabled; },
@@ -243,10 +244,8 @@
 
     document.body.appendChild(panel);
 
-    // Reencaminha referência do botão para fora do closure de recorder.stop()
     ML._ui = { btnRec, btnAnalyze, statusEl };
 
-    // Atualiza contagem de pontos no painel a cada segundo
     setInterval(() => {
       ML.CHANNELS.forEach(ch => {
         if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length + 'pt';
