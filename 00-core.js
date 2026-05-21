@@ -1,37 +1,37 @@
 (function () {
-  // Limpa instância anterior se existir
+  // Para loop anterior se existir
   if (window.MedLat && window.MedLat.stop) window.MedLat.stop();
-  document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove());
+  // Remove apenas painel e overlay — probes serão recriados pelo 10-probes.js
+  ['ml-panel', 'ml-chart-overlay'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  });
+  // Remove probes antigos especificamente
+  document.querySelectorAll('[id^="ml-probe-"]').forEach(e => e.remove());
 
   window.MedLat = {
-    // ── Configuração dos canais ─────────────────────────────
     CHANNELS: [
-      { id:'ch0', label:'Tela 1', color:'#00d4ff', active:true  },
-      { id:'ch1', label:'Tela 2', color:'#ff4444', active:true  },
-      { id:'ch2', label:'Tela 3', color:'#44ff88', active:true  },
-      { id:'ch3', label:'Tela 4', color:'#ffd700', active:true  },
+      { id:'ch0', label:'Tela 1', color:'#00d4ff', active:false },
+      { id:'ch1', label:'Tela 2', color:'#ff4444', active:false },
+      { id:'ch2', label:'Tela 3', color:'#44ff88', active:false },
+      { id:'ch3', label:'Tela 4', color:'#ffd700', active:false },
     ],
 
-    // ── Constantes ─────────────────────────────────────────
-    INTERVAL_MS:    33,     // ~30fps (1 frame)
+    INTERVAL_MS:    33,
     ASPECT:         9/16,
-    BUFFER_SECONDS: 120,    // máximo de segundos gravados por canal
+    BUFFER_SECONDS: 120,
 
-    // ── Estado global ───────────────────────────────────────
     state: {
       running:   false,
       recording: false,
       probeW:    64,
     },
 
-    stop() {
-      this.state.running = false;
-    },
+    stop() { this.state.running = false; },
   };
 
-  // Inicializa buffers e canvas por canal
   window.MedLat.CHANNELS.forEach(ch => {
-    ch.buffer  = [];   // [{ts, lum}]
+    ch.buffer  = [];
     ch.prevLum = null;
     ch.off     = null;
     ch.ctx     = null;
