@@ -67,13 +67,14 @@
     szVal.style.cssText = 'font-size:11px;color:#fff;min-width:32px;text-align:center;font-weight:bold';
     szVal.textContent = ML.state.probeW + 'px';
 
+    // step 2px (era 8px)
     const btnMinus = mkBtn('\u2212', '#1e3a5f', () => {
-      ML.state.probeW = Math.max(16, ML.state.probeW - 8);
+      ML.state.probeW = Math.max(16, ML.state.probeW - 2);
       szVal.textContent = ML.state.probeW + 'px';
       ML.CHANNELS.forEach(ch => { if (ch.active && ch.resize && ch.probeW == null) ch.resize(); });
     });
     const btnPlus = mkBtn('+', '#1e3a5f', () => {
-      ML.state.probeW = Math.min(500, ML.state.probeW + 8);
+      ML.state.probeW = Math.min(500, ML.state.probeW + 2);
       szVal.textContent = ML.state.probeW + 'px';
       ML.CHANNELS.forEach(ch => { if (ch.active && ch.resize && ch.probeW == null) ch.resize(); });
     });
@@ -133,18 +134,18 @@
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); };
     updateSnapBtn();
 
-    // Tamanho do grid
+    // Tamanho do grid — step 2px (era 4px)
     const gridLabel = document.createElement('span');
     gridLabel.textContent = 'Grid:';
     gridLabel.style.cssText = 'font-size:9px;color:#888;white-space:nowrap';
 
     const gridInput = document.createElement('input');
     gridInput.type = 'number';
-    gridInput.min = 4; gridInput.max = 100; gridInput.step = 4;
+    gridInput.min = 2; gridInput.max = 100; gridInput.step = 2;
     gridInput.value = ML.state.snapSize;
     gridInput.style.cssText = 'background:#111827;border:1px solid #2a3a50;color:#aed6f1;font:bold 10px monospace;width:36px;border-radius:3px;padding:1px 3px;text-align:center;outline:none';
     gridInput.addEventListener('change', () => {
-      ML.state.snapSize = Math.max(4, Math.min(100, parseInt(gridInput.value) || 20));
+      ML.state.snapSize = Math.max(2, Math.min(100, parseInt(gridInput.value) || 20));
       gridInput.value = ML.state.snapSize;
     });
     gridInput.addEventListener('focus', () => gridInput.style.borderColor = '#00d4ff88');
@@ -205,8 +206,9 @@
       const szWrap = document.createElement('div');
       szWrap.style.cssText = 'display:flex;align-items:center;gap:1px;flex-shrink:0';
 
+      // step 2px (era 8px)
       const szInput = document.createElement('input');
-      szInput.type = 'number'; szInput.min = 16; szInput.max = 500; szInput.step = 8;
+      szInput.type = 'number'; szInput.min = 16; szInput.max = 500; szInput.step = 2;
       szInput.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
       szInput.title = 'Largura do probe (16\u2013500px). Altura calculada em 16:9.';
       szInput.style.cssText = 'background:#111827;border:1px solid #2a3a50;color:#aed6f1;font:bold 10px monospace;width:40px;border-radius:3px;padding:1px 3px;text-align:center;outline:none;-moz-appearance:textfield';
@@ -218,8 +220,9 @@
       szPxLbl.textContent = 'px (' + initH + 'h)';
       szPxLbl.style.cssText = 'font-size:8px;color:#556;white-space:nowrap;margin-left:2px';
 
+      // arredondamento agora em múltiplos de 2 (era 8)
       function applySize(v) {
-        const clamped = Math.max(16, Math.min(500, Math.round(v / 8) * 8));
+        const clamped = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
         szInput.value = clamped;
         ch.probeW = clamped;
         if (ch.active && ch.resize) ch.resize();
@@ -227,8 +230,8 @@
       }
       szInput.addEventListener('change', () => applySize(parseInt(szInput.value) || ML.state.probeW));
       szInput.addEventListener('keydown', e => {
-        if (e.key === 'ArrowUp')   { e.preventDefault(); applySize((parseInt(szInput.value)||16) + 8); }
-        if (e.key === 'ArrowDown') { e.preventDefault(); applySize((parseInt(szInput.value)||16) - 8); }
+        if (e.key === 'ArrowUp')   { e.preventDefault(); applySize((parseInt(szInput.value)||16) + 2); }
+        if (e.key === 'ArrowDown') { e.preventDefault(); applySize((parseInt(szInput.value)||16) - 2); }
       });
 
       szWrap.append(szInput, szPxLbl);
