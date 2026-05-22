@@ -7,7 +7,6 @@
       if (el) el.remove();
     });
 
-    // ── Painel principal ─────────────────────────────────────────────────────
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
     panel.style.cssText = [
@@ -16,10 +15,10 @@
       'border-radius:4px',
       'box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#ccc',
-      'user-select:none;min-width:840px;max-width:98vw',
+      'user-select:none;min-width:720px;max-width:98vw',
     ].join(';');
 
-    // ── Header arrastável ────────────────────────────────────────────────────
+    // ── Header arrastável ──────────────────────────────────────────────────
     const hdr = document.createElement('div');
     hdr.style.cssText = [
       'display:flex;justify-content:space-between;align-items:center',
@@ -42,7 +41,6 @@
     hdr.append(ttl, btnX);
     panel.appendChild(hdr);
 
-    // drag
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => {
       pdrag = true;
@@ -57,14 +55,14 @@
     });
     window.addEventListener('mouseup', () => pdrag = false);
 
-    // ── Corpo: 5 colunas ─────────────────────────────────────────────────────
+    // ── Corpo ──────────────────────────────────────────────────────────────
     const body = document.createElement('div');
     body.style.cssText = 'display:flex;align-items:stretch;gap:0';
     panel.appendChild(body);
 
     function colDiv(minW) {
       const d = document.createElement('div');
-      d.style.cssText = `display:flex;flex-direction:column;gap:3px;padding:5px 8px;min-width:${minW}px;border-right:1px solid #1e1e3a`;
+      d.style.cssText = `display:flex;flex-direction:column;gap:4px;padding:5px 8px;min-width:${minW}px;border-right:1px solid #1e1e3a`;
       return d;
     }
     function colHdr(txt) {
@@ -73,44 +71,63 @@
       s.style.cssText = 'font-size:7px;color:#4a4a6a;letter-spacing:.12em;font-weight:bold;margin-bottom:2px;text-transform:uppercase;border-bottom:1px solid #1e1e3a;padding-bottom:2px';
       return s;
     }
-    function mkBtn(txt, bg, extra) {
+    function mkBtn(txt, bg) {
       const b = document.createElement('button');
       b.textContent = txt;
-      b.style.cssText = `background:${bg};border:1px solid ${bg}66;color:#fff;border-radius:3px;padding:2px 7px;cursor:pointer;font-size:9px;font-family:monospace;font-weight:bold;white-space:nowrap;${extra||''}`;
+      b.style.cssText = `background:${bg};border:1px solid ${bg}66;color:#fff;border-radius:3px;padding:1px 6px;cursor:pointer;font-size:10px;font-family:monospace;font-weight:bold;white-space:nowrap`;
       return b;
     }
+    function mkNumInput(val, min, max, step, w) {
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.min = min; inp.max = max; inp.step = step;
+      inp.value = val;
+      inp.style.cssText = `background:#111827;border:1px solid #2a3a50;color:#00d4ff;font:bold 10px monospace;width:${w}px;border-radius:3px;padding:1px 3px;text-align:center;outline:none;-moz-appearance:textfield`;
+      inp.addEventListener('focus', () => inp.style.borderColor = '#00d4ff88');
+      inp.addEventListener('blur',  () => inp.style.borderColor = '#2a3a50');
+      return inp;
+    }
 
-    // ── COLUNA 1: Telas ──────────────────────────────────────────────────────
-    const colTelas = colDiv(96);
+    // ── COLUNA 1: Telas ────────────────────────────────────────────────────
+    const colTelas = colDiv(120);
     colTelas.appendChild(colHdr('Telas'));
 
-    const qtLabel = document.createElement('span');
-    qtLabel.style.cssText = 'font-size:9px;color:#667';
-    qtLabel.textContent = 'Qt. Telas: ' + ML.CHANNELS.filter(c => c.active).length;
-    setInterval(() => { qtLabel.textContent = 'Qt. Telas: ' + ML.CHANNELS.filter(c => c.active).length; }, 1000);
-
+    // PX Global: [−] [input] [+]
     const pxRow = document.createElement('div');
     pxRow.style.cssText = 'display:flex;align-items:center;gap:3px';
     const pxLbl = document.createElement('span');
     pxLbl.textContent = 'PX Global';
     pxLbl.style.cssText = 'font-size:9px;color:#667;white-space:nowrap';
-    const pxVal = document.createElement('span');
-    pxVal.style.cssText = 'font-size:10px;color:#00d4ff;font-weight:bold;min-width:26px;text-align:center';
-    pxVal.textContent = ML.state.probeW;
+
+    const pxInp = mkNumInput(ML.state.probeW, 16, 500, 2, 42);
+
+    // aplica novo valor global e sincroniza inputs individuais
+    function applyGlobalPx(v) {
+      const clamped = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
+      ML.state.probeW = clamped;
+      pxInp.value = clamped;
+      ML.CHANNELS.forEach(ch => {
+        if (ch.probeW == null) {
+          // canal ainda em modo "global": atualiza input individual
+          if (ch._szInp) ch._szInp.value = clamped;
+          if (ch._szHLbl) ch._szHLbl.textContent = '(' + Math.round(clamped * 9/16) + 'h)';
+          if (ch.active && ch.resize) ch.resize();
+        }
+      });
+    }
+
     const btnPxM = mkBtn('\u2212', '#1e2a3a');
     const btnPxP = mkBtn('+', '#1e2a3a');
-    btnPxM.onclick = () => {
-      ML.state.probeW = Math.max(16, ML.state.probeW - 2);
-      pxVal.textContent = ML.state.probeW;
-      ML.CHANNELS.forEach(ch => { if (ch.active && ch.resize && ch.probeW == null) ch.resize(); });
-    };
-    btnPxP.onclick = () => {
-      ML.state.probeW = Math.min(500, ML.state.probeW + 2);
-      pxVal.textContent = ML.state.probeW;
-      ML.CHANNELS.forEach(ch => { if (ch.active && ch.resize && ch.probeW == null) ch.resize(); });
-    };
-    pxRow.append(pxLbl, btnPxM, pxVal, btnPxP);
+    btnPxM.onclick = () => applyGlobalPx(ML.state.probeW - 2);
+    btnPxP.onclick = () => applyGlobalPx(ML.state.probeW + 2);
+    pxInp.addEventListener('change', () => applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW));
+    pxInp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); }
+    });
 
+    pxRow.append(pxLbl, btnPxM, pxInp, btnPxP);
+
+    // Buffer
     const bufRow = document.createElement('div');
     bufRow.style.cssText = 'display:flex;align-items:center;gap:4px;margin-top:1px';
     const bufLbl = document.createElement('span');
@@ -127,10 +144,10 @@
     durSel.onchange = () => { ML.BUFFER_SECONDS = parseInt(durSel.value); };
     bufRow.append(bufLbl, durSel);
 
-    colTelas.append(qtLabel, pxRow, bufRow);
+    colTelas.append(pxRow, bufRow);
     body.appendChild(colTelas);
 
-    // ── COLUNA 2: Grid ───────────────────────────────────────────────────────
+    // ── COLUNA 2: Grid ─────────────────────────────────────────────────────
     const colGrid = colDiv(90);
     colGrid.appendChild(colHdr('Grid'));
 
@@ -157,16 +174,12 @@
     const gridLbl = document.createElement('span');
     gridLbl.textContent = 'GRID';
     gridLbl.style.cssText = 'font-size:9px;color:#667';
-    const gridInput = document.createElement('input');
-    gridInput.type = 'number'; gridInput.min = 2; gridInput.max = 100; gridInput.step = 2;
-    gridInput.value = ML.state.snapSize;
-    gridInput.style.cssText = 'background:#111827;border:1px solid #2a3a50;color:#00d4ff;font:bold 10px monospace;width:38px;border-radius:3px;padding:1px 3px;text-align:center;outline:none';
+    const gridInput = mkNumInput(ML.state.snapSize, 2, 100, 2, 38);
+    gridInput.style.color = '#00d4ff';
     gridInput.addEventListener('change', () => {
       ML.state.snapSize = Math.max(2, Math.min(100, parseInt(gridInput.value) || 20));
       gridInput.value = ML.state.snapSize;
     });
-    gridInput.addEventListener('focus', () => gridInput.style.borderColor = '#00d4ff88');
-    gridInput.addEventListener('blur',  () => gridInput.style.borderColor = '#2a3a50');
     const gridPxLbl = document.createElement('span');
     gridPxLbl.textContent = 'px';
     gridPxLbl.style.cssText = 'font-size:9px;color:#3a3a5a';
@@ -175,9 +188,9 @@
     colGrid.append(btnSnap, btnCol, gridRow);
     body.appendChild(colGrid);
 
-    // ── COLUNAS 3+4: Detalhamento ─────────────────────────────────────────────
+    // ── COLUNAS 3+4: Detalhamento (4 canais, 2×2) ─────────────────────────
     const colDet = document.createElement('div');
-    colDet.style.cssText = 'display:flex;flex-direction:column;padding:5px 8px;border-right:1px solid #1e1e3a;flex:1;min-width:420px';
+    colDet.style.cssText = 'display:flex;flex-direction:column;padding:5px 8px;border-right:1px solid #1e1e3a;flex:1;min-width:380px';
     colDet.appendChild(colHdr('Detalhamento'));
 
     const chanGrid = document.createElement('div');
@@ -187,26 +200,28 @@
     function miniHdrRow() {
       const r = document.createElement('div');
       r.style.cssText = 'display:flex;align-items:center;gap:0;font-size:8px;color:#3a3a5a;margin-bottom:1px';
-      ['', 'Lum', 'pt', 'offset', 'confian\u00e7a'].forEach((t, i) => {
+      // colunas: toggle+label | px controls | lum | pt | offset | conf
+      [['flex:1',''], ['width:88px;text-align:center','PX'], ['width:28px;text-align:right','Lum'],
+       ['width:22px;text-align:right','pt'], ['width:48px;text-align:right','offset'],
+       ['width:44px;text-align:right','conf']].forEach(([st, t]) => {
         const s = document.createElement('span');
         s.textContent = t;
-        const widths = ['flex:1', 'width:32px;text-align:right', 'width:28px;text-align:right', 'width:52px;text-align:right', 'width:52px;text-align:right'];
-        s.style.cssText = widths[i] + ';text-decoration:' + (t ? 'underline' : 'none');
+        s.style.cssText = st + (t ? ';text-decoration:underline' : '');
         r.appendChild(s);
       });
       return r;
     }
 
-    const leftIdxs  = [0, 1, 3];
-    const rightIdxs = [2, 4, 5];
-
-    function buildSubCol(idxs) {
+    // 4 canais divididos em 2 sub-colunas: [0,1] e [2,3]
+    [[0, 1], [2, 3]].forEach(idxs => {
       const wrap = document.createElement('div');
       wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px';
       wrap.appendChild(miniHdrRow());
+
       idxs.forEach(i => {
         const ch = ML.CHANNELS[i];
         if (!ch) return;
+
         const row = document.createElement('div');
         row.style.cssText = [
           'display:flex;align-items:center;gap:0;padding:2px 3px;border-radius:4px',
@@ -217,8 +232,9 @@
         ].join(';');
         ch._panelRow = row;
 
+        // toggle
         const tog = document.createElement('button');
-        tog.style.cssText = `width:9px;height:9px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0;margin-right:4px`;
+        tog.style.cssText = `width:9px;height:9px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0;margin-right:3px`;
         tog.onclick = () => {
           ch.active = !ch.active;
           tog.style.background = ch.active ? ch.color : 'transparent';
@@ -227,48 +243,86 @@
           if (!ch.active) ch.prevLum = null;
         };
 
+        // label
         const lbl = document.createElement('input');
-        lbl.value = ch.label;
-        const isRef = (i === 0);
-        lbl.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 9px monospace;width:60px;outline:none;cursor:text;flex:1`;
-        if (isRef) lbl.value = '\u2605 ' + ch.label;
+        lbl.value = i === 0 ? '\u2605 ' + ch.label : ch.label;
+        lbl.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 9px monospace;width:52px;outline:none;cursor:text;flex:1`;
         lbl.addEventListener('change', () => {
           ch.label = lbl.value.replace(/^\u2605\s*/, '');
           if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
         });
 
+        // PX individual: [−] [input] [+] (h)
+        const szWrap = document.createElement('div');
+        szWrap.style.cssText = 'display:flex;align-items:center;gap:1px;width:88px;flex-shrink:0';
+
+        const szInp = mkNumInput(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 34);
+        ch._szInp = szInp;
+
+        const szHLbl = document.createElement('span');
+        const curW = ch.probeW != null ? ch.probeW : ML.state.probeW;
+        szHLbl.textContent = '(' + Math.round(curW * 9/16) + 'h)';
+        szHLbl.style.cssText = 'font-size:7px;color:#445;white-space:nowrap;margin-left:1px';
+        ch._szHLbl = szHLbl;
+
+        function applyChanPx(v) {
+          const clamped = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
+          ch.probeW = clamped;
+          szInp.value = clamped;
+          szHLbl.textContent = '(' + Math.round(clamped * 9/16) + 'h)';
+          if (ch.active && ch.resize) ch.resize();
+        }
+
+        const szM = mkBtn('\u2212', '#1e2a3a');
+        const szP = mkBtn('+', '#1e2a3a');
+        szM.style.padding = '0 4px'; szP.style.padding = '0 4px';
+        szM.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) - 2);
+        szP.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) + 2);
+        szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
+        szInp.addEventListener('keydown', e => {
+          if (e.key === 'Enter') { e.preventDefault(); applyChanPx(parseInt(szInp.value) || ML.state.probeW); szInp.blur(); }
+          if (e.key === 'ArrowUp')   { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16) + 2); }
+          if (e.key === 'ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16) - 2); }
+        });
+
+        szWrap.append(szM, szInp, szP, szHLbl);
+
+        // lum
         const lumEl = document.createElement('span');
-        lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;width:32px;text-align:right`;
+        lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;width:28px;text-align:right`;
         lumEl.textContent = '--';
         ch.lumEl = lumEl;
 
+        // pts
         const ptsEl = document.createElement('span');
-        ptsEl.style.cssText = 'color:#3a3a5a;font-size:8px;width:28px;text-align:right';
+        ptsEl.style.cssText = 'color:#3a3a5a;font-size:8px;width:22px;text-align:right';
         ptsEl.textContent = '0';
         ch.ptsEl = ptsEl;
 
+        // offset
         const offEl = document.createElement('span');
-        offEl.style.cssText = 'color:#778;font-size:9px;width:52px;text-align:right;font-weight:bold';
-        offEl.textContent = isRef ? '0.000s' : '--';
+        offEl.style.cssText = 'color:#778;font-size:9px;width:48px;text-align:right;font-weight:bold';
+        offEl.textContent = i === 0 ? '0.000s' : '--';
         ch.offsetEl = offEl;
 
+        // conf
         const confEl = document.createElement('span');
-        confEl.style.cssText = 'color:#778;font-size:9px;width:52px;text-align:right';
-        confEl.textContent = isRef ? '100%' : '--';
+        confEl.style.cssText = 'color:#778;font-size:9px;width:44px;text-align:right';
+        confEl.textContent = i === 0 ? '100%' : '--';
         ch.confEl = confEl;
 
-        row.append(tog, lbl, lumEl, ptsEl, offEl, confEl);
+        row.append(tog, lbl, szWrap, lumEl, ptsEl, offEl, confEl);
         wrap.appendChild(row);
       });
-      return wrap;
-    }
 
-    chanGrid.append(buildSubCol(leftIdxs), buildSubCol(rightIdxs));
+      chanGrid.appendChild(wrap);
+    });
+
     body.appendChild(colDet);
 
-    // ── COLUNA 5: Análise ────────────────────────────────────────────────────
+    // ── COLUNA 5: Análise ──────────────────────────────────────────────────
     const colAn = document.createElement('div');
-    colAn.style.cssText = 'display:flex;flex-direction:column;gap:4px;padding:5px 8px;min-width:100px;border-right:none';
+    colAn.style.cssText = 'display:flex;flex-direction:column;gap:4px;padding:5px 8px;min-width:100px';
     colAn.appendChild(colHdr('Analise'));
 
     const btnRec = document.createElement('button');
@@ -369,7 +423,7 @@
     colAn.append(btnRec, btnAnalyze, lagRow);
     body.appendChild(colAn);
 
-    // ── Status bar ───────────────────────────────────────────────────────────
+    // ── Status bar ─────────────────────────────────────────────────────────
     const statusEl = document.createElement('div');
     statusEl.style.cssText = [
       'font-size:9px;color:#667;padding:3px 12px 4px',
@@ -388,7 +442,7 @@
       });
     }, 1000);
 
-    console.log('[MedLat] 50-panel carregado (dark space style).');
+    console.log('[MedLat] 50-panel carregado.');
   }
 
   ML.panel = { init };
