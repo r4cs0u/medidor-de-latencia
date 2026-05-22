@@ -45,16 +45,15 @@
     let px;
     try { px = ch.ctx.getImageData(0, 0, pw, ph).data; } catch (e) { return -1; }
 
-    // Máscara central 60%: ignora bordas onde logos costumam aparecer
-    // Só amostra pixels dentro da região central [20%..80%] em X e Y
-    const xMin = Math.floor(pw * 0.20);
-    const xMax = Math.floor(pw * 0.80);
-    const yMin = Math.floor(ph * 0.20);
-    const yMax = Math.floor(ph * 0.80);
+    // Máscara central 80%: amostra [10%..90%] em X e Y, stride 1px
+    const xMin = Math.floor(pw * 0.10);
+    const xMax = Math.floor(pw * 0.90);
+    const yMin = Math.floor(ph * 0.10);
+    const yMax = Math.floor(ph * 0.90);
 
     let Y = 0, n = 0;
     for (let row = yMin; row < yMax; row++) {
-      for (let col = xMin; col < xMax; col += 4) { // stride horizontal de 4px
+      for (let col = xMin; col < xMax; col++) {
         const i = (row * pw + col) * 4;
         Y += 0.2126 * px[i] + 0.7152 * px[i+1] + 0.0722 * px[i+2];
         n++;
@@ -70,6 +69,8 @@
   }
 
   const EDGE_THRESH = 8;
+  const PROBE_GAP   = 4; // margem mínima entre bordas de probes (colisão)
+
   function edgeSnap(ch, x, y) {
     const pw = probeW(ch), ph = probeH(ch);
     let bL = x, bR = x + pw, bT = y, bB = y + ph;
@@ -106,13 +107,14 @@
       const oT = parseInt(od.style.top)  || 0;
       const oR = oL + ow, oB = oT + oh;
       const bL = x, bR = x + pw, bT = y, bB = y + ph;
-      if (bR <= oL || bL >= oR || bB <= oT || bT >= oB) return;
+      // +PROBE_GAP na verificação de overlap garante margem mínima de 4px
+      if (bR + PROBE_GAP <= oL || bL >= oR + PROBE_GAP || bB + PROBE_GAP <= oT || bT >= oB + PROBE_GAP) return;
       const overlapL = bR - oL, overlapR = oR - bL;
       const overlapT = bB - oT, overlapB = oB - bT;
       const minH = Math.min(overlapL, overlapR);
       const minV = Math.min(overlapT, overlapB);
-      if (minH <= minV) { x = overlapL <= overlapR ? oL - pw : oR; }
-      else              { y = overlapT <= overlapB ? oT - ph : oB; }
+      if (minH <= minV) { x = overlapL <= overlapR ? oL - pw - PROBE_GAP : oR + PROBE_GAP; }
+      else              { y = overlapT <= overlapB ? oT - ph - PROBE_GAP : oB + PROBE_GAP; }
     });
     return { x: Math.max(0, x), y: Math.max(0, y) };
   }
@@ -169,11 +171,11 @@
     const vLine = document.createElement('div');
     vLine.style.cssText = `position:absolute;left:50%;top:0;bottom:0;width:1px;background:${ch.color};opacity:.5;pointer-events:none`;
 
-    // Indicador visual da máscara central (60%)
+    // Indicador visual da máscara central 80% [10%..90%]
     const mask = document.createElement('div');
     mask.style.cssText = [
       'position:absolute',
-      `left:20%;top:20%;width:60%;height:60%`,
+      'left:10%;top:10%;width:80%;height:80%',
       `border:1px dashed ${ch.color}60`,
       'pointer-events:none',
       'box-sizing:border-box',
@@ -191,6 +193,9 @@
       const npw = probeW(ch), nph = probeH(ch);
       d.style.width  = npw + 'px';
       d.style.height = nph + 'px';
+      // Atualiza máscara visual
+      mask.style.left = '10%'; mask.style.top = '10%';
+      mask.style.width = '80%'; mask.style.height = '80%';
       makeOff(ch);
     };
     d.style.display = ch.active ? 'block' : 'none';
@@ -276,10 +281,6 @@
     [Math.round(vw*.28), Math.round(vh*.15)],
     [Math.round(vw*.46), Math.round(vh*.15)],
     [Math.round(vw*.64), Math.round(vh*.15)],
-    [Math.round(vw*.10), Math.round(vh*.55)],
-    [Math.round(vw*.28), Math.round(vh*.55)],
-    [Math.round(vw*.46), Math.round(vh*.55)],
-    [Math.round(vw*.64), Math.round(vh*.55)],
   ];
 
   ML.CHANNELS.forEach((ch, i) => {
@@ -290,5 +291,5 @@
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  console.log('[MedLat] 10-probes: máscara central 60% ativa (ignora bordas com logos).');
+  console.log('[MedLat] 10-probes: máscara 80% [10%..90%], stride 1px, gap colisão=' + PROBE_GAP + 'px.');
 })();

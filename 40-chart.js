@@ -11,13 +11,59 @@
     });
   }
 
+  /**
+   * Converte os picos da derivada em annotations Chart.js.
+   * Retorna array de { xVal, color } para cada pico.
+   */
+  function getPeakAnnotations(channels, maxLen) {
+    const annotations = [];
+    channels.forEach(ch => {
+      const lums = ch.buffer.slice(0, maxLen).map(p => p.lum);
+      if (!lums.length) return;
+      const diff = ML.correlator ? ML.correlator.diffSeries(lums) : [];
+      diff.forEach((d, i) => {
+        if (d > 0) annotations.push({ xIndex: i, color: ch.color });
+      });
+    });
+    return annotations;
+  }
+
+  /**
+   * Desenha linhas verticais (picos de derivada) diretamente no canvas Chart.js
+   * usando o plugin afterDraw.
+   */
+  function makePeakPlugin(peakAnnotations) {
+    return {
+      id: 'peakLines',
+      afterDraw(chart) {
+        if (!peakAnnotations.length) return;
+        const ctx  = chart.ctx;
+        const xAxis = chart.scales.x;
+        const yAxis = chart.scales.y;
+        if (!xAxis || !yAxis) return;
+        ctx.save();
+        peakAnnotations.forEach(({ xIndex, color }) => {
+          const xPx = xAxis.getPixelForValue(xIndex);
+          if (xPx < xAxis.left || xPx > xAxis.right) return;
+          ctx.beginPath();
+          ctx.moveTo(xPx, yAxis.top);
+          ctx.lineTo(xPx, yAxis.bottom);
+          // cor do canal com opacidade 25%
+          ctx.strokeStyle = color + '40';
+          ctx.lineWidth   = 1;
+          ctx.stroke();
+        });
+        ctx.restore();
+      },
+    };
+  }
+
   async function showChart(results) {
     if (!Array.isArray(results)) results = [results];
     await loadChartJs();
     const old = document.getElementById('ml-chart-panel');
     if (old) old.remove();
 
-    /* tamanho inicial = mesma largura do ml-panel, altura quase toda a viewport */
     const mainPanel = document.getElementById('ml-panel');
     const mpRect = mainPanel
       ? mainPanel.getBoundingClientRect()
@@ -40,7 +86,7 @@
       'user-select:none;overflow:hidden;display:flex;flex-direction:column',
     ].join(';');
 
-    /* ── header arrastável ── */
+    /* header arrastável */
     const hdr = document.createElement('div');
     hdr.style.cssText = [
       'display:flex;align-items:center;gap:5px;padding:5px 8px 4px',
@@ -58,20 +104,28 @@
     updateModeBtn();
     btnMode.onclick = () => { chartMode = chartMode === 'parallel' ? 'overlay' : 'parallel'; updateModeBtn(); rebuildCharts(); };
 
+    // Toggle picos
+    let showPeaks = true;
+    const btnPeaks = document.createElement('button');
+    btnPeaks.style.cssText = 'background:#1e2a1a;border:1px solid #44ff8855;color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap';
+    function updatePeaksBtn() { btnPeaks.textContent = showPeaks ? '\u25fc Picos' : '\u25fb Picos'; btnPeaks.style.opacity = showPeaks ? '1' : '0.45'; }
+    updatePeaksBtn();
+    btnPeaks.onclick = () => { showPeaks = !showPeaks; updatePeaksBtn(); rebuildCharts(); };
+
     const btnClose = document.createElement('button');
     btnClose.textContent = '\u2715';
     btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnClose.onclick = () => panel.remove();
-    hdr.append(htitle, btnMode, btnClose);
+    hdr.append(htitle, btnPeaks, btnMode, btnClose);
     panel.appendChild(hdr);
 
-    /* ── drag ── */
+    /* drag */
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => { pdrag = true; panel.style.right = 'auto'; pox = e.clientX - panel.offsetLeft; poy = e.clientY - panel.offsetTop; e.preventDefault(); });
     window.addEventListener('mousemove', e => { if (!pdrag) return; panel.style.left = Math.max(0, e.clientX - pox) + 'px'; panel.style.top = Math.max(0, e.clientY - poy) + 'px'; });
     window.addEventListener('mouseup', () => pdrag = false);
 
-    /* ── resize handles nos 4 cantos ── */
+    /* resize handles */
     [['nw','nw-resize','top:0;left:0'],['ne','ne-resize','top:0;right:0'],
      ['sw','sw-resize','bottom:0;left:0'],['se','se-resize','bottom:0;right:0']]
     .forEach(([cls, cur, pos]) => {
@@ -99,12 +153,12 @@
       });
     });
 
-    /* ── body ── */
+    /* body */
     const body = document.createElement('div');
     body.style.cssText = 'flex:1;overflow-y:auto;padding:6px 8px 6px;display:flex;flex-direction:column;gap:5px;min-height:0';
     panel.appendChild(body);
 
-    /* ── cards compactos 2 colunas ── */
+    /* cards 2 colunas */
     const hasResults = results.some(r => !r.isReference && !r.error && !r.skipped);
     if (hasResults) {
       const grid = document.createElement('div');
@@ -127,7 +181,7 @@
       body.appendChild(grid);
     }
 
-    /* ── canais ativos ── */
+    /* canais ativos */
     const activeChannels = [];
     let maxLen = 0;
     ML.CHANNELS.forEach(ch => {
@@ -143,7 +197,7 @@
       body.appendChild(msg); document.body.appendChild(panel); return;
     }
 
-    /* toggles */
+    /* toggles de canal */
     const toggleBar = document.createElement('div');
     toggleBar.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;flex-shrink:0';
     activeChannels.forEach((ch, idx) => {
@@ -165,89 +219,105 @@
     body.appendChild(chartsArea);
 
     const refCh = activeChannels[0];
-    const sharedLabels = refCh.buffer.slice(0,maxLen).map((p,i)=>{
-      const s=((p.ts-refCh.buffer[0].ts)/1000).toFixed(1);
-      return i%Math.max(1,Math.floor(maxLen/10))===0?s+'s':'';
+    const sharedLabels = refCh.buffer.slice(0,maxLen).map((p,i) => {
+      const s = ((p.ts - refCh.buffer[0].ts) / 1000).toFixed(1);
+      return i % Math.max(1, Math.floor(maxLen / 10)) === 0 ? s + 's' : '';
     });
 
     let chartInstances = [];
 
     function getVisibleChannels() {
-      return activeChannels.filter((_,i)=>{ const b=toggleBar.children[i]; return b&&b.dataset.active==='1'; });
+      return activeChannels.filter((_,i) => { const b=toggleBar.children[i]; return b&&b.dataset.active==='1'; });
     }
     function destroyCharts() {
-      chartInstances.forEach(c=>{try{c.destroy();}catch(e){}}); chartInstances=[]; chartsArea.innerHTML='';
+      chartInstances.forEach(c => { try { c.destroy(); } catch(e) {} });
+      chartInstances = []; chartsArea.innerHTML = '';
     }
     function rebuildCharts() {
       destroyCharts();
-      const visible=getVisibleChannels();
+      const visible = getVisibleChannels();
       if (!visible.length) return;
-      chartMode==='overlay' ? buildOverlay(visible) : buildParallel(visible);
+      chartMode === 'overlay' ? buildOverlay(visible) : buildParallel(visible);
     }
 
     function buildParallel(channels) {
-      const totalGap = (channels.length-1)*2;
+      const totalGap = (channels.length - 1) * 2;
       const rowH = Math.max(48, Math.floor((chartsArea.offsetHeight - totalGap) / channels.length));
-      channels.forEach((ch,idx)=>{
-        const lums=ch.buffer.map(p=>p.lum).slice(0,maxLen);
-        const lMin=Math.min(...lums), lMax=Math.max(...lums), rng=Math.max(1,lMax-lMin);
-        const row=document.createElement('div');
-        row.style.cssText=`display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0;padding:2px 3px;border-radius:4px;background:${ch.color}0d;border-left:2px solid ${ch.color};overflow:hidden`;
-        const lbl=document.createElement('div');
-        lbl.style.cssText=`color:${ch.color};font-weight:bold;font-size:8px;width:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
-        lbl.textContent=(idx===0?'\u2605 ':'')+ch.label;
-        const wrap=document.createElement('div');
-        wrap.style.cssText='flex:1;min-width:0;overflow:hidden';
-        const cvs=document.createElement('canvas');
-        wrap.appendChild(cvs); row.append(lbl,wrap); chartsArea.appendChild(row);
-        const ci=new Chart(cvs,{
-          type:'line',
-          data:{ labels:sharedLabels, datasets:[{ data:lums, borderColor:ch.color, backgroundColor:ch.color+'18', borderWidth:1.4, pointRadius:0, tension:0.2, fill:true }] },
-          options:{
-            animation:false, responsive:true, maintainAspectRatio:false,
-            plugins:{ legend:{display:false}, tooltip:{enabled:false} },
-            layout:{padding:{top:1,right:2,bottom:0,left:0}},
-            scales:{
-              x:{ display:idx===channels.length-1, ticks:{color:'#444',font:{size:7},maxRotation:0}, grid:{color:'#16162a'} },
-              y:{ ticks:{color:'#444',font:{size:7},maxTicksLimit:3}, grid:{color:'#16162a'},
-                  min:Math.max(0,Math.floor(lMin-rng*.10)), max:Math.min(255,Math.ceil(lMax+rng*.10)) },
+      channels.forEach((ch, idx) => {
+        const lums = ch.buffer.map(p => p.lum).slice(0, maxLen);
+        const lMin = Math.min(...lums), lMax = Math.max(...lums), rng = Math.max(1, lMax - lMin);
+
+        // Picos deste canal
+        const peaks = showPeaks && ML.correlator
+          ? ML.correlator.diffSeries(lums).reduce((acc, d, i) => { if (d > 0) acc.push({ xIndex: i, color: ch.color }); return acc; }, [])
+          : [];
+
+        const row = document.createElement('div');
+        row.style.cssText = `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0;padding:2px 3px;border-radius:4px;background:${ch.color}0d;border-left:2px solid ${ch.color};overflow:hidden`;
+        const lbl = document.createElement('div');
+        lbl.style.cssText = `color:${ch.color};font-weight:bold;font-size:8px;width:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+        lbl.textContent = (idx === 0 ? '\u2605 ' : '') + ch.label;
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'flex:1;min-width:0;overflow:hidden';
+        const cvs = document.createElement('canvas');
+        wrap.appendChild(cvs); row.append(lbl, wrap); chartsArea.appendChild(row);
+        const ci = new Chart(cvs, {
+          type: 'line',
+          data: { labels: sharedLabels, datasets: [{ data: lums, borderColor: ch.color, backgroundColor: ch.color + '18', borderWidth: 1.4, pointRadius: 0, tension: 0.2, fill: true }] },
+          options: {
+            animation: false, responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            layout: { padding: { top: 1, right: 2, bottom: 0, left: 0 } },
+            scales: {
+              x: { display: idx === channels.length - 1, ticks: { color: '#444', font: { size: 7 }, maxRotation: 0 }, grid: { color: '#16162a' } },
+              y: { ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 3 }, grid: { color: '#16162a' },
+                   min: Math.max(0, Math.floor(lMin - rng * .10)), max: Math.min(255, Math.ceil(lMax + rng * .10)) },
             },
           },
+          plugins: peaks.length ? [makePeakPlugin(peaks)] : [],
         });
         chartInstances.push(ci);
       });
     }
 
     function buildOverlay(channels) {
-      const wrap=document.createElement('div');
-      wrap.style.cssText='flex:1;min-height:0;overflow:hidden;border-radius:4px;background:#0a0a16;border:1px solid #1a1a30';
-      const cvs=document.createElement('canvas');
+      const allPeaks = showPeaks && ML.correlator
+        ? channels.flatMap(ch => {
+            const lums = ch.buffer.map(p => p.lum).slice(0, maxLen);
+            return ML.correlator.diffSeries(lums).reduce((acc, d, i) => { if (d > 0) acc.push({ xIndex: i, color: ch.color }); return acc; }, []);
+          })
+        : [];
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'flex:1;min-height:0;overflow:hidden;border-radius:4px;background:#0a0a16;border:1px solid #1a1a30';
+      const cvs = document.createElement('canvas');
       wrap.appendChild(cvs); chartsArea.appendChild(wrap);
-      const datasets=channels.map(ch=>({
-        label:ch.label, data:ch.buffer.map(p=>p.lum).slice(0,maxLen),
-        borderColor:ch.color, backgroundColor:'transparent',
-        borderWidth:1.6, pointRadius:0, tension:0.2, fill:false,
+      const datasets = channels.map(ch => ({
+        label: ch.label, data: ch.buffer.map(p => p.lum).slice(0, maxLen),
+        borderColor: ch.color, backgroundColor: 'transparent',
+        borderWidth: 1.6, pointRadius: 0, tension: 0.2, fill: false,
       }));
-      const ci=new Chart(cvs,{
-        type:'line', data:{labels:sharedLabels,datasets},
-        options:{
-          animation:false, responsive:true, maintainAspectRatio:false,
-          interaction:{mode:'index',intersect:false},
-          plugins:{
-            legend:{ display:true, position:'bottom', labels:{color:'#778',font:{size:8,family:'monospace'},boxWidth:10,padding:8} },
-            tooltip:{
-              enabled:true, backgroundColor:'#12121fee', titleColor:'#00d4ff',
-              bodyColor:'#aaa', borderColor:'#2a2a4a', borderWidth:1,
-              titleFont:{size:8,family:'monospace'}, bodyFont:{size:8,family:'monospace'},
-              callbacks:{ title:items=>items[0].label||'', label:item=>` ${item.dataset.label}: ${item.parsed.y.toFixed(1)}` },
+      const ci = new Chart(cvs, {
+        type: 'line', data: { labels: sharedLabels, datasets },
+        options: {
+          animation: false, responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: true, position: 'bottom', labels: { color: '#778', font: { size: 8, family: 'monospace' }, boxWidth: 10, padding: 8 } },
+            tooltip: {
+              enabled: true, backgroundColor: '#12121fee', titleColor: '#00d4ff',
+              bodyColor: '#aaa', borderColor: '#2a2a4a', borderWidth: 1,
+              titleFont: { size: 8, family: 'monospace' }, bodyFont: { size: 8, family: 'monospace' },
+              callbacks: { title: items => items[0].label || '', label: item => ` ${item.dataset.label}: ${item.parsed.y.toFixed(1)}` },
             },
           },
-          layout:{padding:{top:2,right:4,bottom:0,left:0}},
-          scales:{
-            x:{ ticks:{color:'#444',font:{size:7},maxRotation:0}, grid:{color:'#16162a'} },
-            y:{ min:0, max:255, ticks:{color:'#444',font:{size:7},maxTicksLimit:5}, grid:{color:'#16162a'} },
+          layout: { padding: { top: 2, right: 4, bottom: 0, left: 0 } },
+          scales: {
+            x: { ticks: { color: '#444', font: { size: 7 }, maxRotation: 0 }, grid: { color: '#16162a' } },
+            y: { min: 0, max: 255, ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 5 }, grid: { color: '#16162a' } },
           },
         },
+        plugins: allPeaks.length ? [makePeakPlugin(allPeaks)] : [],
       });
       chartInstances.push(ci);
     }
@@ -257,25 +327,25 @@
   }
 
   function mkCard(label, prefix, color, offTxt, confTxt, offColor, confColor) {
-    const card=document.createElement('div');
-    card.style.cssText=[
+    const card = document.createElement('div');
+    card.style.cssText = [
       'display:flex;flex-direction:column;align-items:center;gap:1px',
       `border:1px solid ${color}44;border-top:2px solid ${color}`,
       `background:${color}0d;border-radius:4px;padding:3px 4px`,
     ].join(';');
-    const nameEl=document.createElement('div');
-    nameEl.style.cssText=`color:${color};font-weight:bold;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%`;
-    nameEl.textContent=(prefix?prefix+' ':'')+label;
-    const offEl=document.createElement('div');
-    offEl.style.cssText=`color:${offColor||'#44ff88'};font-weight:bold;font-size:10px;line-height:1.1;white-space:nowrap`;
-    offEl.textContent=offTxt;
-    const confEl=document.createElement('div');
-    confEl.style.cssText=`color:${confColor||'#44ff88'};font-size:7px;white-space:nowrap`;
-    confEl.textContent=confTxt;
-    card.append(nameEl,offEl,confEl);
+    const nameEl = document.createElement('div');
+    nameEl.style.cssText = `color:${color};font-weight:bold;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%`;
+    nameEl.textContent = (prefix ? prefix + ' ' : '') + label;
+    const offEl = document.createElement('div');
+    offEl.style.cssText = `color:${offColor||'#44ff88'};font-weight:bold;font-size:10px;line-height:1.1;white-space:nowrap`;
+    offEl.textContent = offTxt;
+    const confEl = document.createElement('div');
+    confEl.style.cssText = `color:${confColor||'#44ff88'};font-size:7px;white-space:nowrap`;
+    confEl.textContent = confTxt;
+    card.append(nameEl, offEl, confEl);
     return card;
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart — tamanho inicial=ml-panel, cards 2 colunas, paralelo/sobreposto, resize cantos.');
+  console.log('[MedLat] 40-chart: picos de derivada como linhas verticais (toggle \u25fc Picos).');
 })();
