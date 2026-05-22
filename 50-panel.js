@@ -17,7 +17,7 @@
       'user-select:none;width:210px;overflow:hidden',
     ].join(';');
 
-    // ─ Header
+    // Header
     const hdr = document.createElement('div');
     hdr.style.cssText = [
       'display:flex;align-items:center;gap:6px;overflow:hidden',
@@ -41,7 +41,7 @@
     window.addEventListener('mousemove', e => { if (!pdrag) return; panel.style.left = Math.max(0, e.clientX - pox) + 'px'; panel.style.top = Math.max(0, e.clientY - poy) + 'px'; });
     window.addEventListener('mouseup', () => pdrag = false);
 
-    // ─ Helpers
+    // Helpers
     function sec(label) {
       const wrap = document.createElement('div');
       wrap.style.cssText = 'padding:4px 8px;border-bottom:1px solid #1a1a30';
@@ -77,7 +77,7 @@
       return inp;
     }
 
-    /* ═══ TELAS (PX Global) ═══ */
+    /* PX Global */
     const secTelas = sec('Telas');
     const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 48);
     function applyGlobalPx(v) {
@@ -86,7 +86,7 @@
       ML.CHANNELS.forEach(ch => { if (ch.probeW == null) { if (ch._szInp) ch._szInp.value = c; if (ch.active && ch.resize) ch.resize(); } });
     }
     const btnPxM = mkBtn('\u2212', '#1e2a3a', 'padding:2px 5px');
-    const btnPxP = mkBtn('+',    '#1e2a3a', 'padding:2px 5px');
+    const btnPxP = mkBtn('+', '#1e2a3a', 'padding:2px 5px');
     btnPxM.onclick = () => applyGlobalPx(ML.state.probeW - 2);
     btnPxP.onclick = () => applyGlobalPx(ML.state.probeW + 2);
     pxInp.addEventListener('change', () => applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW));
@@ -96,12 +96,12 @@
     secTelas.appendChild(rowPx);
     panel.appendChild(secTelas);
 
-    /* ═══ GRID (apenas snap toggle + col toggle) ═══ */
+    /* Grid toggles */
     const secGrid = sec('Grid');
     const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0');
     function updateSnapBtn() { btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF'; btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e'; btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#888'; }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
-    const btnCol = mkBtn('', '#3a1a0d', 'flex:1;min-width:0');
+    const btnCol = mkBtn('', '#2a1a0d', 'flex:1;min-width:0');
     function updateColBtn() { btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF'; btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e'; btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#888'; }
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
     const rowToggle = row(4);
@@ -109,7 +109,7 @@
     secGrid.appendChild(rowToggle);
     panel.appendChild(secGrid);
 
-    /* ═══ DETALHAMENTO ═══ */
+    /* Detalhamento */
     const secDet = sec('Detalhamento');
     ML.CHANNELS.forEach((ch, i) => {
       const chWrap = document.createElement('div');
@@ -123,7 +123,6 @@
       ].join(';');
       ch._panelRow = chWrap;
 
-      // Linha 1: toggle + label + lum + pts
       const r1 = row(4);
       const tog = document.createElement('button');
       tog.style.cssText = `width:9px;height:9px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
@@ -135,12 +134,13 @@
       const lumEl = document.createElement('span');
       lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;width:22px;text-align:right;flex-shrink:0`;
       lumEl.textContent = '--'; ch.lumEl = lumEl;
+
+      // ptsEl: mostra contagem ou OK quando buffer estabilizou
       const ptsEl = document.createElement('span');
       ptsEl.style.cssText = 'color:#888;font-size:8px;width:26px;text-align:right;flex-shrink:0;white-space:nowrap';
       ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
       r1.append(tog, lblInp, lumEl, ptsEl);
 
-      // Linha 2: px individual + offset + conf
       const r2 = row(3);
       const szInp = mkNum(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 42);
       ch._szInp = szInp;
@@ -167,10 +167,20 @@
     });
     panel.appendChild(secDet);
 
-    /* ═══ ANALISE ═══ */
+    /* Analise */
     const secAn = sec('Analise');
     const btnRec     = mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
+
+    function doStop() {
+      ML.recorder.stop();
+      btnRec.textContent = '\u25cf GRAVAR';
+      btnRec.style.background = '#1b5e20'; btnRec.style.borderColor = '#2e7d3288'; btnRec.style.boxShadow = '0 0 8px #1b5e2066';
+      const pts = ML.CHANNELS.filter(c => c.active).map(c => c.buffer.length + 'pt').join(', ');
+      statusEl.textContent = 'Pronto (' + pts + ')';
+      statusEl.style.color = '#ffd700';
+      btnAnalyze.disabled = false;
+    }
 
     btnRec.onclick = () => {
       if (!ML.state.recording) {
@@ -179,19 +189,18 @@
         btnRec.style.background = '#7f0000'; btnRec.style.borderColor = '#c6282888'; btnRec.style.boxShadow = '0 0 8px #c6282855';
         statusEl.textContent = 'Gravando...'; statusEl.style.color = '#44ff88';
         btnAnalyze.disabled = true;
+        // reset OK state
         ML.CHANNELS.forEach(ch => {
+          ch._prevPts   = 0;
+          ch._stableCnt = 0;
+          if (ch.ptsEl) { ch.ptsEl.textContent = '0pt'; ch.ptsEl.style.color = '#888'; }
           if (ML.CHANNELS.indexOf(ch) !== 0) {
             if (ch.offsetEl) ch.offsetEl.textContent = '--';
             if (ch.confEl)   ch.confEl.textContent   = '--';
           }
         });
       } else {
-        ML.recorder.stop();
-        btnRec.textContent = '\u25cf GRAVAR';
-        btnRec.style.background = '#1b5e20'; btnRec.style.borderColor = '#2e7d3288'; btnRec.style.boxShadow = '0 0 8px #1b5e2066';
-        statusEl.textContent = 'Pronto (' + ML.CHANNELS.filter(c => c.active).map(c => c.buffer.length + 'pt').join(', ') + ')';
-        statusEl.style.color = '#ffd700';
-        btnAnalyze.disabled = false;
+        doStop();
       }
     };
 
@@ -224,7 +233,7 @@
             }
           }
         });
-        ML.chart.show(results);
+        if (ML.chart && ML.chart.show) ML.chart.show(results);
         const errs = results.filter(r => r.error);
         statusEl.textContent = errs.length
           ? errs.map(r => r.label + ': ' + r.error).join(' | ')
@@ -244,7 +253,7 @@
     secAn.appendChild(rowBtns);
     panel.appendChild(secAn);
 
-    /* ═══ STATUS ═══ */
+    /* Status */
     const statusEl = document.createElement('div');
     statusEl.style.cssText = [
       'font-size:9px;color:#888;padding:3px 8px 4px',
@@ -256,9 +265,45 @@
     panel.appendChild(statusEl);
 
     document.body.appendChild(panel);
-    ML._ui = { btnRec, btnAnalyze, statusEl };
-    setInterval(() => { ML.CHANNELS.forEach(ch => { if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length + 'pt'; }); }, 1000);
-    console.log('[MedLat] 50-panel carregado.');
+    ML._ui = { btnRec, btnAnalyze, statusEl, doStop };
+
+    // ── Auto-stop: monitora estabilização do buffer (3s sem crescer = OK)
+    const STABLE_TICKS = 3; // 3 ciclos de 1s
+    setInterval(() => {
+      const activeChannels = ML.CHANNELS.filter(c => c.active);
+      let allOk = activeChannels.length > 0;
+
+      activeChannels.forEach(ch => {
+        const pts = ch.buffer.length;
+        if (ch.ptsEl) {
+          if (ch._stableCnt >= STABLE_TICKS) {
+            // Já estabilizado
+            ch.ptsEl.textContent = '\u2713OK';
+            ch.ptsEl.style.color = '#44ff88';
+          } else {
+            ch.ptsEl.textContent = pts + 'pt';
+            ch.ptsEl.style.color = '#888';
+          }
+        }
+        if (!ML.state.recording) { ch._prevPts = pts; ch._stableCnt = 0; return; }
+        if (pts === 0) { allOk = false; return; }
+        if (pts === ch._prevPts) {
+          ch._stableCnt = (ch._stableCnt || 0) + 1;
+        } else {
+          ch._stableCnt = 0;
+          ch._prevPts   = pts;
+        }
+        if (ch._stableCnt < STABLE_TICKS) allOk = false;
+      });
+
+      // Dispara auto-stop quando TODOS os canais ativos estabilizaram
+      if (ML.state.recording && allOk && activeChannels.length > 0) {
+        console.log('[MedLat] Buffer estabilizado em todos os canais. Auto-stop.');
+        doStop();
+      }
+    }, 1000);
+
+    console.log('[MedLat] 50-panel carregado. Auto-stop ativo (3s est\u00e1vel).');
   }
 
   ML.panel = { init };

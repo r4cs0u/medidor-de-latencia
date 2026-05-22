@@ -17,14 +17,15 @@
     INTERVAL_MS:    33,
     ASPECT:         9/16,
     BUFFER_SECONDS: 120,
+    MIN_LAG_MS:     20000,   // lag nunca abaixo de 20s
 
     state: {
       running:   false,
       recording: false,
-      probeW:    232,     // tamanho padr\u00e3o global
+      probeW:    232,
       snapGrid:  true,
-      snapSize:  2,       // grid de 2px
-      noOverlap: false,
+      snapSize:  2,
+      noOverlap: true,       // colis\u00e3o ativa por padr\u00e3o
     },
 
     stop() { this.state.running = false; },
@@ -39,5 +40,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. probeW=232, snapSize=2');
+  console.log('[MedLat] 00-core carregado. noOverlap=true, MIN_LAG_MS=20000');
 })();
