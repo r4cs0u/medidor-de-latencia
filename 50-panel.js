@@ -14,22 +14,22 @@
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#ccc',
-      'user-select:none;width:200px',
+      'user-select:none;width:196px;overflow:hidden',
     ].join(';');
 
     const hdr = document.createElement('div');
     hdr.style.cssText = [
-      'display:flex;justify-content:space-between;align-items:center',
-      'padding:5px 10px 4px;cursor:move',
+      'display:flex;justify-content:space-between;align-items:center;gap:6px',
+      'padding:5px 8px 4px;cursor:move;overflow:hidden',
       'border-bottom:1px solid #1e1e3a',
       'background:#1a1a2e;border-radius:6px 6px 0 0',
     ].join(';');
     const ttl = document.createElement('span');
-    ttl.textContent = '\uD83D\uDCE1 MEDIDOR DE LAT\u00CANCIA';
-    ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.08em';
+    ttl.textContent = '\uD83D\uDCE1 MED. LAT\u00CANCIA';
+    ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
     const btnX = document.createElement('button');
     btnX.textContent = '\u2715';
-    btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px';
+    btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnX.onclick = () => {
       ML.recorder.stop();
       document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove());
@@ -64,7 +64,7 @@
     }
     function row(gap) {
       const d = document.createElement('div');
-      d.style.cssText = `display:flex;align-items:center;gap:${gap||4}px`;
+      d.style.cssText = `display:flex;align-items:center;gap:${gap||4}px;overflow:hidden`;
       return d;
     }
     function lbl(txt, extra) {
@@ -109,7 +109,6 @@
       ML.CHANNELS.forEach(ch => {
         if (ch.probeW == null) {
           if (ch._szInp)  ch._szInp.value = c;
-          if (ch._szHLbl) ch._szHLbl.textContent = '(' + Math.round(c * 9/16) + 'h)';
           if (ch.active && ch.resize) ch.resize();
         }
       });
@@ -122,17 +121,17 @@
     pxInp.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); }
     });
-    const durSel = mkSel([5,15,30,45].map(v => [v, v+'s']), ML.BUFFER_SECONDS, 'flex:1');
+    const durSel = mkSel([5,15,30,45].map(v => [v, v+'s']), ML.BUFFER_SECONDS, 'flex:1;min-width:0');
     durSel.onchange = () => { ML.BUFFER_SECONDS = parseInt(durSel.value); };
     const sep = document.createElement('span');
-    sep.textContent = '|'; sep.style.cssText = 'color:#2a2a4a;font-size:12px;padding:0 1px';
+    sep.textContent = '|'; sep.style.cssText = 'color:#2a2a4a;font-size:12px;padding:0 1px;flex-shrink:0';
     ctrlRow.append(lbl('Probe W'), btnPxM, pxInp, btnPxP, sep, lbl('Buf'), durSel);
     secCtrl.appendChild(ctrlRow);
     panel.appendChild(secCtrl);
 
     const secGrid = section('Grid');
     const snapColRow = row(4);
-    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1');
+    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0');
     function updateSnapBtn() {
       btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF';
       btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e';
@@ -140,7 +139,7 @@
     }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); };
     updateSnapBtn();
-    const btnCol = mkBtn('', '#3a1a0d', 'flex:1');
+    const btnCol = mkBtn('', '#3a1a0d', 'flex:1;min-width:0');
     function updateColBtn() {
       btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF';
       btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e';
@@ -161,7 +160,7 @@
     ML.CHANNELS.forEach((ch, i) => {
       const chRow = document.createElement('div');
       chRow.style.cssText = [
-        'display:flex;flex-direction:column;gap:2px;padding:3px 4px;border-radius:4px;margin-bottom:3px',
+        'display:flex;flex-direction:column;gap:2px;padding:3px 4px;border-radius:4px;margin-bottom:3px;overflow:hidden',
         `border:1px solid ${ch.color}44`,
         `background:${ch.color}0d`,
         `border-left:3px solid ${ch.color}`,
@@ -181,17 +180,17 @@
       };
       const lblInp = document.createElement('input');
       lblInp.value = i === 0 ? '\u2605 ' + ch.label : ch.label;
-      lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;flex:1;outline:none;cursor:text;min-width:0`;
+      lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis`;
       lblInp.addEventListener('change', () => {
         ch.label = lblInp.value.replace(/^\u2605\s*/, '');
         if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
       });
       const lumEl = document.createElement('span');
-      lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;min-width:24px;text-align:right;flex-shrink:0`;
+      lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;width:24px;text-align:right;flex-shrink:0`;
       lumEl.textContent = '--';
       ch.lumEl = lumEl;
       const ptsEl = document.createElement('span');
-      ptsEl.style.cssText = 'color:#3a3a5a;font-size:8px;min-width:26px;text-align:right;flex-shrink:0';
+      ptsEl.style.cssText = 'color:#3a3a5a;font-size:8px;width:28px;text-align:right;flex-shrink:0;white-space:nowrap';
       ptsEl.textContent = '0pt';
       ch.ptsEl = ptsEl;
       top.append(tog, lblInp, lumEl, ptsEl);
@@ -199,15 +198,9 @@
       const bot = row(3);
       const szInp = mkNumInp(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 34);
       ch._szInp = szInp;
-      const curW = ch.probeW != null ? ch.probeW : ML.state.probeW;
-      const szHLbl = document.createElement('span');
-      szHLbl.textContent = '(' + Math.round(curW * 9/16) + 'h)';
-      szHLbl.style.cssText = 'font-size:7px;color:#445;white-space:nowrap';
-      ch._szHLbl = szHLbl;
       function applyChanPx(v) {
         const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
         ch.probeW = c; szInp.value = c;
-        szHLbl.textContent = '(' + Math.round(c * 9/16) + 'h)';
         if (ch.active && ch.resize) ch.resize();
       }
       const szM = mkBtn('\u2212', '#1e2a3a'); szM.style.padding = '0 4px';
@@ -221,14 +214,14 @@
         if (e.key === 'ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16) - 2); }
       });
       const offEl = document.createElement('span');
-      offEl.style.cssText = 'color:#778;font-size:9px;font-weight:bold;flex:1;text-align:right;white-space:nowrap';
+      offEl.style.cssText = 'color:#778;font-size:9px;font-weight:bold;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
       offEl.textContent = i === 0 ? '0.000s' : '--';
       ch.offsetEl = offEl;
       const confEl = document.createElement('span');
-      confEl.style.cssText = 'color:#778;font-size:9px;min-width:32px;text-align:right;white-space:nowrap';
+      confEl.style.cssText = 'color:#778;font-size:9px;width:30px;text-align:right;flex-shrink:0;white-space:nowrap';
       confEl.textContent = i === 0 ? '100%' : '--';
       ch.confEl = confEl;
-      bot.append(lbl('px', 'font-size:8px'), szM, szInp, szP, szHLbl, offEl, confEl);
+      bot.append(lbl('px', 'font-size:8px'), szM, szInp, szP, offEl, confEl);
       chRow.append(top, bot);
       secCh.appendChild(chRow);
     });
@@ -265,7 +258,7 @@
     };
     const lagRow = row(4);
     lagRow.style.marginBottom = '4px';
-    const lagSel = mkSel([5000,15000,30000,45000].map(v => [v, (v/1000)+'s']), 30000, 'flex:1');
+    const lagSel = mkSel([5000,15000,30000,45000].map(v => [v, (v/1000)+'s']), 30000, 'flex:1;min-width:0');
     lagRow.append(lbl('Max lag'), lagSel);
     const btnAnalyze = document.createElement('button');
     btnAnalyze.textContent = '\u26a1 ANALISAR';
@@ -316,7 +309,7 @@
     statusEl.style.cssText = [
       'font-size:9px;color:#667;padding:4px 10px 5px',
       'border-top:1px solid #1a1a30;text-align:center;font-style:italic',
-      'background:#0e0e1a;border-radius:0 0 6px 6px',
+      'background:#0e0e1a;border-radius:0 0 6px 6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis',
     ].join(';');
     statusEl.textContent = 'Posicione os probes nos v\u00eddeos e clique \u25cf GRAVAR';
     panel.appendChild(statusEl);
@@ -330,7 +323,7 @@
       });
     }, 1000);
 
-    console.log('[MedLat] 50-panel carregado (200px, direita).');
+    console.log('[MedLat] 50-panel carregado (196px, overflow-hidden, nowrap).');
   }
 
   ML.panel = { init };
