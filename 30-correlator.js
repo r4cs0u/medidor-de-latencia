@@ -1,12 +1,14 @@
 (function () {
   const ML = window.MedLat;
 
-  // Buffer e maxLag padrão fixados em 30s
   const DEFAULT_LAG_MS = 30000;
 
-  /**
-   * Normaliza array para média 0 e desvio padrão 1 (z-score).
-   */
+  // Histórico de resultados para média móvel do modo AUTO
+  const _autoHistory = {}; // chIndex -> [offsetMs, ...]
+  const AUTO_HISTORY_SIZE = 4;
+  const AUTO_DOWNSAMPLE   = 5;  // usa 1 a cada N amostras (~6fps de 30fps)
+  const AUTO_LAG_MS       = 5000; // lag máximo no modo AUTO
+
   function normalize(arr) {
     const n    = arr.length;
     const mean = arr.reduce((a, b) => a + b, 0) / n;
@@ -15,21 +17,22 @@
   }
 
   /**
-   * Recorta as séries para uma janela relevante:
-   * usa no máximo (2 × maxLagSamples + buffer de segurança) amostras finais.
-   * Isso evita que variações locais sejam diluídas por um buffer muito longo.
+   * Downsample: pega 1 a cada `factor` amostras.
+   * Reduz custo da correlação proporcionalmente a factor².
    */
+  function downsample(arr, factor) {
+    if (factor <= 1) return arr;
+    const out = [];
+    for (let i = 0; i < arr.length; i += factor) out.push(arr[i]);
+    return out;
+  }
+
   function windowedSlice(arr, maxLagSamples) {
     const windowSize = Math.min(arr.length, maxLagSamples * 3);
     return arr.slice(arr.length - windowSize);
   }
 
-  /**
-   * Cross-correlation por força bruta sobre janelas recortadas.
-   * Retorna array de { lag, r } para lags de -maxLag a +maxLag amostras.
-   */
   function crossCorrelation(a, b, maxLagSamples) {
-    // Recorta para janela relevante antes de normalizar
     const wa = windowedSlice(a, maxLagSamples);
     const wb = windowedSlice(b, maxLagSamples);
     const na = normalize(wa);
@@ -48,34 +51,19 @@
     return result;
   }
 
-  /**
-   * Seleciona o pico mais confiável da correlação.
-   *
-   * Estratégia (guard band):
-   * 1. Encontra o pico global (maior r).
-   * 2. Define threshold = 80% do pico global.
-   * 3. Entre todos os picos acima do threshold, escolhe o de menor |lag| absoluto.
-   *    Isso evita picos espúrios distantes causados por periodicidade do conteúdo.
-   */
   function selectRobustPeak(corr) {
     const globalPeak = corr.reduce((best, cur) => cur.r > best.r ? cur : best, corr[0]);
     const threshold  = globalPeak.r * 0.80;
-
-    // Candidatos acima de 80% do pico global
     const candidates = corr.filter(c => c.r >= threshold);
-
-    // Prefere o candidato com menor lag absoluto (mais próximo de 0)
-    const robust = candidates.reduce((best, cur) =>
+    return candidates.reduce((best, cur) =>
       Math.abs(cur.lag) < Math.abs(best.lag) ? cur : best,
       candidates[0]
     );
-
-    return robust;
   }
 
   /**
-   * Analisa dois canais e retorna o offset em ms.
-   * chRef vs chB — se offsetMs > 0, chB está atrasado em relação à referência.
+   * Análise manual completa — sem teto de lag.
+   * maxLagMs pode ir até o que o painel configurar (60s ou mais).
    */
   function analyze(chA, chB, maxLagMs) {
     const serA = ML.recorder.getSeries(chA);
@@ -85,21 +73,17 @@
       return { error: 'Dados insuficientes (mínimo 30 amostras por canal).' };
     }
 
-    const effectiveLagMs  = Math.min(maxLagMs || DEFAULT_LAG_MS, DEFAULT_LAG_MS);
-    const maxLagSamples   = Math.ceil(effectiveLagMs / ML.INTERVAL_MS);
-    const corr            = crossCorrelation(serA.lum, serB.lum, maxLagSamples);
-    const peak            = selectRobustPeak(corr);
-    const offsetMs        = peak.lag * ML.INTERVAL_MS;
-    const confidence      = peak.r;
+    const effectiveLagMs = maxLagMs || DEFAULT_LAG_MS; // sem teto artificial
+    const maxLagSamples  = Math.ceil(effectiveLagMs / ML.INTERVAL_MS);
+    const corr           = crossCorrelation(serA.lum, serB.lum, maxLagSamples);
+    const peak           = selectRobustPeak(corr);
+    const offsetMs       = peak.lag * ML.INTERVAL_MS;
+    const confidence     = peak.r;
 
     return {
-      offsetMs,
-      confidence,
-      corr,
-      labelA: serA.label,
-      labelB: serB.label,
-      serA,
-      serB,
+      offsetMs, confidence, corr,
+      labelA: serA.label, labelB: serB.label,
+      serA, serB,
       description: offsetMs > 0
         ? `${serB.label} está ${Math.abs(offsetMs)}ms atrasado em relação a ${serA.label}`
         : offsetMs < 0
@@ -109,21 +93,96 @@
   }
 
   /**
-   * Analisa todos os canais ativos contra o canal de referência (índice 0).
-   * Retorna array de resultados ordenados por índice de canal.
+   * Análise AUTO — usa downsample + janela curta + média móvel.
+   * Muito mais leve que a análise manual completa.
+   * Retorna mesma estrutura de analyzeAll para compatibilidade.
    */
-  function analyzeAll(maxLagMs) {
-    const chRef = ML.CHANNELS[0];
-    const results = [];
+  function analyzeAuto() {
+    const chRef    = ML.CHANNELS[0];
+    const results  = [];
+    const factor   = AUTO_DOWNSAMPLE;
+    const lagMs    = AUTO_LAG_MS;
 
     results.push({
-      channel: chRef,
-      label: chRef.label,
-      offsetMs: 0,
-      confidence: 1,
-      isReference: true,
+      channel: chRef, label: chRef.label,
+      offsetMs: 0, confidence: 1, isReference: true,
     });
 
+    ML.CHANNELS.slice(1).forEach((ch, idx) => {
+      if (!ch.active) {
+        results.push({ channel: ch, label: ch.label, skipped: true });
+        return;
+      }
+
+      const serA = ML.recorder.getSeries(chRef);
+      const serB = ML.recorder.getSeries(ch);
+
+      if (serA.lum.length < 30 || serB.lum.length < 30) {
+        results.push({ channel: ch, label: ch.label, error: 'Dados insuficientes.' });
+        return;
+      }
+
+      // Downsample antes de correlacionar
+      const dsA = downsample(serA.lum, factor);
+      const dsB = downsample(serB.lum, factor);
+      const intervalDs = ML.INTERVAL_MS * factor;
+      const maxLagSamples = Math.ceil(lagMs / intervalDs);
+
+      const corr   = crossCorrelation(dsA, dsB, maxLagSamples);
+      const peak   = selectRobustPeak(corr);
+      const rawMs  = peak.lag * intervalDs;
+
+      // Média móvel ponderada (mais recente = peso 2, anteriores = peso 1)
+      const key = idx;
+      if (!_autoHistory[key]) _autoHistory[key] = [];
+      const hist = _autoHistory[key];
+
+      // Spike filter: se desvio > 3× desvio médio histórico, descarta
+      let offsetMs = rawMs;
+      if (hist.length >= 2) {
+        const avg = hist.reduce((a, b) => a + b, 0) / hist.length;
+        const dev = Math.sqrt(hist.reduce((a, b) => a + (b - avg) ** 2, 0) / hist.length);
+        if (dev > 0 && Math.abs(rawMs - avg) > Math.max(dev * 3, 500)) {
+          // spike: mantém média anterior, não atualiza histórico
+          offsetMs = avg;
+        } else {
+          hist.push(rawMs);
+          if (hist.length > AUTO_HISTORY_SIZE) hist.shift();
+        }
+      } else {
+        hist.push(rawMs);
+        if (hist.length > AUTO_HISTORY_SIZE) hist.shift();
+      }
+
+      // Média ponderada: último tem peso 2
+      if (hist.length > 1) {
+        let wSum = 0, wTotal = 0;
+        hist.forEach((v, i) => { const w = i + 1; wSum += v * w; wTotal += w; });
+        offsetMs = wSum / wTotal;
+      }
+
+      results.push({
+        channel: ch, label: ch.label,
+        offsetMs, confidence: peak.r,
+        corr, isAuto: true,
+      });
+    });
+
+    return results;
+  }
+
+  /** Limpa histórico AUTO (chamar ao iniciar nova gravação) */
+  function clearAutoHistory() {
+    Object.keys(_autoHistory).forEach(k => delete _autoHistory[k]);
+  }
+
+  function analyzeAll(maxLagMs) {
+    const chRef  = ML.CHANNELS[0];
+    const results = [];
+    results.push({
+      channel: chRef, label: chRef.label,
+      offsetMs: 0, confidence: 1, isReference: true,
+    });
     ML.CHANNELS.slice(1).forEach(ch => {
       if (!ch.active) {
         results.push({ channel: ch, label: ch.label, skipped: true });
@@ -131,8 +190,7 @@
       }
       const r = analyze(chRef, ch, maxLagMs);
       results.push({
-        channel: ch,
-        label: ch.label,
+        channel: ch, label: ch.label,
         offsetMs: r.error ? null : r.offsetMs,
         confidence: r.error ? null : r.confidence,
         error: r.error || null,
@@ -141,11 +199,9 @@
         serB: r.serB || null,
       });
     });
-
     return results;
   }
 
-  ML.correlator = { analyze, analyzeAll, crossCorrelation, normalize };
-
-  console.log('[MedLat] 30-correlator carregado.');
+  ML.correlator = { analyze, analyzeAll, analyzeAuto, clearAutoHistory, crossCorrelation, normalize };
+  console.log('[MedLat] 30-correlator carregado (sem teto de lag, AUTO com downsample+média móvel).');
 })();

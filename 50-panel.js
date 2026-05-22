@@ -30,7 +30,11 @@
     const btnX = document.createElement('button');
     btnX.textContent = '\u2715';
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
-    btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove()); };
+    btnX.onclick = () => {
+      stopAuto();
+      ML.recorder.stop();
+      document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove());
+    };
     hdr.append(ttl, btnX);
     panel.appendChild(hdr);
 
@@ -97,8 +101,6 @@
     const rowPx = row(4); rowPx.style.marginBottom = '5px';
     rowPx.append(sp('PX Global', 'flex-shrink:0'), btnPxM, pxInp, btnPxP);
     secTelas.appendChild(rowPx);
-
-    // Buffer fixo em 120s — sem seletor
     ML.BUFFER_SECONDS = 120;
     const rowBuf = row(4);
     rowBuf.append(sp('Buffer', 'flex-shrink:0'), sp('120s (fixo)', 'color:#334;font-size:8px'));
@@ -183,25 +185,105 @@
     const secAn = sec('Analise');
     const btnRec     = mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
+    const btnAuto    = mkBtn('\u21bb AUTO',      '#0d2a40', 'padding:5px 8px;font-size:11px;letter-spacing:.04em;color:#4488aa;opacity:.45');
 
-    // Max lag: 5s / 15s / 30s (45s removido)
-    const lagSel = mkSel([[5000,'5s'],[15000,'15s'],[30000,'30s']], 30000, 'flex:1;min-width:0');
+    // Max lag manual: 5s / 15s / 30s / 45s / 60s
+    const lagSel = mkSel([[5000,'5s'],[15000,'15s'],[30000,'30s'],[45000,'45s'],[60000,'60s']], 30000, 'flex:1;min-width:0');
+
+    /* ── estado AUTO ── */
+    let autoTimer   = null;
+    let autoRunning = false;
+
+    function applyResults(results) {
+      results.forEach(r => {
+        const ch = r.channel;
+        if (!ch || r.isReference) return;
+        if (ch.offsetEl) {
+          if (r.skipped || r.error) {
+            ch.offsetEl.textContent = r.error ? 'ERRO' : '--';
+            ch.offsetEl.style.color = r.error ? '#ff4444' : '#3a3a5a';
+          } else {
+            const s = r.offsetMs / 1000;
+            ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
+            ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+          }
+        }
+        if (ch.confEl) {
+          if (r.confidence != null && !r.error && !r.skipped) {
+            ch.confEl.textContent = Math.round(r.confidence * 100) + '%';
+            ch.confEl.style.color = r.confidence > 0.6 ? '#44ff88' : r.confidence > 0.3 ? '#ffd700' : '#ff4444';
+          } else {
+            ch.confEl.textContent = '--';
+          }
+        }
+      });
+    }
+
+    function stopAuto() {
+      if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+      autoRunning = false;
+      btnAuto.textContent = '\u21bb AUTO';
+      btnAuto.style.background = '#0d2a40';
+      btnAuto.style.color      = '#4488aa';
+      btnAuto.style.borderColor = '#0d2a4055';
+      btnAuto.style.boxShadow  = 'none';
+    }
+
+    function startAuto() {
+      autoRunning = true;
+      btnAuto.textContent  = '\u23f9 PARAR';
+      btnAuto.style.background  = '#003a5c';
+      btnAuto.style.color       = '#00d4ff';
+      btnAuto.style.borderColor = '#00d4ff44';
+      btnAuto.style.boxShadow   = '0 0 8px #00d4ff33';
+      statusEl.textContent = 'AUTO ativo (5s lag, downsample)';
+      statusEl.style.color = '#00d4ff';
+
+      function runOnce() {
+        if (!ML.state.recording) return;
+        const results = ML.correlator.analyzeAuto();
+        applyResults(results);
+        // Conta erros e atualiza status
+        const errs = results.filter(r => r.error);
+        statusEl.textContent = errs.length
+          ? '\u21bb AUTO — ' + errs.map(r => r.label + ': insuf.').join(' | ')
+          : '\u21bb AUTO — ' + new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        statusEl.style.color = errs.length ? '#ff8844' : '#00d4ff';
+      }
+
+      // Primeira rodada imediata após 2s (aguarda algum dado)
+      setTimeout(() => { if (autoRunning) runOnce(); }, 2000);
+      autoTimer = setInterval(() => { if (autoRunning) runOnce(); }, 10000);
+    }
+
+    btnAuto.onclick = () => {
+      if (autoRunning) { stopAuto(); statusEl.textContent = 'AUTO parado.'; statusEl.style.color = '#667'; }
+      else {
+        if (!ML.state.recording) { statusEl.textContent = 'Inicie a grava\u00e7\u00e3o primeiro.'; statusEl.style.color = '#ff8844'; return; }
+        startAuto();
+      }
+    };
 
     btnRec.onclick = () => {
       if (!ML.state.recording) {
+        stopAuto();
+        ML.correlator.clearAutoHistory();
         ML.recorder.start();
         btnRec.textContent = '\u25a0 PARAR';
         btnRec.style.background = '#7f0000'; btnRec.style.borderColor = '#c6282888'; btnRec.style.boxShadow = '0 0 8px #c6282855';
         statusEl.textContent = 'Gravando...'; statusEl.style.color = '#44ff88';
         btnAnalyze.disabled = true;
-        ML.CHANNELS.forEach(ch => { if (ch.offsetEl && ML.CHANNELS.indexOf(ch)!==0) ch.offsetEl.textContent='--'; if (ch.confEl && ML.CHANNELS.indexOf(ch)!==0) ch.confEl.textContent='--'; });
+        btnAuto.disabled    = false;
+        ML.CHANNELS.forEach(ch => { if (ch.offsetEl && ML.CHANNELS.indexOf(ch) !== 0) ch.offsetEl.textContent = '--'; if (ch.confEl && ML.CHANNELS.indexOf(ch) !== 0) ch.confEl.textContent = '--'; });
       } else {
+        stopAuto();
         ML.recorder.stop();
         btnRec.textContent = '\u25cf GRAVAR';
         btnRec.style.background = '#1b5e20'; btnRec.style.borderColor = '#2e7d3288'; btnRec.style.boxShadow = '0 0 8px #1b5e2066';
-        statusEl.textContent = 'Pronto (' + ML.CHANNELS.filter(c=>c.active).map(c=>c.buffer.length+'pt').join(', ') + ')';
+        statusEl.textContent = 'Pronto (' + ML.CHANNELS.filter(c => c.active).map(c => c.buffer.length + 'pt').join(', ') + ')';
         statusEl.style.color = '#ffd700';
         btnAnalyze.disabled = false;
+        btnAuto.disabled    = true;
       }
     };
 
@@ -209,35 +291,29 @@
       statusEl.textContent = 'Calculando...'; statusEl.style.color = '#778';
       const maxLagMs = parseInt(lagSel.value);
       const results = ML.correlator.analyzeAll(maxLagMs);
-      results.forEach(r => {
-        const ch = r.channel;
-        if (!ch || r.isReference) return;
-        if (ch.offsetEl) {
-          if (r.skipped || r.error) { ch.offsetEl.textContent = r.error ? 'ERRO' : '--'; ch.offsetEl.style.color = r.error ? '#ff4444' : '#3a3a5a'; }
-          else { const s = r.offsetMs/1000; ch.offsetEl.textContent = (s>0?'+':'')+s.toFixed(3)+'s'; ch.offsetEl.style.color = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#ff8844'; }
-        }
-        if (ch.confEl) {
-          if (r.confidence!=null && !r.error && !r.skipped) { ch.confEl.textContent = Math.round(r.confidence*100)+'%'; ch.confEl.style.color = r.confidence>0.6?'#44ff88':r.confidence>0.3?'#ffd700':'#ff4444'; }
-          else { ch.confEl.textContent = '--'; }
-        }
-      });
+      applyResults(results);
       ML.chart.show(results);
       const errs = results.filter(r => r.error);
-      statusEl.textContent = errs.length ? errs.map(r=>r.label+': '+r.error).join(' | ') : 'An\u00e1lise conclu\u00edda';
+      statusEl.textContent = errs.length ? errs.map(r => r.label + ': ' + r.error).join(' | ') : 'An\u00e1lise conclu\u00edda';
       statusEl.style.color = errs.length ? '#ff8844' : '#44ff88';
     };
 
     Object.defineProperty(btnAnalyze, 'disabled', {
-      set(v) { this._disabled=v; this.style.opacity=v?.45:1; this.style.cursor=v?'not-allowed':'pointer'; },
+      set(v) { this._disabled = v; this.style.opacity = v ? .45 : 1; this.style.cursor = v ? 'not-allowed' : 'pointer'; },
+      get() { return this._disabled; },
+    });
+    Object.defineProperty(btnAuto, 'disabled', {
+      set(v) { this._disabled = v; this.style.opacity = v ? .35 : 1; this.style.cursor = v ? 'not-allowed' : 'pointer'; },
       get() { return this._disabled; },
     });
     btnAnalyze.disabled = true;
+    btnAuto.disabled    = true;
 
-    const rowBtns = row(6); rowBtns.style.marginBottom = '6px';
-    rowBtns.append(btnRec, btnAnalyze);
+    const rowBtns = row(4); rowBtns.style.marginBottom = '6px';
+    rowBtns.append(btnRec, btnAnalyze, btnAuto);
     secAn.appendChild(rowBtns);
     const rowLag = row(4);
-    rowLag.append(sp('Max. Lag','flex-shrink:0'), lagSel);
+    rowLag.append(sp('Max. Lag (manual)', 'flex-shrink:0;font-size:8px'), lagSel);
     secAn.appendChild(rowLag);
     panel.appendChild(secAn);
 
@@ -253,9 +329,9 @@
     panel.appendChild(statusEl);
 
     document.body.appendChild(panel);
-    ML._ui = { btnRec, btnAnalyze, statusEl };
-    setInterval(() => { ML.CHANNELS.forEach(ch => { if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length+'pt'; }); }, 1000);
-    console.log('[MedLat] 50-panel carregado (buf fixo 120s).');
+    ML._ui = { btnRec, btnAnalyze, btnAuto, statusEl, stopAuto };
+    setInterval(() => { ML.CHANNELS.forEach(ch => { if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length + 'pt'; }); }, 1000);
+    console.log('[MedLat] 50-panel carregado (AUTO + lag até 60s).');
   }
 
   ML.panel = { init };
