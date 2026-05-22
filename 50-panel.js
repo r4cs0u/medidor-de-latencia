@@ -97,10 +97,11 @@
     const rowPx = row(4); rowPx.style.marginBottom = '5px';
     rowPx.append(sp('PX Global', 'flex-shrink:0'), btnPxM, pxInp, btnPxP);
     secTelas.appendChild(rowPx);
-    const durSel = mkSel([5,15,30,45].map(v => [v, v+'s']), ML.BUFFER_SECONDS, 'flex:1;min-width:0');
-    durSel.onchange = () => { ML.BUFFER_SECONDS = parseInt(durSel.value); };
+
+    // Buffer fixo em 120s — sem seletor
+    ML.BUFFER_SECONDS = 120;
     const rowBuf = row(4);
-    rowBuf.append(sp('Buffer', 'flex-shrink:0'), durSel);
+    rowBuf.append(sp('Buffer', 'flex-shrink:0'), sp('120s (fixo)', 'color:#334;font-size:8px'));
     secTelas.appendChild(rowBuf);
     panel.appendChild(secTelas);
 
@@ -183,7 +184,8 @@
     const btnRec     = mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
 
-    const lagSel = mkSel([5000,15000,30000,45000].map(v => [v,(v/1000)+'s']), 30000, 'flex:1;min-width:0');
+    // Max lag: 5s / 15s / 30s (45s removido)
+    const lagSel = mkSel([[5000,'5s'],[15000,'15s'],[30000,'30s']], 30000, 'flex:1;min-width:0');
 
     btnRec.onclick = () => {
       if (!ML.state.recording) {
@@ -219,7 +221,6 @@
           else { ch.confEl.textContent = '--'; }
         }
       });
-      /* passa array completo para o gráfico */
       ML.chart.show(results);
       const errs = results.filter(r => r.error);
       statusEl.textContent = errs.length ? errs.map(r=>r.label+': '+r.error).join(' | ') : 'An\u00e1lise conclu\u00edda';
@@ -254,7 +255,7 @@
     document.body.appendChild(panel);
     ML._ui = { btnRec, btnAnalyze, statusEl };
     setInterval(() => { ML.CHANNELS.forEach(ch => { if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length+'pt'; }); }, 1000);
-    console.log('[MedLat] 50-panel carregado.');
+    console.log('[MedLat] 50-panel carregado (buf fixo 120s).');
   }
 
   ML.panel = { init };
