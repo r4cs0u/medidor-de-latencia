@@ -14,7 +14,7 @@
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#ccc',
-      'user-select:none;width:140px',
+      'user-select:none;width:168px',
     ].join(';');
 
     const hdr = document.createElement('div');
@@ -99,7 +99,6 @@
       return inp;
     }
 
-    // ── Seção 1: Controles globais ─────────────────────────────────────────
     const secCtrl = section(null);
     secCtrl.style.padding = '5px 10px';
     const ctrlRow = row(6);
@@ -131,7 +130,6 @@
     secCtrl.appendChild(ctrlRow);
     panel.appendChild(secCtrl);
 
-    // ── Seção 2: Grid ──────────────────────────────────────────────────────
     const secGrid = section('Grid');
     const snapColRow = row(4);
     const btnSnap = mkBtn('', '#0d4f3c', 'flex:1');
@@ -159,7 +157,6 @@
     secGrid.appendChild(snapColRow);
     panel.appendChild(secGrid);
 
-    // ── Seção 3: Canais ────────────────────────────────────────────────────
     const secCh = section('Canais');
     ML.CHANNELS.forEach((ch, i) => {
       const chRow = document.createElement('div');
@@ -237,7 +234,6 @@
     });
     panel.appendChild(secCh);
 
-    // ── Seção 4: Análise ───────────────────────────────────────────────────
     const secAn = section('Analise');
     const btnRec = document.createElement('button');
     btnRec.style.cssText = 'width:100%;background:#1b5e20;border:1px solid #2e7d3288;color:#fff;border-radius:4px;padding:5px 0;cursor:pointer;font-size:11px;font-family:monospace;font-weight:bold;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066;margin-bottom:4px';
@@ -316,7 +312,6 @@
     secAn.append(btnRec, lagRow, btnAnalyze);
     panel.appendChild(secAn);
 
-    // ── Status bar ─────────────────────────────────────────────────────────
     const statusEl = document.createElement('div');
     statusEl.style.cssText = [
       'font-size:9px;color:#667;padding:4px 10px 5px',
@@ -335,7 +330,7 @@
       });
     }, 1000);
 
-    console.log('[MedLat] 50-panel carregado (vertical, direita, 140px).');
+    console.log('[MedLat] 50-panel carregado (168px, direita).');
   }
 
   ML.panel = { init };
