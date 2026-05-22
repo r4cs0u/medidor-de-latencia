@@ -1,26 +1,34 @@
 (function () {
   const ML = window.MedLat;
 
-  const DEFAULT_LAG_MS  = 30000;
-  const LAG_CANDIDATES  = [5000, 15000, 30000, 45000, 60000];
+  const DEFAULT_LAG_MS = 30000;
+  const LAG_CANDIDATES = [5000, 15000, 30000, 45000, 60000];
 
-  function normalize(arr) {
-    const n    = arr.length;
-    const mean = arr.reduce((a, b) => a + b, 0) / n;
-    const std  = Math.sqrt(arr.reduce((a, b) => a + (b - mean) ** 2, 0) / n) || 1;
-    return arr.map(v => (v - mean) / std);
+  // ─── Normalização robusta (median + MAD) ───────────────────────────────────
+  // Resiste a períodos flat longos onde std ≈ 0 enganava a normalização clássica
+  function robustNormalize(arr) {
+    const sorted = arr.slice().sort((a, b) => a - b);
+    const n      = sorted.length;
+    const median = n % 2 === 0
+      ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+      : sorted[Math.floor(n / 2)];
+    const mad = sorted.reduce((s, v) => s + Math.abs(v - median), 0) / n || 1;
+    return arr.map(v => (v - median) / mad);
   }
 
+  // ─── Janela proporcional: fator 2 (antes era 3) ───────────────────────────
+  // Foca mais no sinal relevante e reduz ruído em séries longas
   function windowedSlice(arr, maxLagSamples) {
-    const windowSize = Math.min(arr.length, maxLagSamples * 3);
+    const windowSize = Math.min(arr.length, maxLagSamples * 2);
     return arr.slice(arr.length - windowSize);
   }
 
+  // ─── Cross-correlation retorna também o n efetivo ─────────────────────────
   function crossCorrelation(a, b, maxLagSamples) {
     const wa = windowedSlice(a, maxLagSamples);
     const wb = windowedSlice(b, maxLagSamples);
-    const na = normalize(wa);
-    const nb = normalize(wb);
+    const na = robustNormalize(wa);
+    const nb = robustNormalize(wb);
     const n  = Math.min(na.length, nb.length);
     maxLagSamples = Math.min(maxLagSamples, n - 1);
     const result = [];
@@ -30,27 +38,16 @@
         const j = i + lag;
         if (j >= 0 && j < n) { sum += na[i] * nb[j]; count++; }
       }
-      result.push({ lag, r: count ? sum / count : 0 });
+      result.push({ lag, r: count ? sum / count : 0, count });
     }
     return result;
   }
 
-  /**
-   * Retorna o pico de maior correlação preservando o sinal do lag.
-   * NÃO penaliza lags negativos — escolhe simplesmente o maior r.
-   * Em caso de empate muito próximo (diferença < 0.5% do pico),
-   * prefere o lag de menor módulo para evitar artefatos de borda,
-   * mas mantém o sinal original do vencedor.
-   */
+  // ─── Pico robusto: preserva sinal, sem viés para zero ─────────────────────
   function selectRobustPeak(corr) {
-    // 1. Pico global absoluto
     const globalPeak = corr.reduce((best, cur) => cur.r > best.r ? cur : best, corr[0]);
-
-    // 2. Candidatos muito próximos do pico (dentro de 1%)
     const threshold  = globalPeak.r * 0.99;
     const candidates = corr.filter(c => c.r >= threshold);
-
-    // 3. Entre empates, prefere menor |lag| — mas só em empates reais
     return candidates.reduce((best, cur) =>
       Math.abs(cur.lag) < Math.abs(best.lag) ? cur : best,
       candidates[0]
@@ -63,7 +60,7 @@
     const serB = ML.recorder.getSeries(chB);
 
     if (serA.lum.length < 30 || serB.lum.length < 30)
-      return { error: 'Dados insuficientes (m\u00ednimo 30 amostras por canal).' };
+      return { error: 'Dados insuficientes (mínimo 30 amostras por canal).' };
 
     const effectiveLagMs = maxLagMs || DEFAULT_LAG_MS;
     const maxLagSamples  = Math.ceil(effectiveLagMs / ML.INTERVAL_MS);
@@ -82,31 +79,39 @@
   }
 
   /**
-   * Testa todos os LAG_CANDIDATES e devolve o resultado
-   * com maior confidence para o par chA → chB.
+   * Testa todos os LAG_CANDIDATES e devolve o resultado com maior confidence.
+   *
+   * Score normalizado: divide pelo nEfetivo para evitar que lags curtos
+   * (mais amostras sobrepostas) ganhem injustamente sobre lags longos.
    */
   function analyzeBest(chA, chB) {
     const serA = ML.recorder.getSeries(chA);
     const serB = ML.recorder.getSeries(chB);
 
     if (serA.lum.length < 30 || serB.lum.length < 30)
-      return { error: 'Dados insuficientes (m\u00ednimo 30 amostras por canal).' };
+      return { error: 'Dados insuficientes (mínimo 30 amostras por canal).' };
 
     let best = null;
 
     for (const lagMs of LAG_CANDIDATES) {
       const maxLagSamples = Math.ceil(lagMs / ML.INTERVAL_MS);
-      if (Math.min(serA.lum.length, serB.lum.length) < maxLagSamples * 2) continue;
+      const minSamples    = maxLagSamples; // janela = lag*2, precisa de pelo menos lag samples
+      if (Math.min(serA.lum.length, serB.lum.length) < minSamples) continue;
 
       const corr     = crossCorrelation(serA.lum, serB.lum, maxLagSamples);
       const peak     = selectRobustPeak(corr);
       const offsetMs = peak.lag * ML.INTERVAL_MS;
 
-      if (!best || peak.r > best.confidence) {
+      // Score normalizado: r / sqrt(nEfetivo) — penaliza lags curtos com muitas amostras
+      const nEff          = peak.count || 1;
+      const normalizedScore = peak.r / Math.sqrt(nEff);
+
+      if (!best || normalizedScore > best._score) {
         best = {
           offsetMs,
           confidence: peak.r,
           lagUsedMs: lagMs,
+          _score: normalizedScore,
           corr, serA, serB,
           labelA: serA.label,
           labelB: serB.label,
@@ -124,6 +129,7 @@
         offsetMs: peak.lag * ML.INTERVAL_MS,
         confidence: peak.r,
         lagUsedMs: lagMs,
+        _score: 0,
         corr, serA, serB,
         labelA: serA.label,
         labelB: serB.label,
@@ -161,6 +167,6 @@
     return results;
   }
 
-  ML.correlator = { analyze, analyzeBest, analyzeBestAll, crossCorrelation, normalize };
-  console.log('[MedLat] 30-correlator carregado (selectRobustPeak corrigido: preserva sinal do lag).');
+  ML.correlator = { analyze, analyzeBest, analyzeBestAll, crossCorrelation, robustNormalize };
+  console.log('[MedLat] 30-correlator: normalização robusta (median+MAD) + score normalizado por n.');
 })();
