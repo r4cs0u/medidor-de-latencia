@@ -65,12 +65,6 @@
       b.style.cssText = `background:${bg};border:1px solid ${bg}55;color:#fff;border-radius:3px;padding:2px 6px;cursor:pointer;font-size:9px;font-family:monospace;font-weight:bold;white-space:nowrap;${extra||''}`;
       return b;
     }
-    function mkSel(opts, selected, extra) {
-      const s = document.createElement('select');
-      s.style.cssText = `background:#1a1a2e;border:1px solid #2a2a4a;color:#aaa;font-size:9px;border-radius:3px;padding:1px 3px;${extra||''}`;
-      opts.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; if (v === selected) o.selected = true; s.appendChild(o); });
-      return s;
-    }
     function mkNum(val, min, max, step, w) {
       const inp = document.createElement('input');
       inp.type = 'number'; inp.min = min; inp.max = max; inp.step = step; inp.value = val;
@@ -168,8 +162,9 @@
       const offEl = document.createElement('span');
       offEl.style.cssText = 'color:#778;font-size:9px;font-weight:bold;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
       offEl.textContent = i === 0 ? '0.000s' : '--'; ch.offsetEl = offEl;
+      // confEl agora mostra "XX%@Ys"
       const confEl = document.createElement('span');
-      confEl.style.cssText = 'color:#778;font-size:9px;width:28px;text-align:right;flex-shrink:0;white-space:nowrap';
+      confEl.style.cssText = 'color:#778;font-size:8px;width:36px;text-align:right;flex-shrink:0;white-space:nowrap';
       confEl.textContent = i === 0 ? '100%' : '--'; ch.confEl = confEl;
       r2.append(sp('px','font-size:8px;flex-shrink:0'), szM, szInp, szP, offEl, confEl);
       chWrap.append(r1, r2);
@@ -182,8 +177,6 @@
     const btnRec     = mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
 
-    const lagSel = mkSel([[5000,'5s'],[15000,'15s'],[30000,'30s'],[45000,'45s'],[60000,'60s']], 30000, 'flex:1;min-width:0');
-
     btnRec.onclick = () => {
       if (!ML.state.recording) {
         ML.recorder.start();
@@ -191,7 +184,12 @@
         btnRec.style.background = '#7f0000'; btnRec.style.borderColor = '#c6282888'; btnRec.style.boxShadow = '0 0 8px #c6282855';
         statusEl.textContent = 'Gravando...'; statusEl.style.color = '#44ff88';
         btnAnalyze.disabled = true;
-        ML.CHANNELS.forEach(ch => { if (ch.offsetEl && ML.CHANNELS.indexOf(ch) !== 0) ch.offsetEl.textContent = '--'; if (ch.confEl && ML.CHANNELS.indexOf(ch) !== 0) ch.confEl.textContent = '--'; });
+        ML.CHANNELS.forEach(ch => {
+          if (ML.CHANNELS.indexOf(ch) !== 0) {
+            if (ch.offsetEl) ch.offsetEl.textContent = '--';
+            if (ch.confEl)   ch.confEl.textContent   = '--';
+          }
+        });
       } else {
         ML.recorder.stop();
         btnRec.textContent = '\u25cf GRAVAR';
@@ -202,26 +200,43 @@
       }
     };
 
-    btnAnalyze.onclick = async () => {
-      statusEl.textContent = 'Calculando...'; statusEl.style.color = '#778';
-      const maxLagMs = parseInt(lagSel.value);
-      const results = ML.correlator.analyzeAll(maxLagMs);
-      results.forEach(r => {
-        const ch = r.channel;
-        if (!ch || r.isReference) return;
-        if (ch.offsetEl) {
-          if (r.skipped || r.error) { ch.offsetEl.textContent = r.error ? 'ERRO' : '--'; ch.offsetEl.style.color = r.error ? '#ff4444' : '#3a3a5a'; }
-          else { const s = r.offsetMs / 1000; ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's'; ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844'; }
-        }
-        if (ch.confEl) {
-          if (r.confidence != null && !r.error && !r.skipped) { ch.confEl.textContent = Math.round(r.confidence * 100) + '%'; ch.confEl.style.color = r.confidence > 0.6 ? '#44ff88' : r.confidence > 0.3 ? '#ffd700' : '#ff4444'; }
-          else { ch.confEl.textContent = '--'; }
-        }
-      });
-      ML.chart.show(results);
-      const errs = results.filter(r => r.error);
-      statusEl.textContent = errs.length ? errs.map(r => r.label + ': ' + r.error).join(' | ') : 'An\u00e1lise conclu\u00edda';
-      statusEl.style.color = errs.length ? '#ff8844' : '#44ff88';
+    btnAnalyze.onclick = () => {
+      statusEl.textContent = 'Calculando (testando 5s→60s)...'; statusEl.style.color = '#778';
+      // setTimeout para liberar o render antes do cálculo pesado
+      setTimeout(() => {
+        const results = ML.correlator.analyzeBestAll();
+        results.forEach(r => {
+          const ch = r.channel;
+          if (!ch || r.isReference) return;
+          if (ch.offsetEl) {
+            if (r.skipped || r.error) {
+              ch.offsetEl.textContent = r.error ? 'ERRO' : '--';
+              ch.offsetEl.style.color = r.error ? '#ff4444' : '#3a3a5a';
+            } else {
+              const s = r.offsetMs / 1000;
+              ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
+              ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+            }
+          }
+          if (ch.confEl) {
+            if (r.confidence != null && !r.error && !r.skipped) {
+              const pct  = Math.round(r.confidence * 100);
+              const lagS = r.lagUsedMs ? (r.lagUsedMs / 1000) + 's' : '';
+              ch.confEl.textContent = pct + '%' + (lagS ? '@' + lagS : '');
+              ch.confEl.style.color = r.confidence > 0.6 ? '#44ff88' : r.confidence > 0.3 ? '#ffd700' : '#ff4444';
+            } else {
+              ch.confEl.textContent = '--';
+              ch.confEl.style.color = '#3a3a5a';
+            }
+          }
+        });
+        ML.chart.show(results);
+        const errs = results.filter(r => r.error);
+        statusEl.textContent = errs.length
+          ? errs.map(r => r.label + ': ' + r.error).join(' | ')
+          : 'An\u00e1lise conclu\u00edda';
+        statusEl.style.color = errs.length ? '#ff8844' : '#44ff88';
+      }, 30);
     };
 
     Object.defineProperty(btnAnalyze, 'disabled', {
@@ -233,9 +248,6 @@
     const rowBtns = row(6); rowBtns.style.marginBottom = '6px';
     rowBtns.append(btnRec, btnAnalyze);
     secAn.appendChild(rowBtns);
-    const rowLag = row(4);
-    rowLag.append(sp('Max. Lag', 'flex-shrink:0'), lagSel);
-    secAn.appendChild(rowLag);
     panel.appendChild(secAn);
 
     /* ═══ STATUS ═══ */
@@ -252,7 +264,7 @@
     document.body.appendChild(panel);
     ML._ui = { btnRec, btnAnalyze, statusEl };
     setInterval(() => { ML.CHANNELS.forEach(ch => { if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length + 'pt'; }); }, 1000);
-    console.log('[MedLat] 50-panel carregado (lag at\u00e9 60s).');
+    console.log('[MedLat] 50-panel carregado (analyzeBest autom\u00e1tico).');
   }
 
   ML.panel = { init };
