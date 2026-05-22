@@ -14,13 +14,13 @@
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#ccc',
-      'user-select:none;width:200px;overflow:hidden',
+      'user-select:none;width:228px;overflow:hidden',
     ].join(';');
 
     const hdr = document.createElement('div');
     hdr.style.cssText = [
       'display:flex;align-items:center;gap:6px;overflow:hidden',
-      'padding:5px 8px 4px;cursor:move',
+      'padding:6px 8px 5px;cursor:move',
       'border-bottom:1px solid #1e1e3a',
       'background:#1a1a2e;border-radius:6px 6px 0 0',
     ].join(';');
@@ -29,7 +29,7 @@
     ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
     const btnX = document.createElement('button');
     btnX.textContent = '\u2715';
-    btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
+    btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 7px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove()); };
     hdr.append(ttl, btnX);
     panel.appendChild(hdr);
@@ -74,54 +74,52 @@
       return inp;
     }
 
-    /* ═══ TELAS ═══ */
-    const secTelas = sec('Telas');
-    const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 44);
+    const secTG = sec('Telas e Grid');
+    const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 46);
     function applyGlobalPx(v) {
       const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
       ML.state.probeW = c; pxInp.value = c;
       ML.CHANNELS.forEach(ch => { if (ch.probeW == null) { if (ch._szInp) ch._szInp.value = c; if (ch.active && ch.resize) ch.resize(); } });
     }
     const btnPxM = mkBtn('\u2212', '#1e2a3a', 'padding:2px 5px');
-    const btnPxP = mkBtn('+',    '#1e2a3a', 'padding:2px 5px');
+    const btnPxP = mkBtn('+', '#1e2a3a', 'padding:2px 5px');
     btnPxM.onclick = () => applyGlobalPx(ML.state.probeW - 2);
     btnPxP.onclick = () => applyGlobalPx(ML.state.probeW + 2);
     pxInp.addEventListener('change', () => applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW));
     pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
     const rowPx = row(4); rowPx.style.marginBottom = '5px';
-    rowPx.append(sp('PX Global', 'flex-shrink:0'), btnPxM, pxInp, btnPxP);
-    secTelas.appendChild(rowPx);
-    ML.BUFFER_SECONDS = 120;
-    const rowBuf = row(4);
-    rowBuf.append(sp('Buffer', 'flex-shrink:0'), sp('120s (fixo)', 'color:#334;font-size:8px'));
-    secTelas.appendChild(rowBuf);
-    panel.appendChild(secTelas);
+    rowPx.append(sp('PX Global', 'flex-shrink:0;width:56px'), btnPxM, pxInp, btnPxP);
+    secTG.appendChild(rowPx);
 
-    /* ═══ GRID ═══ */
-    const secGrid = sec('Grid');
-    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0');
+    ML.BUFFER_SECONDS = 120;
+    const rowBuf = row(4); rowBuf.style.marginBottom = '6px';
+    rowBuf.append(sp('Buffer', 'flex-shrink:0;width:56px'), sp('120s (fixo)', 'color:#334;font-size:8px'));
+    secTG.appendChild(rowBuf);
+
+    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0;padding:4px 0');
     function updateSnapBtn() { btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF'; btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e'; btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#556'; }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
-    const btnCol = mkBtn('', '#3a1a0d', 'flex:1;min-width:0');
+
+    const btnCol = mkBtn('', '#3a1a0d', 'flex:1;min-width:0;padding:4px 0');
     function updateColBtn() { btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF'; btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e'; btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#556'; }
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
     const rowToggle = row(4); rowToggle.style.marginBottom = '5px';
     rowToggle.append(btnSnap, btnCol);
-    secGrid.appendChild(rowToggle);
-    const gridInp = mkNum(ML.state.snapSize, 2, 100, 2, 44);
+    secTG.appendChild(rowToggle);
+
+    const gridInp = mkNum(ML.state.snapSize, 2, 100, 2, 46);
     gridInp.addEventListener('change', () => { ML.state.snapSize = Math.max(2, Math.min(100, parseInt(gridInp.value) || 20)); gridInp.value = ML.state.snapSize; });
     const rowGridPx = row(4);
-    rowGridPx.append(sp('Grid px', 'flex-shrink:0'), gridInp);
-    secGrid.appendChild(rowGridPx);
-    panel.appendChild(secGrid);
+    rowGridPx.append(sp('Grid px', 'flex-shrink:0;width:56px'), gridInp);
+    secTG.appendChild(rowGridPx);
+    panel.appendChild(secTG);
 
-    /* ═══ DETALHAMENTO ═══ */
     const secDet = sec('Detalhamento');
     ML.CHANNELS.forEach((ch, i) => {
       const chWrap = document.createElement('div');
       chWrap.style.cssText = [
-        'display:flex;flex-direction:column;gap:2px',
-        'padding:3px 4px;border-radius:4px;margin-bottom:4px;overflow:hidden',
+        'display:flex;flex-direction:column;gap:3px',
+        'padding:4px 5px;border-radius:4px;margin-bottom:4px;overflow:hidden',
         `border:1px solid ${ch.color}44`,
         `background:${ch.color}0d`,
         `border-left:3px solid ${ch.color}`,
@@ -133,49 +131,53 @@
       const tog = document.createElement('button');
       tog.style.cssText = `width:9px;height:9px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
       tog.onclick = () => { ch.active = !ch.active; tog.style.background = ch.active ? ch.color : 'transparent'; chWrap.style.opacity = ch.active ? 1 : .4; ch.probe.style.display = ch.active ? 'block' : 'none'; if (!ch.active) ch.prevLum = null; };
+
       const lblInp = document.createElement('input');
       lblInp.value = i === 0 ? '\u2605 ' + ch.label : ch.label;
-      lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis`;
+      lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 11px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis`;
       lblInp.addEventListener('change', () => { ch.label = lblInp.value.replace(/^\u2605\s*/, ''); if (ch.probeLabel) ch.probeLabel.textContent = ch.label; });
+
       const lumEl = document.createElement('span');
-      lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;width:22px;text-align:right;flex-shrink:0`;
+      lumEl.style.cssText = `color:${ch.color};font-size:13px;font-weight:bold;width:28px;text-align:right;flex-shrink:0`;
       lumEl.textContent = '--'; ch.lumEl = lumEl;
+
       const ptsEl = document.createElement('span');
-      ptsEl.style.cssText = 'color:#445;font-size:8px;width:26px;text-align:right;flex-shrink:0;white-space:nowrap';
+      ptsEl.style.cssText = 'color:#445;font-size:8px;width:34px;text-align:right;flex-shrink:0;white-space:nowrap';
       ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
       r1.append(tog, lblInp, lumEl, ptsEl);
 
       const r2 = row(3);
-      const szInp = mkNum(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 34);
+      const pxTag = sp('px', 'font-size:8px;flex-shrink:0');
+      const szInp = mkNum(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 36);
       ch._szInp = szInp;
-      function applyChanPx(v) { const c = Math.max(16, Math.min(500, Math.round(v/2)*2)); ch.probeW = c; szInp.value = c; if (ch.active && ch.resize) ch.resize(); }
+      function applyChanPx(v) { const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2)); ch.probeW = c; szInp.value = c; if (ch.active && ch.resize) ch.resize(); }
       const szM = mkBtn('\u2212', '#1e2a3a', 'padding:1px 4px');
-      const szP = mkBtn('+',    '#1e2a3a', 'padding:1px 4px');
+      const szP = mkBtn('+', '#1e2a3a', 'padding:1px 4px');
       szM.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) - 2);
       szP.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) + 2);
       szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
       szInp.addEventListener('keydown', e => {
-        if (e.key==='Enter')     { e.preventDefault(); applyChanPx(parseInt(szInp.value)||ML.state.probeW); szInp.blur(); }
-        if (e.key==='ArrowUp')   { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)+2); }
-        if (e.key==='ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)-2); }
+        if (e.key === 'Enter') { e.preventDefault(); applyChanPx(parseInt(szInp.value) || ML.state.probeW); szInp.blur(); }
+        if (e.key === 'ArrowUp') { e.preventDefault(); applyChanPx((parseInt(szInp.value) || 16) + 2); }
+        if (e.key === 'ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value) || 16) - 2); }
       });
+
       const offEl = document.createElement('span');
-      offEl.style.cssText = 'color:#778;font-size:9px;font-weight:bold;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
+      offEl.style.cssText = 'color:#778;font-size:9px;font-weight:bold;flex:1;text-align:right;white-space:nowrap;min-width:0';
       offEl.textContent = i === 0 ? '0.000s' : '--'; ch.offsetEl = offEl;
-      // confEl agora mostra "XX%@Ys"
+
       const confEl = document.createElement('span');
-      confEl.style.cssText = 'color:#778;font-size:8px;width:36px;text-align:right;flex-shrink:0;white-space:nowrap';
+      confEl.style.cssText = 'color:#778;font-size:8px;width:42px;text-align:right;flex-shrink:0;white-space:nowrap';
       confEl.textContent = i === 0 ? '100%' : '--'; ch.confEl = confEl;
-      r2.append(sp('px','font-size:8px;flex-shrink:0'), szM, szInp, szP, offEl, confEl);
+      r2.append(pxTag, szM, szInp, szP, offEl, confEl);
       chWrap.append(r1, r2);
       secDet.appendChild(chWrap);
     });
     panel.appendChild(secDet);
 
-    /* ═══ ANALISE ═══ */
     const secAn = sec('Analise');
-    const btnRec     = mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
-    const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
+    const btnRec = mkBtn('\u25cf GRAVAR', '#1b5e20', 'flex:1;padding:6px 0;font-size:12px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
+    const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:6px 0;font-size:12px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
 
     btnRec.onclick = () => {
       if (!ML.state.recording) {
@@ -187,7 +189,7 @@
         ML.CHANNELS.forEach(ch => {
           if (ML.CHANNELS.indexOf(ch) !== 0) {
             if (ch.offsetEl) ch.offsetEl.textContent = '--';
-            if (ch.confEl)   ch.confEl.textContent   = '--';
+            if (ch.confEl) ch.confEl.textContent = '--';
           }
         });
       } else {
@@ -202,7 +204,6 @@
 
     btnAnalyze.onclick = () => {
       statusEl.textContent = 'Calculando (testando 5s→60s)...'; statusEl.style.color = '#778';
-      // setTimeout para liberar o render antes do cálculo pesado
       setTimeout(() => {
         const results = ML.correlator.analyzeBestAll();
         results.forEach(r => {
@@ -220,7 +221,7 @@
           }
           if (ch.confEl) {
             if (r.confidence != null && !r.error && !r.skipped) {
-              const pct  = Math.round(r.confidence * 100);
+              const pct = Math.round(r.confidence * 100);
               const lagS = r.lagUsedMs ? (r.lagUsedMs / 1000) + 's' : '';
               ch.confEl.textContent = pct + '%' + (lagS ? '@' + lagS : '');
               ch.confEl.style.color = r.confidence > 0.6 ? '#44ff88' : r.confidence > 0.3 ? '#ffd700' : '#ff4444';
@@ -232,9 +233,7 @@
         });
         ML.chart.show(results);
         const errs = results.filter(r => r.error);
-        statusEl.textContent = errs.length
-          ? errs.map(r => r.label + ': ' + r.error).join(' | ')
-          : 'An\u00e1lise conclu\u00edda';
+        statusEl.textContent = errs.length ? errs.map(r => r.label + ': ' + r.error).join(' | ') : 'An\u00e1lise conclu\u00edda';
         statusEl.style.color = errs.length ? '#ff8844' : '#44ff88';
       }, 30);
     };
@@ -245,15 +244,14 @@
     });
     btnAnalyze.disabled = true;
 
-    const rowBtns = row(6); rowBtns.style.marginBottom = '6px';
+    const rowBtns = row(6); rowBtns.style.marginBottom = '0';
     rowBtns.append(btnRec, btnAnalyze);
     secAn.appendChild(rowBtns);
     panel.appendChild(secAn);
 
-    /* ═══ STATUS ═══ */
     const statusEl = document.createElement('div');
     statusEl.style.cssText = [
-      'font-size:9px;color:#667;padding:4px 10px 5px',
+      'font-size:9px;color:#667;padding:5px 10px 6px',
       'border-top:1px solid #1a1a30;text-align:center;font-style:italic',
       'background:#0e0e1a;border-radius:0 0 6px 6px',
       'overflow:hidden;white-space:nowrap;text-overflow:ellipsis',
@@ -264,7 +262,7 @@
     document.body.appendChild(panel);
     ML._ui = { btnRec, btnAnalyze, statusEl };
     setInterval(() => { ML.CHANNELS.forEach(ch => { if (ch.ptsEl) ch.ptsEl.textContent = ch.buffer.length + 'pt'; }); }, 1000);
-    console.log('[MedLat] 50-panel carregado (analyzeBest autom\u00e1tico).');
+    console.log('[MedLat] 50-panel carregado (layout compacto ampliado).');
   }
 
   ML.panel = { init };
