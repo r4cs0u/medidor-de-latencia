@@ -1,20 +1,17 @@
 (function () {
-  // Para loop anterior se existir
   if (window.MedLat && window.MedLat.stop) window.MedLat.stop();
-  // Remove apenas painel e overlay — probes serão recriados pelo 10-probes.js
   ['ml-panel', 'ml-chart-overlay'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.remove();
   });
-  // Remove probes antigos especificamente
   document.querySelectorAll('[id^="ml-probe-"]').forEach(e => e.remove());
 
   window.MedLat = {
     CHANNELS: [
-      { id:'ch0', label:'Referência', color:'#00d4ff', active:false },
-      { id:'ch1', label:'Tela 2',     color:'#ff4444', active:false },
-      { id:'ch2', label:'Tela 3',     color:'#44ff88', active:false },
-      { id:'ch3', label:'Tela 4',     color:'#ffd700', active:false },
+      { id:'ch0', label:'Refer\u00eancia', color:'#00d4ff', active:false },
+      { id:'ch1', label:'Tela 2',      color:'#ff4444',  active:false },
+      { id:'ch2', label:'Tela 3',      color:'#44ff88',  active:false },
+      { id:'ch3', label:'Tela 4',      color:'#ffd700',  active:false },
     ],
 
     INTERVAL_MS:    33,
@@ -24,9 +21,10 @@
     state: {
       running:   false,
       recording: false,
-      probeW:    64,      // tamanho padrão global (pode ser sobreposto por ch.probeW)
-      snapGrid:  true,    // arrastar com snap magnético ligado por padrão
-      snapSize:  20,      // tamanho da célula do grid em px (ajuste via console)
+      probeW:    232,     // tamanho padr\u00e3o global
+      snapGrid:  true,
+      snapSize:  2,       // grid de 2px
+      noOverlap: false,
     },
 
     stop() { this.state.running = false; },
@@ -38,8 +36,8 @@
     ch.off     = null;
     ch.ctx     = null;
     ch.probe   = null;
-    ch.probeW  = null;   // null = usa ML.state.probeW; número = tamanho individual
+    ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado.');
+  console.log('[MedLat] 00-core carregado. probeW=232, snapSize=2');
 })();
