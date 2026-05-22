@@ -7,18 +7,16 @@
       if (el) el.remove();
     });
 
-    // ── Painel ─────────────────────────────────────────────────────────────
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
     panel.style.cssText = [
-      'position:fixed;top:8px;left:8px;z-index:99999',
+      'position:fixed;top:8px;right:8px;z-index:99999',
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#ccc',
-      'user-select:none;width:280px',
+      'user-select:none;width:140px',
     ].join(';');
 
-    // ── Header arrastável ──────────────────────────────────────────────────
     const hdr = document.createElement('div');
     hdr.style.cssText = [
       'display:flex;justify-content:space-between;align-items:center',
@@ -39,10 +37,12 @@
     hdr.append(ttl, btnX);
     panel.appendChild(hdr);
 
-    // drag
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => {
-      pdrag = true; pox = e.clientX - panel.offsetLeft; poy = e.clientY - panel.offsetTop;
+      pdrag = true;
+      panel.style.right = 'auto';
+      pox = e.clientX - panel.offsetLeft;
+      poy = e.clientY - panel.offsetTop;
     });
     window.addEventListener('mousemove', e => {
       if (!pdrag) return;
@@ -51,7 +51,6 @@
     });
     window.addEventListener('mouseup', () => pdrag = false);
 
-    // ── Helpers ────────────────────────────────────────────────────────────
     function section(label) {
       const wrap = document.createElement('div');
       wrap.style.cssText = 'padding:6px 10px;border-bottom:1px solid #1a1a30';
@@ -100,13 +99,10 @@
       return inp;
     }
 
-    // ── SEÇÃO 1: Controles globais ─────────────────────────────────────────
+    // ── Seção 1: Controles globais ─────────────────────────────────────────
     const secCtrl = section(null);
     secCtrl.style.padding = '5px 10px';
-
-    // linha: Probe W [−] [inp] [+]  |  Buf [sel]
     const ctrlRow = row(6);
-
     const pxInp = mkNumInp(ML.state.probeW, 16, 500, 2, 42);
     function applyGlobalPx(v) {
       const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
@@ -127,21 +123,16 @@
     pxInp.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); }
     });
-
     const durSel = mkSel([5,15,30,45].map(v => [v, v+'s']), ML.BUFFER_SECONDS, 'flex:1');
     durSel.onchange = () => { ML.BUFFER_SECONDS = parseInt(durSel.value); };
-
     const sep = document.createElement('span');
-    sep.textContent = '|';
-    sep.style.cssText = 'color:#2a2a4a;font-size:12px;padding:0 1px';
-
+    sep.textContent = '|'; sep.style.cssText = 'color:#2a2a4a;font-size:12px;padding:0 1px';
     ctrlRow.append(lbl('Probe W'), btnPxM, pxInp, btnPxP, sep, lbl('Buf'), durSel);
     secCtrl.appendChild(ctrlRow);
     panel.appendChild(secCtrl);
 
-    // ── SEÇÃO 2: Grid / Snap ───────────────────────────────────────────────
+    // ── Seção 2: Grid ──────────────────────────────────────────────────────
     const secGrid = section('Grid');
-
     const snapColRow = row(4);
     const btnSnap = mkBtn('', '#0d4f3c', 'flex:1');
     function updateSnapBtn() {
@@ -151,7 +142,6 @@
     }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); };
     updateSnapBtn();
-
     const btnCol = mkBtn('', '#3a1a0d', 'flex:1');
     function updateColBtn() {
       btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF';
@@ -160,21 +150,17 @@
     }
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); };
     updateColBtn();
-
     const gridInp = mkNumInp(ML.state.snapSize, 2, 100, 2, 36);
     gridInp.addEventListener('change', () => {
       ML.state.snapSize = Math.max(2, Math.min(100, parseInt(gridInp.value) || 20));
       gridInp.value = ML.state.snapSize;
     });
-    const gridPx = lbl('px');
-
-    snapColRow.append(btnSnap, btnCol, lbl('Grid'), gridInp, gridPx);
+    snapColRow.append(btnSnap, btnCol, lbl('Grid'), gridInp, lbl('px'));
     secGrid.appendChild(snapColRow);
     panel.appendChild(secGrid);
 
-    // ── SEÇÃO 3: Canais ────────────────────────────────────────────────────
+    // ── Seção 3: Canais ────────────────────────────────────────────────────
     const secCh = section('Canais');
-
     ML.CHANNELS.forEach((ch, i) => {
       const chRow = document.createElement('div');
       chRow.style.cssText = [
@@ -186,7 +172,6 @@
       ].join(';');
       ch._panelRow = chRow;
 
-      // linha 1: toggle + label + lum
       const top = row(4);
       const tog = document.createElement('button');
       tog.style.cssText = `width:9px;height:9px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
@@ -197,7 +182,6 @@
         ch.probe.style.display = ch.active ? 'block' : 'none';
         if (!ch.active) ch.prevLum = null;
       };
-
       const lblInp = document.createElement('input');
       lblInp.value = i === 0 ? '\u2605 ' + ch.label : ch.label;
       lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;flex:1;outline:none;cursor:text;min-width:0`;
@@ -205,22 +189,17 @@
         ch.label = lblInp.value.replace(/^\u2605\s*/, '');
         if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
       });
-
       const lumEl = document.createElement('span');
       lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;min-width:24px;text-align:right;flex-shrink:0`;
       lumEl.textContent = '--';
       ch.lumEl = lumEl;
-
       const ptsEl = document.createElement('span');
       ptsEl.style.cssText = 'color:#3a3a5a;font-size:8px;min-width:26px;text-align:right;flex-shrink:0';
       ptsEl.textContent = '0pt';
       ch.ptsEl = ptsEl;
-
       top.append(tog, lblInp, lumEl, ptsEl);
 
-      // linha 2: PX [−][inp][+](h)  |  offset  conf
       const bot = row(3);
-
       const szInp = mkNumInp(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 34);
       ch._szInp = szInp;
       const curW = ch.probeW != null ? ch.probeW : ML.state.probeW;
@@ -228,16 +207,14 @@
       szHLbl.textContent = '(' + Math.round(curW * 9/16) + 'h)';
       szHLbl.style.cssText = 'font-size:7px;color:#445;white-space:nowrap';
       ch._szHLbl = szHLbl;
-
       function applyChanPx(v) {
         const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
         ch.probeW = c; szInp.value = c;
         szHLbl.textContent = '(' + Math.round(c * 9/16) + 'h)';
         if (ch.active && ch.resize) ch.resize();
       }
-      const szM = mkBtn('\u2212', '#1e2a3a');
-      const szP = mkBtn('+', '#1e2a3a');
-      szM.style.padding = '0 4px'; szP.style.padding = '0 4px';
+      const szM = mkBtn('\u2212', '#1e2a3a'); szM.style.padding = '0 4px';
+      const szP = mkBtn('+', '#1e2a3a');    szP.style.padding = '0 4px';
       szM.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) - 2);
       szP.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) + 2);
       szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
@@ -246,27 +223,22 @@
         if (e.key === 'ArrowUp')   { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16) + 2); }
         if (e.key === 'ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16) - 2); }
       });
-
       const offEl = document.createElement('span');
       offEl.style.cssText = 'color:#778;font-size:9px;font-weight:bold;flex:1;text-align:right;white-space:nowrap';
       offEl.textContent = i === 0 ? '0.000s' : '--';
       ch.offsetEl = offEl;
-
       const confEl = document.createElement('span');
       confEl.style.cssText = 'color:#778;font-size:9px;min-width:32px;text-align:right;white-space:nowrap';
       confEl.textContent = i === 0 ? '100%' : '--';
       ch.confEl = confEl;
-
       bot.append(lbl('px', 'font-size:8px'), szM, szInp, szP, szHLbl, offEl, confEl);
       chRow.append(top, bot);
       secCh.appendChild(chRow);
     });
-
     panel.appendChild(secCh);
 
-    // ── SEÇÃO 4: Análise ───────────────────────────────────────────────────
+    // ── Seção 4: Análise ───────────────────────────────────────────────────
     const secAn = section('Analise');
-
     const btnRec = document.createElement('button');
     btnRec.style.cssText = 'width:100%;background:#1b5e20;border:1px solid #2e7d3288;color:#fff;border-radius:4px;padding:5px 0;cursor:pointer;font-size:11px;font-family:monospace;font-weight:bold;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066;margin-bottom:4px';
     btnRec.textContent = '\u25cf GRAVAR';
@@ -295,12 +267,10 @@
         btnAnalyze.disabled = false;
       }
     };
-
     const lagRow = row(4);
     lagRow.style.marginBottom = '4px';
     const lagSel = mkSel([5000,15000,30000,45000].map(v => [v, (v/1000)+'s']), 30000, 'flex:1');
     lagRow.append(lbl('Max lag'), lagSel);
-
     const btnAnalyze = document.createElement('button');
     btnAnalyze.textContent = '\u26a1 ANALISAR';
     btnAnalyze.style.cssText = 'width:100%;background:#4a148c;border:1px solid #7b1fa288;color:#ce93d8;border-radius:4px;padding:5px 0;cursor:pointer;font-size:11px;font-family:monospace;font-weight:bold;letter-spacing:.04em;opacity:.45';
@@ -343,7 +313,6 @@
       get() { return this._disabled; },
     });
     btnAnalyze.disabled = true;
-
     secAn.append(btnRec, lagRow, btnAnalyze);
     panel.appendChild(secAn);
 
@@ -366,7 +335,7 @@
       });
     }, 1000);
 
-    console.log('[MedLat] 50-panel carregado (layout vertical).');
+    console.log('[MedLat] 50-panel carregado (vertical, direita, 140px).');
   }
 
   ML.panel = { init };
