@@ -16,215 +16,227 @@
 
     await loadChartJs();
 
-    const old = document.getElementById('ml-chart-overlay');
+    const old = document.getElementById('ml-chart-panel');
     if (old) old.remove();
 
-    const overlay = document.createElement('div');
-    overlay.id = 'ml-chart-overlay';
-    overlay.style.cssText = [
-      'position:fixed;inset:0',
-      'background:#0009',
-      'z-index:999998',
-      'display:flex;align-items:center;justify-content:center',
+    /* ── posiciona à esquerda do painel principal ── */
+    const mainPanel = document.getElementById('ml-panel');
+    const mpRect = mainPanel ? mainPanel.getBoundingClientRect() : { left: window.innerWidth - 248, top: 8, width: 228 };
+    const initLeft = Math.max(4, mpRect.left - 420 - 8);
+    const initTop  = mpRect.top;
+
+    const panel = document.createElement('div');
+    panel.id = 'ml-chart-panel';
+    panel.style.cssText = [
+      `position:fixed;left:${initLeft}px;top:${initTop}px`,
+      'z-index:99998',
+      'background:#0e0e1aee;border:1px solid #2a2a4a',
+      'border-radius:8px;box-shadow:0 4px 24px #000d',
+      'font-family:monospace;font-size:10px;color:#ccc',
+      'user-select:none;width:420px;overflow:hidden',
     ].join(';');
 
-    const box = document.createElement('div');
-    box.style.cssText = [
-      'background:#0e0e1a',
-      'border:1px solid #2a2a4a',
-      'border-radius:10px',
-      'padding:12px 14px 10px',
-      'width:min(88vw, 760px)',
-      'max-height:80vh',
-      'overflow-y:auto',
-      'position:relative',
-      'color:#ccc',
-      'font-family:monospace',
-      'font-size:10px',
+    /* ── header arrastável ── */
+    const hdr = document.createElement('div');
+    hdr.style.cssText = [
+      'display:flex;align-items:center;gap:6px;padding:6px 10px 5px',
+      'background:#1a1a2e;border-bottom:1px solid #1e1e3a',
+      'border-radius:8px 8px 0 0;cursor:move',
     ].join(';');
-
+    const htitle = document.createElement('span');
+    htitle.textContent = '📊 Luminância por Frame';
+    htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;flex:1';
     const btnClose = document.createElement('button');
     btnClose.textContent = '✕';
-    btnClose.style.cssText = 'position:absolute;top:8px;right:8px;background:#c62828;border:none;color:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px';
-    btnClose.onclick = () => overlay.remove();
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 7px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
+    btnClose.onclick = () => panel.remove();
+    hdr.append(htitle, btnClose);
+    panel.appendChild(hdr);
 
-    const titleEl = document.createElement('div');
-    titleEl.style.cssText = 'font-size:11px;font-weight:bold;color:#00d4ff;margin-bottom:8px;padding-right:40px';
-    titleEl.textContent = '📡 Luminância por Frame';
+    let drag = false, ox = 0, oy = 0;
+    hdr.addEventListener('mousedown', e => { drag = true; ox = e.clientX - panel.offsetLeft; oy = e.clientY - panel.offsetTop; });
+    window.addEventListener('mousemove', e => { if (!drag) return; panel.style.left = Math.max(0, e.clientX - ox) + 'px'; panel.style.top = Math.max(0, e.clientY - oy) + 'px'; });
+    window.addEventListener('mouseup', () => drag = false);
 
-    box.append(btnClose, titleEl);
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:10px 12px 10px;max-height:calc(100vh - 80px);overflow-y:auto';
+    panel.appendChild(body);
 
-    const datasets = [];
-    let globalMin = Infinity, globalMax = -Infinity;
-    let maxLen = 0;
-
-    ML.CHANNELS.forEach(ch => {
-      if (!ch.active || !ch.buffer || ch.buffer.length < 2) return;
-      const lums = ch.buffer.map(p => p.lum);
-      lums.forEach(v => {
-        if (v < globalMin) globalMin = v;
-        if (v > globalMax) globalMax = v;
-      });
-      if (lums.length > maxLen) maxLen = lums.length;
-      datasets.push({ ch, lums, hidden: false });
-    });
-
-    if (datasets.length === 0) {
-      const msg = document.createElement('div');
-      msg.style.cssText = 'color:#ff4444;padding:20px;text-align:center';
-      msg.textContent = 'Nenhum canal com dados gravados.';
-      box.appendChild(msg);
-      overlay.appendChild(box);
-      document.body.appendChild(overlay);
-      return;
-    }
-
-    const range = Math.max(1, globalMax - globalMin);
-    const yMin = Math.max(0, Math.floor(globalMin - range * 0.10));
-    const yMax = Math.min(255, Math.ceil(globalMax + range * 0.10));
-
-    const refCh = datasets[0].ch;
-    const labels = refCh.buffer.slice(0, maxLen).map((p, i) => {
-      const sec = ((p.ts - refCh.buffer[0].ts) / 1000).toFixed(1);
-      return i % Math.max(1, Math.floor(maxLen / 16)) === 0 ? sec + 's' : '';
-    });
-
-    const toggleBar = document.createElement('div');
-    toggleBar.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px';
-
+    /* ── resultados em cards lado a lado ── */
     const hasResults = results.some(r => !r.isReference && !r.error && !r.skipped);
     if (hasResults) {
-      const secLabel = document.createElement('div');
-      secLabel.style.cssText = 'font-size:8px;color:#3a3a5a;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;margin-bottom:5px';
-      secLabel.textContent = 'Comparativo de Offset';
-      box.appendChild(secLabel);
+      const rLabel = document.createElement('div');
+      rLabel.style.cssText = 'font-size:7px;color:#3a3a5a;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;margin-bottom:5px';
+      rLabel.textContent = 'Comparativo de Offset';
+      body.appendChild(rLabel);
 
-      const table = document.createElement('div');
-      table.style.cssText = 'display:grid;grid-template-columns:1fr auto auto;gap:2px 10px;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1a1a30';
+      const cards = document.createElement('div');
+      cards.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1a1a30';
 
-      ['Canal', 'Offset', 'Confiança'].forEach(h => {
-        const c = document.createElement('span');
-        c.textContent = h;
-        c.style.cssText = 'font-size:8px;color:#445;font-weight:bold;border-bottom:1px solid #1a1a30;padding-bottom:2px';
-        table.appendChild(c);
-      });
-
+      /* card referência */
       const ref = ML.CHANNELS[0];
-      const refName = document.createElement('span');
-      refName.style.cssText = `font-size:9px;color:${ref.color};font-weight:bold`;
-      refName.textContent = '★ ' + ref.label;
-      const refOff = document.createElement('span'); refOff.textContent = '0.000s'; refOff.style.cssText = 'font-size:9px;color:#44ff88;text-align:right';
-      const refConf = document.createElement('span'); refConf.textContent = '100%'; refConf.style.cssText = 'font-size:9px;color:#44ff88;text-align:right';
-      table.append(refName, refOff, refConf);
+      const refCard = mkCard(ref.label, '★', ref.color, '0.000s', '100%', null);
+      cards.appendChild(refCard);
 
       results.forEach(r => {
         if (r.isReference || !r.channel) return;
         const ch = r.channel;
-
-        const nameEl = document.createElement('span');
-        nameEl.style.cssText = `font-size:9px;color:${ch.color};font-weight:bold`;
-        nameEl.textContent = ch.label;
-
-        const offEl = document.createElement('span');
-        offEl.style.cssText = 'font-size:9px;font-weight:bold;text-align:right';
-        const confEl = document.createElement('span');
-        confEl.style.cssText = 'font-size:9px;text-align:right';
-
-        if (r.error || r.skipped) {
-          offEl.textContent = r.error ? 'ERRO' : '--';
-          confEl.textContent = '--';
-          offEl.style.color = r.error ? '#ff4444' : '#445';
-          confEl.style.color = '#445';
-        } else {
+        let offTxt = '--', offColor = '#445', confTxt = '--', confColor = '#445';
+        if (!r.error && !r.skipped) {
           const s = r.offsetMs / 1000;
-          offEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
-          offEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+          offTxt = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
+          offColor = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
           const pct = r.confidence != null ? Math.round(r.confidence * 100) : null;
-          confEl.textContent = pct != null ? pct + '%' : '--';
-          confEl.style.color = pct == null ? '#445' : pct > 60 ? '#44ff88' : pct > 30 ? '#ffd700' : '#ff4444';
+          if (pct != null) {
+            confTxt = pct + '%' + (r.lagUsedMs ? '@' + (r.lagUsedMs/1000) + 's' : '');
+            confColor = pct > 60 ? '#44ff88' : pct > 30 ? '#ffd700' : '#ff4444';
+          }
+        } else {
+          offTxt = r.error ? 'ERRO' : '--';
+          offColor = r.error ? '#ff4444' : '#445';
         }
-
-        table.append(nameEl, offEl, confEl);
+        cards.appendChild(mkCard(ch.label, '', ch.color, offTxt, confTxt, offColor, confColor));
       });
 
-      box.appendChild(table);
+      body.appendChild(cards);
     }
 
-    const chartLabel = document.createElement('div');
-    chartLabel.style.cssText = 'font-size:8px;color:#3a3a5a;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;margin-bottom:5px';
-    chartLabel.textContent = 'Curvas visíveis';
-    box.appendChild(chartLabel);
+    /* ── datasets ── */
+    const activeChannels = [];
+    let maxLen = 0;
+    ML.CHANNELS.forEach(ch => {
+      if (!ch.active || !ch.buffer || ch.buffer.length < 2) return;
+      activeChannels.push(ch);
+      if (ch.buffer.length > maxLen) maxLen = ch.buffer.length;
+    });
 
-    const lumWrap = document.createElement('div');
-    lumWrap.style.cssText = 'height:160px;margin-bottom:4px';
-    const lumCanvas = document.createElement('canvas');
-    lumCanvas.style.cssText = 'width:100%;height:100%;display:block';
-    lumCanvas.height = 160;
+    if (activeChannels.length === 0) {
+      const msg = document.createElement('div');
+      msg.style.cssText = 'color:#ff4444;padding:16px;text-align:center';
+      msg.textContent = 'Nenhum canal com dados gravados.';
+      body.appendChild(msg);
+      document.body.appendChild(panel);
+      return;
+    }
 
-    let chartInstance = null;
+    /* toggle bar */
+    const cLabel = document.createElement('div');
+    cLabel.style.cssText = 'font-size:7px;color:#3a3a5a;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;margin-bottom:5px';
+    cLabel.textContent = 'Canais visíveis';
+    body.appendChild(cLabel);
 
-    function buildChart() {
-      if (chartInstance) chartInstance.destroy();
-      chartInstance = new Chart(lumCanvas, {
+    const toggleBar = document.createElement('div');
+    toggleBar.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px';
+    body.appendChild(toggleBar);
+
+    /* ── small multiples: um mini-chart por canal ── */
+    const chartsWrap = document.createElement('div');
+    chartsWrap.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+    body.appendChild(chartsWrap);
+
+    const refCh = activeChannels[0];
+    const sharedLabels = refCh.buffer.slice(0, maxLen).map((p, i) => {
+      const sec = ((p.ts - refCh.buffer[0].ts) / 1000).toFixed(1);
+      return i % Math.max(1, Math.floor(maxLen / 14)) === 0 ? sec + 's' : '';
+    });
+
+    const instances = [];
+
+    activeChannels.forEach((ch, idx) => {
+      const lums = ch.buffer.map(p => p.lum);
+      const localMin = Math.min(...lums);
+      const localMax = Math.max(...lums);
+      const rng  = Math.max(1, localMax - localMin);
+      const yMin = Math.max(0,   Math.floor(localMin - rng * 0.10));
+      const yMax = Math.min(255, Math.ceil (localMax + rng * 0.10));
+
+      /* row por canal */
+      const row = document.createElement('div');
+      row.style.cssText = `display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:4px;background:${ch.color}0d;border-left:2px solid ${ch.color};overflow:hidden`;
+
+      /* label lateral */
+      const lbl = document.createElement('div');
+      lbl.style.cssText = `color:${ch.color};font-weight:bold;font-size:8px;width:44px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+      lbl.textContent = (idx === 0 ? '★ ' : '') + ch.label;
+
+      /* canvas */
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'flex:1;height:44px;overflow:hidden';
+      const cvs = document.createElement('canvas');
+      cvs.height = 44;
+      wrap.appendChild(cvs);
+
+      row.append(lbl, wrap);
+      chartsWrap.appendChild(row);
+
+      const ci = new Chart(cvs, {
         type: 'line',
         data: {
-          labels,
-          datasets: datasets.map(d => ({
-            label: d.ch.label,
-            data: d.lums.slice(0, maxLen),
-            borderColor: d.ch.color,
-            backgroundColor: d.ch.color + '14',
-            borderWidth: 1.4,
+          labels: sharedLabels,
+          datasets: [{
+            data: lums.slice(0, maxLen),
+            borderColor: ch.color,
+            backgroundColor: ch.color + '18',
+            borderWidth: 1.3,
             pointRadius: 0,
             tension: 0.2,
-            hidden: d.hidden,
-          })),
+            fill: true,
+          }],
         },
         options: {
           animation: false,
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          layout: { padding: { top: 2, right: 4, bottom: 0, left: 0 } },
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          layout: { padding: { top: 1, right: 2, bottom: 0, left: 0 } },
           scales: {
-            x: { ticks: { color: '#555', font: { size: 8 } }, grid: { color: '#16162a' } },
-            y: { ticks: { color: '#555', font: { size: 8 } }, grid: { color: '#16162a' }, min: yMin, max: yMax },
+            x: { display: idx === activeChannels.length - 1, ticks: { color: '#444', font: { size: 7 }, maxRotation: 0 }, grid: { color: '#16162a' } },
+            y: { ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 3 }, grid: { color: '#16162a' }, min: yMin, max: yMax },
           },
         },
       });
-    }
+      instances.push({ ch, row, ci });
 
-    datasets.forEach((d, idx) => {
+      /* toggle btn */
       const btn = document.createElement('button');
       btn.style.cssText = [
-        `background:${d.ch.color}22`,
-        `border:1px solid ${d.ch.color}88`,
-        `color:${d.ch.color}`,
-        'border-radius:3px;padding:2px 7px;cursor:pointer;font:bold 9px monospace',
-        'transition:opacity .15s',
+        `background:${ch.color}22`,
+        `border:1px solid ${ch.color}88`,
+        `color:${ch.color}`,
+        'border-radius:3px;padding:2px 7px;cursor:pointer;font:bold 8px monospace;transition:opacity .15s',
       ].join(';');
-      btn.textContent = (idx === 0 ? '★ ' : '') + d.ch.label;
-      btn.title = 'Clique para mostrar/ocultar';
+      btn.textContent = (idx === 0 ? '★ ' : '') + ch.label;
       btn.onclick = () => {
-        d.hidden = !d.hidden;
-        btn.style.opacity = d.hidden ? '0.35' : '1';
-        if (chartInstance) {
-          chartInstance.data.datasets[idx].hidden = d.hidden;
-          chartInstance.update();
-        }
+        const hidden = row.style.display !== 'none';
+        row.style.display = hidden ? 'none' : 'flex';
+        btn.style.opacity = hidden ? '0.35' : '1';
       };
       toggleBar.appendChild(btn);
     });
 
-    box.append(toggleBar, lumWrap);
-    lumWrap.appendChild(lumCanvas);
-    buildChart();
+    document.body.appendChild(panel);
+  }
 
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
+  function mkCard(label, prefix, color, offTxt, confTxt, offColor, confColor) {
+    const card = document.createElement('div');
+    card.style.cssText = [
+      'display:flex;flex-direction:column;align-items:center;gap:2px',
+      `border:1px solid ${color}44;border-top:2px solid ${color}`,
+      `background:${color}0d;border-radius:4px;padding:4px 8px;min-width:64px`,
+    ].join(';');
+    const nameEl = document.createElement('div');
+    nameEl.style.cssText = `color:${color};font-weight:bold;font-size:9px;white-space:nowrap`;
+    nameEl.textContent = prefix + (prefix ? ' ' : '') + label;
+    const offEl = document.createElement('div');
+    offEl.style.cssText = `color:${offColor || '#44ff88'};font-weight:bold;font-size:11px;line-height:1.1`;
+    offEl.textContent = offTxt;
+    const confEl = document.createElement('div');
+    confEl.style.cssText = `color:${confColor || '#44ff88'};font-size:8px`;
+    confEl.textContent = confTxt;
+    card.append(nameEl, offEl, confEl);
+    return card;
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart carregado — layout compacto + offsets acima.');
+  console.log('[MedLat] 40-chart carregado — painel flutuante + small multiples.');
 })();
