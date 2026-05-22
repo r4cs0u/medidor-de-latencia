@@ -14,7 +14,7 @@
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#ccc',
-      'user-select:none;width:168px',
+      'user-select:none;width:200px',
     ].join(';');
 
     const hdr = document.createElement('div');
@@ -330,7 +330,7 @@
       });
     }, 1000);
 
-    console.log('[MedLat] 50-panel carregado (168px, direita).');
+    console.log('[MedLat] 50-panel carregado (200px, direita).');
   }
 
   ML.panel = { init };
