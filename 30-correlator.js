@@ -35,10 +35,22 @@
     return result;
   }
 
+  /**
+   * Retorna o pico de maior correlação preservando o sinal do lag.
+   * NÃO penaliza lags negativos — escolhe simplesmente o maior r.
+   * Em caso de empate muito próximo (diferença < 0.5% do pico),
+   * prefere o lag de menor módulo para evitar artefatos de borda,
+   * mas mantém o sinal original do vencedor.
+   */
   function selectRobustPeak(corr) {
+    // 1. Pico global absoluto
     const globalPeak = corr.reduce((best, cur) => cur.r > best.r ? cur : best, corr[0]);
-    const threshold  = globalPeak.r * 0.80;
+
+    // 2. Candidatos muito próximos do pico (dentro de 1%)
+    const threshold  = globalPeak.r * 0.99;
     const candidates = corr.filter(c => c.r >= threshold);
+
+    // 3. Entre empates, prefere menor |lag| — mas só em empates reais
     return candidates.reduce((best, cur) =>
       Math.abs(cur.lag) < Math.abs(best.lag) ? cur : best,
       candidates[0]
@@ -84,7 +96,6 @@
 
     for (const lagMs of LAG_CANDIDATES) {
       const maxLagSamples = Math.ceil(lagMs / ML.INTERVAL_MS);
-      // Só vale testar se o buffer tem amostras suficientes para essa janela
       if (Math.min(serA.lum.length, serB.lum.length) < maxLagSamples * 2) continue;
 
       const corr     = crossCorrelation(serA.lum, serB.lum, maxLagSamples);
@@ -103,9 +114,9 @@
       }
     }
 
-    // Fallback: se nenhum lag passou o filtro de amostras, usa o menor
+    // Fallback: buffer pequeno demais, usa o menor lag disponível
     if (!best) {
-      const lagMs        = LAG_CANDIDATES[0];
+      const lagMs         = LAG_CANDIDATES[0];
       const maxLagSamples = Math.ceil(lagMs / ML.INTERVAL_MS);
       const corr          = crossCorrelation(serA.lum, serB.lum, maxLagSamples);
       const peak          = selectRobustPeak(corr);
@@ -151,5 +162,5 @@
   }
 
   ML.correlator = { analyze, analyzeBest, analyzeBestAll, crossCorrelation, normalize };
-  console.log('[MedLat] 30-correlator carregado (analyzeBest: testa 5 lags, retorna maior confian\u00e7a).');
+  console.log('[MedLat] 30-correlator carregado (selectRobustPeak corrigido: preserva sinal do lag).');
 })();
