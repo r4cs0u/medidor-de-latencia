@@ -1,9 +1,6 @@
 (function () {
   const ML = window.MedLat;
 
-  // Força px global inicial em 236
-  ML.state.probeW = 236;
-
   function playDone() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -90,7 +87,9 @@
       ['\ud83d\udda5\ufe0f', 'Evite processos pesados durante a grava\u00e7\u00e3o'],
     ];
 
-    const { win } = makeDraggableWindow('ml-tips', '\ud83d\udca1 Boas Pr\u00e1ticas', '#ffd700', 230);
+    const vw = window.innerWidth;
+    const auxW = Math.round(Math.max(190, Math.min(260, vw * 0.12)));
+    const { win } = makeDraggableWindow('ml-tips', '\ud83d\udca1 Boas Pr\u00e1ticas', '#ffd700', auxW);
 
     const body = document.createElement('div');
     body.style.cssText = 'padding:6px 8px;display:flex;flex-direction:column;gap:5px';
@@ -116,7 +115,9 @@
     const existing = document.getElementById('ml-guide');
     if (existing) { existing.remove(); return; }
 
-    const { win } = makeDraggableWindow('ml-guide', '? Como Usar', '#00d4ff', 240);
+    const vw = window.innerWidth;
+    const auxW = Math.round(Math.max(200, Math.min(270, vw * 0.13)));
+    const { win } = makeDraggableWindow('ml-guide', '\ud83d\udccb Como Usar', '#00d4ff', auxW);
 
     const STEPS = [
       { section: '\u2699\ufe0f  PREPARA\u00c7\u00c3O', color: '#ffd700', items: [
@@ -201,6 +202,10 @@
       if (el) el.remove();
     });
 
+    // Largura responsiva do painel principal
+    const vw = window.innerWidth;
+    const panelW = Math.round(Math.max(200, Math.min(280, vw * 0.13)));
+
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
     panel.style.cssText = [
@@ -208,7 +213,7 @@
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#fff',
-      'user-select:none;width:230px;overflow:hidden',
+      `user-select:none;width:${panelW}px;overflow:hidden`,
     ].join(';');
 
     // Header
@@ -235,7 +240,7 @@
     }
 
     const btnTips  = mkIconBtn('\ud83d\udca1', 'Boas Pr\u00e1ticas', '#ffd700');
-    const btnGuide = mkIconBtn('?', 'Instru\u00e7\u00f5es de Uso', '#00d4ff');
+    const btnGuide = mkIconBtn('\ud83d\udccb', 'Instru\u00e7\u00f5es de Uso', '#00d4ff');
     const btnX     = document.createElement('button');
     btnX.textContent = '\u2715';
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
@@ -323,13 +328,12 @@
     /* ── Seção: Telas & Grid ── */
     const secTG = sec('Telas & Grid');
 
-    // PX Global fixo em 236, aplicado a TODOS os canais (incluindo ajustados individualmente)
+    // PX Global lido do estado inicializado pelo 10-probes.js
     const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 48);
     function applyGlobalPx(v) {
       const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
       ML.state.probeW = c;
       pxInp.value = c;
-      // Aplica a todos os canais, inclusive os com ajuste individual (reseta probeW individual)
       ML.CHANNELS.forEach(ch => {
         ch.probeW = c;
         if (ch._szInp) ch._szInp.value = c;
@@ -453,7 +457,6 @@
       tdName.textContent = (i===0?'\u2605 ':'') + ch.label;
       ch._tdName = tdName;
       const tdOff = document.createElement('td');
-      // Sem coluna de confiança — apenas o offset
       tdOff.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:10px;white-space:nowrap';
       tdOff.textContent  = i===0 ? '0.000s' : '--';
       tdOff.style.color  = i===0 ? '#44ff88' : '#fff';
@@ -532,7 +535,6 @@
               ch.offsetEl.textContent = r.error ? 'ERRO' : '--';
               ch.offsetEl.style.color = r.error ? '#ff4444' : '#fff';
             } else {
-              // Exibe apenas o offset, sem informação de confiança
               const s = r.offsetMs / 1000;
               ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
               ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
@@ -614,7 +616,7 @@
       }
     }, 1000);
 
-    console.log('[MedLat] 50-panel carregado. PX Global fixo 236, confiança removida.');
+    console.log(`[MedLat] 50-panel carregado. PX Global: ${ML.state.probeW}px (sync 10-probes). Painel: ${panelW}px (vw=${vw}).`);
   }
 
   ML.panel = { init };
