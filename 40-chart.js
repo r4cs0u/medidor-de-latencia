@@ -166,15 +166,13 @@
       return ML.INTERVAL_MS;
     }
 
-    const baseShiftSamples = {};
+    // fineShiftSamples: amostras deslocadas APENAS pelo slider manual (parte do 0, sem base automática)
     const fineShiftSamples = {};
     const autoOffsetMs     = {};
-    ML.CHANNELS.forEach(ch => { baseShiftSamples[ch.id] = 0; fineShiftSamples[ch.id] = 0; autoOffsetMs[ch.id] = 0; });
+    ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; autoOffsetMs[ch.id] = 0; });
     results.forEach(r => {
       if (r.isReference || !r.channel || r.error || r.skipped || r.offsetMs == null) return;
-      const iv = realIvMs(r.channel);
-      autoOffsetMs[r.channel.id]     = r.offsetMs;
-      baseShiftSamples[r.channel.id] = -Math.round(r.offsetMs / iv);
+      autoOffsetMs[r.channel.id] = r.offsetMs;
     });
 
     /* cards */
@@ -201,28 +199,32 @@
           if (pct != null) { confTxt = pct + '%'; confColor = pct>60?'#44ff88':pct>30?'#ffd700':'#ff4444'; }
         } else { offTxt = r.error ? 'ERR' : '--'; offColor = r.error ? '#ff4444' : '#445'; }
         const card = mkCard(ch.label, '', ch.color, offTxt, confTxt, offColor, confColor);
-        cardRefs[ch.id] = { offEl: card.children[1], origMs: r.offsetMs || 0, ch };
+        cardRefs[ch.id] = { offEl: card.children[1], autoMs: r.offsetMs || 0, ch };
         grid.appendChild(card);
       });
       body.appendChild(grid);
     }
     buildCards();
 
-    function updateCardOffset(chId, totalAdjMs) {
+    // Atualiza o card: mostra "Auto: +Xs → Ajustado: +Ys" quando há ajuste manual, ou só o auto
+    function updateCardOffset(chId, manualDeltaMs) {
       const ref = cardRefs[chId];
       if (!ref) return;
-      const origMs = ref.origMs;
-      const origS  = origMs / 1000;
-      const adjS   = totalAdjMs / 1000;
-      const isDiff = Math.abs(totalAdjMs - origMs) > 1;
-      if (isDiff) {
+      const autoMs  = ref.autoMs;
+      const autoS   = autoMs / 1000;
+      const adjMs   = autoMs + manualDeltaMs;
+      const adjS    = adjMs / 1000;
+      const hasDiff = Math.abs(manualDeltaMs) > 1;
+      const autoColor = Math.abs(autoS)<0.1?'#44ff88':Math.abs(autoS)<1?'#ffd700':'#ff8844';
+      const adjColor  = Math.abs(adjS)<0.1?'#44ff88':Math.abs(adjS)<1?'#ffd700':'#ff8844';
+      if (hasDiff) {
         ref.offEl.innerHTML =
-          `<span style="color:#888;text-decoration:line-through;font-size:8px">${(origS>=0?'+':'')}${origS.toFixed(3)}s</span>` +
-          `<span style="color:${Math.abs(adjS)<0.1?'#44ff88':Math.abs(adjS)<1?'#ffd700':'#ff8844'};font-size:10px"> \u2192 ${(adjS>=0?'+':'')}${adjS.toFixed(3)}s</span>`;
+          `<span style="color:#888;text-decoration:line-through;font-size:8px">${(autoS>=0?'+':'')}${autoS.toFixed(3)}s</span>` +
+          `<span style="color:${adjColor};font-size:10px"> \u2192 ${(adjS>=0?'+':'')}${adjS.toFixed(3)}s</span>`;
       } else {
         ref.offEl.innerHTML = '';
-        ref.offEl.textContent = (origS>=0?'+':'') + origS.toFixed(3) + 's';
-        ref.offEl.style.color = Math.abs(origS)<0.1?'#44ff88':Math.abs(origS)<1?'#ffd700':'#ff8844';
+        ref.offEl.textContent = (autoS>=0?'+':'') + autoS.toFixed(3) + 's';
+        ref.offEl.style.color = autoColor;
       }
     }
 
@@ -255,7 +257,7 @@
 
     const manualHint = document.createElement('div');
     manualHint.style.cssText = 'color:#ffd700;font-size:8px;text-align:center;opacity:.8';
-    manualHint.textContent = 'Centro = offset auto  |  arraste para ajuste fino';
+    manualHint.textContent = '0s = gráficos na posição original  |  arraste para deslocar';
     manualBar.appendChild(manualHint);
 
     const btnResetAll = document.createElement('button');
@@ -294,17 +296,16 @@
       btnReset.style.cssText = `background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px`;
 
       const valLbl = document.createElement('span');
-      valLbl.style.cssText = 'color:#aaa;font-size:8px;width:56px;flex-shrink:0;text-align:right;white-space:nowrap';
+      valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
 
+      // refreshLabel: exibe só o delta manual (parte do 0, sem somar autoOffset)
       function refreshLabel() {
         const fine        = parseInt(slider.value);
         const fineDeltaMs = fine * iv;
-        const totalMs     = autoOffsetMs[ch.id] + fineDeltaMs;
-        const s           = totalMs / 1000;
-        const fineS       = fineDeltaMs / 1000;
-        const fineStr     = fine === 0 ? '' : ` (${fineS>=0?'+':''}${fineS.toFixed(3)})`;
-        valLbl.textContent = (s>=0?'+':'') + s.toFixed(3) + 's' + fineStr;
-        return { fine, totalMs };
+        const s           = fineDeltaMs / 1000;
+        valLbl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
+        valLbl.style.color = fine === 0 ? '#aaa' : (s >= 0 ? '#ffd700' : '#00d4ff');
+        return { fine, fineDeltaMs };
       }
       refreshLabel();
 
@@ -312,15 +313,15 @@
         slider.value = 0;
         fineShiftSamples[ch.id] = 0;
         refreshLabel();
-        updateCardOffset(ch.id, autoOffsetMs[ch.id]);
+        updateCardOffset(ch.id, 0);
         rebuildCharts();
       }
       btnReset.onclick = doReset;
 
       slider.addEventListener('input', () => {
-        const { fine, totalMs } = refreshLabel();
+        const { fine, fineDeltaMs } = refreshLabel();
         fineShiftSamples[ch.id] = fine;
-        updateCardOffset(ch.id, totalMs);
+        updateCardOffset(ch.id, fineDeltaMs);
         rebuildCharts();
       });
 
@@ -343,11 +344,13 @@
       ML.manualOffsets = {};
       activeChannels.forEach((ch, idx) => {
         if (idx === 0) return;
-        const iv      = realIvMs(ch);
-        const fine    = fineShiftSamples[ch.id] || 0;
-        const totalMs = autoOffsetMs[ch.id] + fine * iv;
+        const iv          = realIvMs(ch);
+        const fine        = fineShiftSamples[ch.id] || 0;
+        const fineDeltaMs = fine * iv;
+        // offset final = auto + ajuste manual
+        const totalMs = autoOffsetMs[ch.id] + fineDeltaMs;
         ML.manualOffsets[ch.id] = totalMs;
-        updateCardOffset(ch.id, totalMs);
+        updateCardOffset(ch.id, fineDeltaMs);
       });
       if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
       btnConfirm.textContent = '\u2714 Salvo!';
@@ -406,10 +409,12 @@
       return out;
     }
 
+    // getTotalShift: no modo manual, aplica APENAS o slider (fineShiftSamples), sem base automática
+    // Gráficos partem da posição original (sem shift), slider = 0 = sem deslocamento
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
       if (!manualMode) return 0;
-      return (baseShiftSamples[ch.id] || 0) + (fineShiftSamples[ch.id] || 0);
+      return fineShiftSamples[ch.id] || 0;
     }
 
     function buildParallel(channels) {
@@ -423,7 +428,6 @@
         const lMin = validLums.length ? Math.min(...validLums) : 0;
         const lMax = validLums.length ? Math.max(...validLums) : 255;
         const rng  = Math.max(1, lMax - lMin);
-        // picos calculados sobre a série já deslocada
         const peaks = showPeaks && ML.correlator
           ? ML.correlator.diffSeries(lums.map(v => v ?? 0)).reduce((acc, d, i) => { if (d > 0) acc.push({ xIndex: i, color: ch.color }); return acc; }, [])
           : [];
@@ -456,7 +460,6 @@
     }
 
     function buildOverlay(channels) {
-      // 1. Calcula amplitude global: min/max entre todos os canais visíveis (com shift aplicado)
       let globalMin = Infinity, globalMax = -Infinity;
       const allLumsShifted = channels.map((ch, idx) => {
         const raw   = ch.buffer.map(p => p.lum).slice(0, maxLen);
@@ -470,7 +473,6 @@
       const yMin = Math.max(0,   Math.floor(globalMin - rng * 0.10));
       const yMax = Math.min(255, Math.ceil(globalMax  + rng * 0.10));
 
-      // 2. Picos calculados sobre a série JÁ deslocada de cada canal
       const allPeaks = showPeaks && ML.correlator
         ? allLumsShifted.flatMap(({ ch, lums }) =>
             ML.correlator.diffSeries(lums.map(v => v ?? 0))
@@ -483,22 +485,21 @@
       if (manualMode) {
         const hint = document.createElement('div');
         hint.style.cssText = 'position:absolute;top:2px;left:50%;transform:translateX(-50%);color:#ffd70088;font-size:7px;pointer-events:none;z-index:2;white-space:nowrap';
-        hint.textContent = 'Slider=0 \u2192 offset auto  |  arraste para ajuste fino';
+        hint.textContent = '0s = posição original  |  arraste o slider para deslocar';
         wrap.appendChild(hint);
       }
       const cvs = document.createElement('canvas');
       wrap.appendChild(cvs); chartsArea.appendChild(wrap);
 
-      // 3. Datasets com fill colorido (igual ao paralelo: cor + '18')
-      const datasets = allLumsShifted.map(({ ch, lums }, idx) => ({
+      const datasets = allLumsShifted.map(({ ch, lums }) => ({
         label:           ch.label,
         data:            lums,
         borderColor:     ch.color,
-        backgroundColor: ch.color + '18',   // mesmo fill do paralelo
+        backgroundColor: ch.color + '18',
         borderWidth:     1.6,
         pointRadius:     0,
         tension:         0.2,
-        fill:            true,              // ativado igual ao paralelo
+        fill:            true,
         spanGaps:        false,
       }));
 
@@ -522,7 +523,6 @@
           layout: { padding: { top: 2, right: 4, bottom: 0, left: 0 } },
           scales: {
             x: { ticks: { color: '#444', font: { size: 7 }, maxRotation: 0 }, grid: { color: '#16162a' } },
-            // 4. Amplitude ajustada ao min/max global dos canais visíveis
             y: { min: yMin, max: yMax, ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 5 }, grid: { color: '#16162a' } },
           },
         },
@@ -556,5 +556,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: overlay com fill, amplitude global min/max, picos com shift.');
+  console.log('[MedLat] 40-chart: manual parte do 0, sem baseShift automatico.');
 })();
