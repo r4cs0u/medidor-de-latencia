@@ -1,5 +1,6 @@
 (function () {
   const ML = window.MedLat;
+  const MAX_PEAKS = 15;
 
   function loadChartJs() {
     return new Promise((resolve) => {
@@ -9,6 +10,13 @@
       s.onload = resolve;
       document.head.appendChild(s);
     });
+  }
+
+  function topPeaks(diffArr, color, n) {
+    const candidates = [];
+    diffArr.forEach((d, i) => { if (d > 0) candidates.push({ xIndex: i, color, mag: d }); });
+    candidates.sort((a, b) => b.mag - a.mag);
+    return candidates.slice(0, n).map(({ xIndex, color }) => ({ xIndex, color }));
   }
 
   function makePeakPlugin(peakAnnotations) {
@@ -21,24 +29,83 @@
         const yAxis = chart.scales.y;
         if (!xAxis || !yAxis) return;
         ctx.save();
-        peakAnnotations.forEach(({ xIndex, color }) => {
+        peakAnnotations.forEach(({ xIndex, color, snap: isSnap }) => {
           const xPx = xAxis.getPixelForValue(xIndex);
           if (xPx < xAxis.left || xPx > xAxis.right) return;
           ctx.beginPath();
           ctx.moveTo(xPx, yAxis.top);
           ctx.lineTo(xPx, yAxis.bottom);
-          ctx.strokeStyle = color + '40';
-          ctx.lineWidth   = 1;
+          ctx.strokeStyle = isSnap ? '#ffffff88' : color + '40';
+          ctx.lineWidth   = isSnap ? 2 : 1;
+          ctx.setLineDash(isSnap ? [3, 3] : []);
           ctx.stroke();
+          ctx.setLineDash([]);
         });
         ctx.restore();
       },
     };
   }
 
+  function injectSliderCSS() {
+    if (document.getElementById('ml-slider-css')) return;
+    const st = document.createElement('style');
+    st.id = 'ml-slider-css';
+    st.textContent = `
+      .ml-slider {
+        -webkit-appearance: none;
+        appearance: none;
+        height: 6px;
+        border-radius: 0;
+        outline: none;
+        cursor: pointer;
+      }
+      .ml-slider::-webkit-slider-runnable-track {
+        height: 6px;
+        border-radius: 0;
+        background: repeating-linear-gradient(
+          90deg,
+          #2a3a50 0px, #2a3a50 1px,
+          transparent 1px, transparent 10%
+        ), #1a2a3a;
+      }
+      .ml-slider::-moz-range-track {
+        height: 6px;
+        border-radius: 0;
+        background: repeating-linear-gradient(
+          90deg,
+          #2a3a50 0px, #2a3a50 1px,
+          transparent 1px, transparent 10%
+        ), #1a2a3a;
+      }
+      .ml-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 10px;
+        height: 18px;
+        border-radius: 2px;
+        background: #00d4ff;
+        border: 1px solid #007a99;
+        cursor: grab;
+        margin-top: -6px;
+      }
+      .ml-slider::-moz-range-thumb {
+        width: 10px;
+        height: 18px;
+        border-radius: 2px;
+        background: #00d4ff;
+        border: 1px solid #007a99;
+        cursor: grab;
+      }
+      .ml-slider:active::-webkit-slider-thumb { cursor: grabbing; background: #44eeff; }
+      .ml-slider:active::-moz-range-thumb     { cursor: grabbing; background: #44eeff; }
+    `;
+    document.head.appendChild(st);
+  }
+
   async function showChart(results) {
     if (!Array.isArray(results)) results = [results];
     await loadChartJs();
+    injectSliderCSS();
     const old = document.getElementById('ml-chart-panel');
     if (old) old.remove();
 
@@ -64,7 +131,6 @@
       'user-select:none;overflow:hidden;display:flex;flex-direction:column',
     ].join(';');
 
-    /* header */
     const hdr = document.createElement('div');
     hdr.style.cssText = [
       'display:flex;align-items:center;gap:5px;padding:5px 8px 4px',
@@ -106,7 +172,6 @@
     hdr.append(htitle, btnManual, btnPeaks, btnMode, btnClose);
     panel.appendChild(hdr);
 
-    /* drag */
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => {
       if (e.target !== hdr && e.target !== htitle) return;
@@ -117,7 +182,6 @@
     window.addEventListener('mousemove', e => { if (!pdrag) return; panel.style.left = Math.max(0, e.clientX - pox) + 'px'; panel.style.top = Math.max(0, e.clientY - poy) + 'px'; });
     window.addEventListener('mouseup', () => pdrag = false);
 
-    /* resize handles */
     [['nw','nw-resize','top:0;left:0'],['ne','ne-resize','top:0;right:0'],
      ['sw','sw-resize','bottom:0;left:0'],['se','se-resize','bottom:0;right:0']]
     .forEach(([cls, cur, pos]) => {
@@ -125,7 +189,7 @@
       h.style.cssText = `position:absolute;width:14px;height:14px;cursor:${cur};z-index:10;${pos}`;
       const dot = document.createElement('div');
       const isN = cls[0]==='n', isW = cls[1]==='w';
-      dot.style.cssText = `position:absolute;width:5px;height:5px;border-radius:50%;background:#2a3a6a;${isN?'top:3px':'bottom:3px'};${isW?'left:3px':'right:3px'}`;
+      dot.style.cssText = `position:absolute;width:5px;height:5px;border-radius:2px;background:#2a3a6a;${isN?'top:3px':'bottom:3px'};${isW?'left:3px':'right:3px'}`;
       h.appendChild(dot); panel.appendChild(h);
       let rsx=0,rsy=0,rsw=0,rsh=0,rsl=0,rst=0;
       h.addEventListener('mousedown', e => {
@@ -144,12 +208,10 @@
       });
     });
 
-    /* body */
     const body = document.createElement('div');
     body.style.cssText = 'flex:1;overflow-y:auto;padding:6px 8px 6px;display:flex;flex-direction:column;gap:5px;min-height:0';
     panel.appendChild(body);
 
-    /* canais ativos */
     const activeChannels = [];
     let maxLen = 0;
     ML.CHANNELS.forEach(ch => {
@@ -166,16 +228,16 @@
       return ML.INTERVAL_MS;
     }
 
-    // fineShiftSamples: deslocamento APENAS do slider manual (parte do 0, sem base automatica)
-    const fineShiftSamples = {};
-    const autoOffsetMs     = {};
-    ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; autoOffsetMs[ch.id] = 0; });
+    const autoOffsetMs = {};
+    ML.CHANNELS.forEach(ch => { autoOffsetMs[ch.id] = 0; });
     results.forEach(r => {
       if (r.isReference || !r.channel || r.error || r.skipped || r.offsetMs == null) return;
       autoOffsetMs[r.channel.id] = r.offsetMs;
     });
 
-    /* cards */
+    const fineShiftSamples = {};
+    ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
+
     const cardRefs = {};
 
     function buildCards() {
@@ -192,40 +254,36 @@
         const ch = r.channel;
         let autoTxt='--', autoColor='#445', confTxt='--', confColor='#445';
         if (!r.error && !r.skipped) {
-          const s    = r.offsetMs / 1000;
-          autoTxt    = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
-          autoColor  = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#ff8844';
-          const pct  = r.confidence != null ? Math.round(r.confidence * 100) : null;
+          const s   = r.offsetMs / 1000;
+          autoTxt   = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
+          autoColor = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#ff8844';
+          const pct = r.confidence != null ? Math.round(r.confidence * 100) : null;
           if (pct != null) { confTxt = pct + '%'; confColor = pct>60?'#44ff88':pct>30?'#ffd700':'#ff4444'; }
         } else { autoTxt = r.error ? 'ERR' : '--'; autoColor = r.error ? '#ff4444' : '#445'; }
 
         const card = mkCard(ch.label, '', ch.color, autoTxt, confTxt, autoColor, confColor);
-        // guardar refs para atualizar a linha Manual depois
-        const manualEl = card._manualEl;
-        cardRefs[ch.id] = { autoMs: r.offsetMs || 0, ch, manualEl };
+        cardRefs[ch.id] = { autoMs: r.offsetMs || 0, ch, manualEl: card._manualEl };
         grid.appendChild(card);
       });
       body.appendChild(grid);
     }
     buildCards();
 
-    // Atualiza a linha "Manual" do card com o delta do slider (NAO soma com auto)
-    function updateCardOffset(chId, fineDeltaMs) {
+    function updateCardManual(chId, fineDeltaMs) {
       const ref = cardRefs[chId];
       if (!ref || !ref.manualEl) return;
-      const el = ref.manualEl;
-      if (Math.abs(fineDeltaMs) < 2) {
-        // sem ajuste: esconde linha manual
-        el.style.display = 'none';
-        el.innerHTML = '';
-      } else {
-        const s         = fineDeltaMs / 1000;
-        const manColor  = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#00d4ff';
-        el.style.display = 'flex';
-        el.innerHTML =
-          `<span style="color:#556;font-size:7px;margin-right:2px">Manual</span>` +
-          `<span style="color:${manColor};font-weight:bold;font-size:10px">${(s>=0?'+':'')}${s.toFixed(3)}s</span>`;
-      }
+      const el      = ref.manualEl;
+      const totalMs = ref.autoMs + fineDeltaMs;
+      const s       = totalMs / 1000;
+      const manColor = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#00d4ff';
+      el.style.display = 'flex';
+      el.innerHTML =
+        `<span style="color:#556;font-size:7px;margin-right:2px">Manual</span>` +
+        `<span style="color:${manColor};font-weight:bold;font-size:10px">${(s>=0?'+':'')}${s.toFixed(3)}s</span>`;
+    }
+    function hideCardManual(chId) {
+      const ref = cardRefs[chId];
+      if (ref && ref.manualEl) { ref.manualEl.style.display = 'none'; ref.manualEl.innerHTML = ''; }
     }
 
     if (!activeChannels.length) {
@@ -235,7 +293,6 @@
       body.appendChild(msg); document.body.appendChild(panel); return;
     }
 
-    /* toggles de canal */
     const toggleBar = document.createElement('div');
     toggleBar.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;flex-shrink:0';
     activeChannels.forEach((ch, idx) => {
@@ -251,14 +308,18 @@
     });
     body.appendChild(toggleBar);
 
-    /* barra de ajuste manual */
     const manualBar = document.createElement('div');
     manualBar.style.cssText = 'display:none;flex-direction:column;gap:4px;padding:4px 0;flex-shrink:0';
 
     const manualHint = document.createElement('div');
     manualHint.style.cssText = 'color:#ffd700;font-size:8px;text-align:center;opacity:.8';
-    manualHint.textContent = '0s = gr\u00e1ficos na posi\u00e7\u00e3o original  |  arraste para deslocar';
+    manualHint.textContent = 'Gr\u00e1ficos j\u00e1 alinhados pelo Auto  |  arraste para ajuste fino';
     manualBar.appendChild(manualHint);
+
+    const snapIndicator = document.createElement('div');
+    snapIndicator.style.cssText = 'color:#fff;font-size:8px;text-align:center;background:#ffffff22;border-radius:3px;padding:2px 6px;display:none;letter-spacing:.05em';
+    snapIndicator.textContent = '\uD83E\uDDF2 SNAP!';
+    manualBar.appendChild(snapIndicator);
 
     const btnResetAll = document.createElement('button');
     btnResetAll.textContent = '\u21ba Reset tudo';
@@ -268,6 +329,28 @@
     ].join(';');
 
     const sliderRefs = {};
+    const peaksByChannel = {};
+    const SNAP_RADIUS = 3;
+
+    function getPeakIndices(ch) {
+      if (peaksByChannel[ch.id]) return peaksByChannel[ch.id];
+      if (!ML.correlator) return [];
+      const lums = ch.buffer.map(p => p.lum);
+      const diff = ML.correlator.diffSeries(lums);
+      peaksByChannel[ch.id] = topPeaks(diff, ch.color, MAX_PEAKS).map(p => p.xIndex);
+      return peaksByChannel[ch.id];
+    }
+
+    function checkSnap(ch, totalShiftSamples) {
+      const refPeaks = getPeakIndices(activeChannels[0]);
+      const chPeaks  = getPeakIndices(ch).map(p => p + totalShiftSamples);
+      for (const cp of chPeaks) {
+        for (const rp of refPeaks) {
+          if (Math.abs(cp - rp) <= SNAP_RADIUS) return rp - (cp - totalShiftSamples);
+        }
+      }
+      return null;
+    }
 
     activeChannels.forEach((ch, idx) => {
       if (idx === 0) return;
@@ -288,7 +371,8 @@
       slider.max   =  range;
       slider.step  = 1;
       slider.value = 0;
-      slider.style.cssText = `flex:1;accent-color:${ch.color};cursor:pointer;height:14px`;
+      slider.className = 'ml-slider';
+      slider.style.cssText = `flex:1;accent-color:${ch.color}`;
 
       const btnReset = document.createElement('button');
       btnReset.textContent = '\u21ba';
@@ -298,30 +382,42 @@
       const valLbl = document.createElement('span');
       valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
 
-      // refreshLabel: exibe so o delta do slider (sem somar autoOffset)
-      function refreshLabel() {
-        const fine        = parseInt(slider.value);
+      function refreshLabel(fine) {
         const fineDeltaMs = fine * iv;
-        const s           = fineDeltaMs / 1000;
+        const totalMs     = (autoOffsetMs[ch.id] || 0) + fineDeltaMs;
+        const s           = totalMs / 1000;
         valLbl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
         valLbl.style.color = fine === 0 ? '#aaa' : (s >= 0 ? '#ffd700' : '#00d4ff');
-        return { fine, fineDeltaMs };
+        return fineDeltaMs;
       }
-      refreshLabel();
+      refreshLabel(0);
 
+      let snapTimeout = null;
       function doReset() {
         slider.value = 0;
         fineShiftSamples[ch.id] = 0;
-        refreshLabel();
-        updateCardOffset(ch.id, 0);
+        refreshLabel(0);
+        hideCardManual(ch.id);
+        snapIndicator.style.display = 'none';
         rebuildCharts();
       }
       btnReset.onclick = doReset;
 
       slider.addEventListener('input', () => {
-        const { fine, fineDeltaMs } = refreshLabel();
+        let fine = parseInt(slider.value);
+        const autoSamples = Math.round((autoOffsetMs[ch.id] || 0) / iv);
+        const totalShift  = autoSamples + fine;
+        const snapDelta   = checkSnap(ch, totalShift);
+        if (snapDelta !== null) {
+          fine = Math.max(-range, Math.min(range, fine + snapDelta));
+          slider.value = fine;
+          snapIndicator.style.display = 'block';
+          if (snapTimeout) clearTimeout(snapTimeout);
+          snapTimeout = setTimeout(() => { snapIndicator.style.display = 'none'; }, 1200);
+        }
         fineShiftSamples[ch.id] = fine;
-        updateCardOffset(ch.id, fineDeltaMs);
+        const fineDeltaMs = refreshLabel(fine);
+        if (manualMode) updateCardManual(ch.id, fineDeltaMs);
         rebuildCharts();
       });
 
@@ -346,10 +442,7 @@
         if (idx === 0) return;
         const iv          = realIvMs(ch);
         const fine        = fineShiftSamples[ch.id] || 0;
-        const fineDeltaMs = fine * iv;
-        // offset confirmado = auto + ajuste manual do slider
-        ML.manualOffsets[ch.id] = autoOffsetMs[ch.id] + fineDeltaMs;
-        updateCardOffset(ch.id, fineDeltaMs);
+        ML.manualOffsets[ch.id] = (autoOffsetMs[ch.id] || 0) + fine * iv;
       });
       if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
       btnConfirm.textContent = '\u2714 Salvo!';
@@ -363,12 +456,14 @@
       updateManualBtn();
       manualBar.style.display = manualMode ? 'flex' : 'none';
       if (manualMode && chartMode !== 'overlay') { chartMode = 'overlay'; updateModeBtn(); }
-      if (manualMode) { Object.values(sliderRefs).forEach(r => r.doReset()); }
+      if (manualMode) {
+        Object.values(sliderRefs).forEach(r => r.doReset());
+        activeChannels.forEach(ch => hideCardManual(ch.id));
+      }
       rebuildCharts();
     };
     btnMode.onclick = () => { chartMode = chartMode === 'parallel' ? 'overlay' : 'parallel'; updateModeBtn(); rebuildCharts(); };
 
-    /* area dos graficos */
     const chartsArea = document.createElement('div');
     chartsArea.style.cssText = 'flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;overflow:hidden';
     body.appendChild(chartsArea);
@@ -408,27 +503,43 @@
       return out;
     }
 
-    // getTotalShift: no modo manual, aplica APENAS o slider (sem base automatica)
+    // getTotalShift:
+    // autoOffset positivo = canal B atrasado = mover B para esquerda = shift negativo
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
-      if (!manualMode) return 0;
-      return fineShiftSamples[ch.id] || 0;
+      const iv          = realIvMs(ch);
+      const autoSamples = -Math.round((autoOffsetMs[ch.id] || 0) / iv);
+      if (!manualMode) return autoSamples;
+      return autoSamples + (fineShiftSamples[ch.id] || 0);
+    }
+
+    function getPeakAnnotations(ch, lums) {
+      if (!showPeaks || !ML.correlator) return [];
+      const diff = ML.correlator.diffSeries(lums.map(v => v ?? 0));
+      return topPeaks(diff, ch.color, MAX_PEAKS);
+    }
+
+    function markSnapPeaks(annotations, refAnnotations) {
+      annotations.forEach(a => {
+        if (refAnnotations.some(r => Math.abs(r.xIndex - a.xIndex) <= SNAP_RADIUS)) a.snap = true;
+      });
     }
 
     function buildParallel(channels) {
       const totalGap = (channels.length - 1) * 2;
       const rowH = Math.max(48, Math.floor((chartsArea.offsetHeight - totalGap) / channels.length));
+      let refAnnotations = [];
       channels.forEach((ch, idx) => {
-        const rawLums   = ch.buffer.map(p => p.lum).slice(0, maxLen);
-        const shift     = getTotalShift(ch, idx);
-        const lums      = shiftSeries(rawLums, shift);
+        const rawLums = ch.buffer.map(p => p.lum).slice(0, maxLen);
+        const shift   = getTotalShift(ch, idx);
+        const lums    = shiftSeries(rawLums, shift);
         const validLums = lums.filter(v => v !== null);
         const lMin = validLums.length ? Math.min(...validLums) : 0;
         const lMax = validLums.length ? Math.max(...validLums) : 255;
         const rng  = Math.max(1, lMax - lMin);
-        const peaks = showPeaks && ML.correlator
-          ? ML.correlator.diffSeries(lums.map(v => v ?? 0)).reduce((acc, d, i) => { if (d > 0) acc.push({ xIndex: i, color: ch.color }); return acc; }, [])
-          : [];
+        const peaks = getPeakAnnotations(ch, lums);
+        if (idx === 0) refAnnotations = peaks; else markSnapPeaks(peaks, refAnnotations);
+
         const row = document.createElement('div');
         row.style.cssText = `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0;padding:2px 3px;border-radius:4px;background:${ch.color}0d;border-left:2px solid ${ch.color};overflow:hidden`;
         const lbl = document.createElement('div');
@@ -464,18 +575,21 @@
         const shift = getTotalShift(ch, idx);
         const lums  = shiftSeries(raw, shift);
         lums.forEach(v => { if (v !== null) { if (v < globalMin) globalMin = v; if (v > globalMax) globalMax = v; } });
-        return { ch, lums };
+        return { ch, lums, idx };
       });
       if (!isFinite(globalMin)) { globalMin = 0; globalMax = 255; }
-      const rng = Math.max(1, globalMax - globalMin);
+      const rng  = Math.max(1, globalMax - globalMin);
       const yMin = Math.max(0,   Math.floor(globalMin - rng * 0.10));
       const yMax = Math.min(255, Math.ceil(globalMax  + rng * 0.10));
 
+      let refAnnotations = [];
       const allPeaks = showPeaks && ML.correlator
-        ? allLumsShifted.flatMap(({ ch, lums }) =>
-            ML.correlator.diffSeries(lums.map(v => v ?? 0))
-              .reduce((acc, d, i) => { if (d > 0) acc.push({ xIndex: i, color: ch.color }); return acc; }, [])
-          )
+        ? allLumsShifted.flatMap(({ ch, lums, idx }) => {
+            const peaks = getPeakAnnotations(ch, lums);
+            if (idx === 0) { refAnnotations = peaks; return peaks; }
+            markSnapPeaks(peaks, refAnnotations);
+            return peaks;
+          })
         : [];
 
       const wrap = document.createElement('div');
@@ -483,7 +597,7 @@
       if (manualMode) {
         const hint = document.createElement('div');
         hint.style.cssText = 'position:absolute;top:2px;left:50%;transform:translateX(-50%);color:#ffd70088;font-size:7px;pointer-events:none;z-index:2;white-space:nowrap';
-        hint.textContent = '0s = posi\u00e7\u00e3o original  |  arraste o slider para deslocar';
+        hint.textContent = 'Auto alinhado \u2014 arraste para ajuste fino';
         wrap.appendChild(hint);
       }
       const cvs = document.createElement('canvas');
@@ -533,7 +647,6 @@
     requestAnimationFrame(() => rebuildCharts());
   }
 
-  // mkCard: inclui linha extra _manualEl (oculta por padrao) para exibir ajuste manual
   function mkCard(label, prefix, color, autoTxt, confTxt, autoColor, confColor) {
     const card = document.createElement('div');
     card.style.cssText = [
@@ -546,7 +659,6 @@
     nameEl.style.cssText = `color:${color};font-weight:bold;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%`;
     nameEl.textContent = (prefix ? prefix + ' ' : '') + label;
 
-    // linha "Auto"
     const autoRow = document.createElement('div');
     autoRow.style.cssText = 'display:flex;align-items:baseline;gap:3px';
     const autoLbl = document.createElement('span');
@@ -557,7 +669,6 @@
     autoVal.textContent = autoTxt;
     autoRow.append(autoLbl, autoVal);
 
-    // linha "Manual" — oculta ate o slider ser mexido
     const manualRow = document.createElement('div');
     manualRow.style.cssText = 'display:none;align-items:baseline;gap:3px';
 
@@ -571,5 +682,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: card Auto/Manual separados, manual = so delta slider.');
+  console.log('[MedLat] 40-chart: auto-shift, top-peaks, snap, slider reto.');
 })();
