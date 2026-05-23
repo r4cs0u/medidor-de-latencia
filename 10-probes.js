@@ -64,7 +64,6 @@
   }
 
   const EDGE_THRESH = 8;
-  const PROBE_GAP   = 0;
 
   function edgeSnap(ch, x, y) {
     const pw = probeW(ch), ph = probeH(ch);
@@ -289,15 +288,16 @@
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  // Posições iniciais calibradas manualmente.
-  // Valores são o CENTRO de cada probe como fração da viewport.
-  // fracY reduzido em 5px equivalente: -5/vh aplicado no cálculo final.
-  // ch3 (Tela 4) e ch4 (Tela 5) deslocados 2px para esquerda no cálculo final.
-  // ch0 Referência : fracX=0.555 fracY=0.322
-  // ch1 Tela 2     : fracX=0.308 fracY=0.322
-  // ch2 Tela 3     : fracX=0.432 fracY=0.322
-  // ch3 Tela 4     : fracX=0.681 fracY=0.322
-  // ch4 Tela 5     : fracX=0.804 fracY=0.322
+  // ── Tamanho inicial responsivo ──────────────────────────────────────────────
+  // Baseado na menor dimensão da viewport × 0.22, com clamp entre 120 e 300px.
+  // Exemplos:  1920×1080 → 238px  |  1366×768 → 169px  |  1280×720 → 158px
+  // O valor é par para compatibilidade com o step=2 do painel.
+  const responsiveW = Math.round(Math.max(120, Math.min(300, Math.min(vw, vh) * 0.22)) / 2) * 2;
+  ML.state.probeW = responsiveW;
+
+  // ── Posições iniciais (fracionais calibradas para 1920×1080) ────────────────
+  // INIT_CENTER: centro de cada probe como fração da viewport [fracX, fracY]
+  // INIT_FINE:   ajuste fino em px após o cálculo fracional   [dx, dy]
   const INIT_CENTER = [
     [0.555, 0.322],  // ch0 Referência
     [0.308, 0.322],  // ch1 Tela 2
@@ -305,17 +305,13 @@
     [0.681, 0.322],  // ch3 Tela 4
     [0.804, 0.322],  // ch4 Tela 5
   ];
-  // Ajustes finos em px aplicados após o cálculo fracional
-  // [offsetX, offsetY] — negativo = esquerda/cima
   const INIT_FINE = [
-    [  0, -5],  // ch0 Referência: 5px acima
-    [  0, -5],  // ch1 Tela 2: 5px acima
-    [  0, -5],  // ch2 Tela 3: 5px acima
-    [ -2, -5],  // ch3 Tela 4: 5px acima + 2px esquerda
-    [ -2, -5],  // ch4 Tela 5: 5px acima + 2px esquerda
+    [  0, -5],  // ch0 Referência
+    [  0, -5],  // ch1 Tela 2
+    [  0, -5],  // ch2 Tela 3
+    [ -2, -5],  // ch3 Tela 4: +2px esquerda
+    [ -2, -5],  // ch4 Tela 5: +2px esquerda
   ];
-
-  ML.state.probeW = 238;
 
   ML.CHANNELS.forEach((ch, i) => {
     makeOff(ch);
@@ -329,5 +325,5 @@
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  console.log('[MedLat] 10-probes carregado. Posições calibradas. px=238. Ajuste fino aplicado.');
+  console.log(`[MedLat] 10-probes carregado. px responsivo=${responsiveW} (viewport ${vw}×${vh}). Posições calibradas.`);
 })();
