@@ -364,6 +364,8 @@
       statusEl.textContent = 'Pronto (' + pts + ')';
       statusEl.style.color = '#ffd700';
       btnAnalyze.disabled = false;
+      // Abre análise automaticamente após parar gravação
+      setTimeout(() => btnAnalyze.onclick(), 300);
     }
 
     btnRec.onclick = () => {
