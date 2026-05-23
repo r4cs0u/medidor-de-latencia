@@ -4,6 +4,8 @@
   // Threshold adaptativo: usa desvio padrão da série * fator
   const ADAPT_FACTOR = 0.15;
   const DIFF_THRESHOLD_MIN = 1;
+  const LANDMARK_TOP_N = 20;
+  const LANDMARK_REFINE_RATIO = 0.20; // janela de refinamento: ±20% do lagMs estimado
 
   function adaptiveThreshold(arr) {
     const n = arr.length;
@@ -58,8 +60,6 @@
 
   /**
    * Interpolação parabólica sub-frame.
-   * Dados 3 pontos ao redor do pico (y0, y1, y2), estima o máximo contínuo.
-   * Retorna ajuste fracionário em samples (-0.5 .. +0.5).
    */
   function parabolicPeak(corr, peakIdx) {
     if (peakIdx <= 0 || peakIdx >= corr.length - 1) return 0;
@@ -68,7 +68,7 @@
     const y2 = corr[peakIdx + 1].r;
     const denom = 2 * (2 * y1 - y0 - y2);
     if (Math.abs(denom) < 1e-10) return 0;
-    return (y0 - y2) / denom; // ajuste em frações de sample
+    return (y0 - y2) / denom;
   }
 
   function selectRobustPeak(corr) {
@@ -81,20 +81,13 @@
     );
   }
 
-  /**
-   * Intervalo real (ms/sample) calculado direto dos timestamps do buffer gravado.
-   * Evita deriva de framerate em relação ao INTERVAL_MS nominal.
-   */
   function realIntervalMs(ser) {
-    const buf = ser.timestamps || ser.lum; // timestamps é array paralelo se existir
-    // Tenta acessar o buffer com timestamps via ML.recorder
     const ch = ML.CHANNELS.find(c => c.label === ser.label);
     if (ch && ch.buffer && ch.buffer.length > 1) {
       const first = ch.buffer[0].ts;
       const last  = ch.buffer[ch.buffer.length - 1].ts;
       const n     = ch.buffer.length - 1;
       const iv    = (last - first) / n;
-      // Sanity check: entre 10ms e 200ms por sample
       if (iv >= 10 && iv <= 200) return iv;
     }
     return ML.INTERVAL_MS;
@@ -109,6 +102,51 @@
     return Math.max(minLag, Math.min(lagMs, maxLag));
   }
 
+  /**
+   * landmarkOffset: estima o offset dominante comparando timestamps dos top-N picos.
+   * Monta um histograma de votos de (peakB[j] - peakA[i]) em samples.
+   * Retorna o offset em samples com mais votos, ou null se não houver picos suficientes.
+   */
+  function landmarkOffset(lumA, lumB, maxLagSamples) {
+    const diffA = diffSeries(lumA);
+    const diffB = diffSeries(lumB);
+
+    // extrai top-N picos como índices
+    function topPeakIndices(diff, n) {
+      const candidates = [];
+      diff.forEach((d, i) => { if (d > 0) candidates.push({ i, d }); });
+      candidates.sort((a, b) => b.d - a.d);
+      return candidates.slice(0, n).map(c => c.i);
+    }
+
+    const peaksA = topPeakIndices(diffA, LANDMARK_TOP_N);
+    const peaksB = topPeakIndices(diffB, LANDMARK_TOP_N);
+    if (peaksA.length < 3 || peaksB.length < 3) return null;
+
+    // histograma de offsets (quantizado em samples)
+    const votes = {};
+    peaksA.forEach(ia => {
+      peaksB.forEach(ib => {
+        const delta = ib - ia; // offset em samples: B está atrasado se delta > 0
+        if (Math.abs(delta) > maxLagSamples) return;
+        votes[delta] = (votes[delta] || 0) + 1;
+      });
+    });
+
+    const best = Object.entries(votes).reduce((top, [k, v]) => {
+      if (v > top.votes || (v === top.votes && Math.abs(+k) < Math.abs(top.delta))) {
+        return { delta: +k, votes: v };
+      }
+      return top;
+    }, { delta: 0, votes: 0 });
+
+    return best.votes >= 2 ? best.delta : null;
+  }
+
+  /**
+   * analyze: usa landmark para estimar centro, depois refina com cross-correlação
+   * numa janela estreita ao redor desse centro.
+   */
   function analyze(chA, chB, maxLagMs) {
     const serA = ML.recorder.getSeries(chA);
     const serB = ML.recorder.getSeries(chB);
@@ -119,20 +157,52 @@
     const ivB  = realIntervalMs(serB);
     const ivMs = (ivA + ivB) / 2;
 
-    const lagMs        = maxLagMs || effectiveLag(serA, serB);
+    const lagMs         = maxLagMs || effectiveLag(serA, serB);
     const maxLagSamples = Math.ceil(lagMs / ivMs);
-    const corr          = crossCorrelation(serA.lum, serB.lum, maxLagSamples);
-    const peak          = selectRobustPeak(corr);
-    const peakIdx       = corr.findIndex(c => c.lag === peak.lag);
-    const subFrame      = parabolicPeak(corr, peakIdx);
-    const offsetMs      = (peak.lag + subFrame) * ivMs;
+
+    // 1. Estimativa rápida pelos picos (landmark)
+    const landmarkSamples = landmarkOffset(serA.lum, serB.lum, maxLagSamples);
+
+    // 2. Janela de refinamento ao redor do landmark (ou varredura completa se falhou)
+    let refineSamples;
+    if (landmarkSamples !== null) {
+      const refineWindow = Math.max(30, Math.ceil(maxLagSamples * LANDMARK_REFINE_RATIO));
+      refineSamples = refineWindow;
+    } else {
+      refineSamples = maxLagSamples;
+    }
+
+    // 3. Cross-correlação na janela de refinamento
+    const lumAu = landmarkSamples !== null ? serA.lum : serA.lum;
+    const lumBu = serB.lum;
+
+    // Aplica deslocamento do landmark antes de correlacionar (janela estreita)
+    function shiftArr(arr, shift) {
+      if (!shift) return arr;
+      const n = arr.length, out = new Array(n).fill(0);
+      if (shift > 0) { for (let i = 0; i < n - shift; i++) out[i] = arr[i + shift]; }
+      else           { const s = -shift; for (let i = s; i < n; i++) out[i] = arr[i - s]; }
+      return out;
+    }
+
+    const lumBshifted = landmarkSamples !== null ? shiftArr(lumBu, landmarkSamples) : lumBu;
+    const corr = crossCorrelation(lumAu, lumBshifted, refineSamples);
+    const peak     = selectRobustPeak(corr);
+    const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
+    const subFrame = parabolicPeak(corr, peakIdx);
+
+    // offset total = landmark + refinamento fino
+    const refineLag = peak.lag + subFrame;
+    const totalLag  = (landmarkSamples !== null ? landmarkSamples : 0) + refineLag;
+    const offsetMs  = totalLag * ivMs;
 
     return {
       offsetMs,
-      confidence: peak.r,
-      lagUsedMs:  lagMs,
-      intervalMs: ivMs,
+      confidence:      peak.r,
+      lagUsedMs:       lagMs,
+      intervalMs:      ivMs,
       subFrame,
+      landmarkSamples,
       corr, serA, serB,
       labelA: serA.label, labelB: serB.label,
     };
@@ -156,22 +226,23 @@
       }
       const r = analyzeBest(chRef, ch);
       results.push({
-        channel:    ch,
-        label:      ch.label,
-        offsetMs:   r.error ? null : r.offsetMs,
-        confidence: r.error ? null : r.confidence,
-        lagUsedMs:  r.error ? null : r.lagUsedMs,
-        intervalMs: r.error ? null : r.intervalMs,
-        subFrame:   r.error ? null : r.subFrame,
-        error:      r.error || null,
-        corr:       r.corr  || null,
-        serA:       r.serA  || null,
-        serB:       r.serB  || null,
+        channel:         ch,
+        label:           ch.label,
+        offsetMs:        r.error ? null : r.offsetMs,
+        confidence:      r.error ? null : r.confidence,
+        lagUsedMs:       r.error ? null : r.lagUsedMs,
+        intervalMs:      r.error ? null : r.intervalMs,
+        subFrame:        r.error ? null : r.subFrame,
+        landmarkSamples: r.error ? null : r.landmarkSamples,
+        error:           r.error || null,
+        corr:            r.corr  || null,
+        serA:            r.serA  || null,
+        serB:            r.serB  || null,
       });
     });
     return results;
   }
 
   ML.correlator = { analyze, analyzeBest, analyzeBestAll, crossCorrelation, diffSeries, normalize };
-  console.log('[MedLat] 30-correlator: sub-frame parabólico + threshold adaptativo + interval real do buffer.');
+  console.log('[MedLat] 30-correlator: híbrido landmark+correlação, refinamento ±20% ao redor do pico dominante.');
 })();
