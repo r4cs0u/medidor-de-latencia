@@ -67,14 +67,14 @@
   const PROBE_GAP   = 0;
 
   function edgeSnap(ch, x, y) {
-    const pw = (ch), ph = probeH(ch);
+    const pw = probeW(ch), ph = probeH(ch);
     let bL = x, bR = x + pw, bT = y, bB = y + ph;
     let cX = x + pw / 2, cY = y + ph / 2;
     let snapX = null, snapY = null;
     ML.CHANNELS.forEach(other => {
       if (other === ch || !other.active || !other.probe) return;
       const od = other.probe;
-      const ow = (other), oh = probeH(other);
+      const ow = probeW(other), oh = probeH(other);
       const oL = parseInt(od.style.left) || 0;
       const oT = parseInt(od.style.top)  || 0;
       const oR = oL + ow, oB = oT + oh;
@@ -93,11 +93,11 @@
 
   function resolveCollision(ch, x, y) {
     if (!ML.state.noOverlap) return { x, y };
-    const pw = (ch), ph = probeH(ch);
+    const pw = probeW(ch), ph = probeH(ch);
     ML.CHANNELS.forEach(other => {
       if (other === ch || !other.active || !other.probe) return;
       const od = other.probe;
-      const ow = (other), oh = probeH(other);
+      const ow = probeW(other), oh = probeH(other);
       const oL = parseInt(od.style.left) || 0;
       const oT = parseInt(od.style.top)  || 0;
       const oR = oL + ow, oB = oT + oh;
@@ -147,7 +147,7 @@
   function applyFocusStyle(ch) {
     if (!ch.probe) return;
     const d = ch.probe;
-    const pw = (ch), ph = probeH(ch);
+    const pw = probeW(ch), ph = probeH(ch);
     d.style.border          = '1px solid transparent';
     d.style.backgroundImage = dashedBorderSVG(pw, ph, ch.color);
     d.style.backgroundSize  = '100% 100%';
@@ -166,7 +166,7 @@
   }
 
   function mkProbe(ch, x, y) {
-    const pw = (ch), ph = probeH(ch);
+    const pw = probeW(ch), ph = probeH(ch);
     const d = document.createElement('div');
     d.id = 'ml-probe-' + ch.id;
     d.style.cssText = [
@@ -205,7 +205,7 @@
     ch.probe      = d;
     ch.probeLabel = lbl;
     ch.resize = () => {
-      const npw = (ch), nph = probeH(ch);
+      const npw = probeW(ch), nph = probeH(ch);
       d.style.width  = npw + 'px';
       d.style.height = nph + 'px';
       mask.style.left = '10%'; mask.style.top = '10%';
@@ -235,11 +235,11 @@
       if (rx !== prevX || ry !== prevY) {
         ML.CHANNELS.forEach(other => {
           if (other === ch || !other.active || !other.probe) return;
-          const ow = (other), oh = probeH(other);
+          const ow = probeW(other), oh = probeH(other);
           const oL = parseInt(other.probe.style.left)||0, oT = parseInt(other.probe.style.top)||0;
           const touched = (
             Math.abs(rx - (oL + ow)) <= EDGE_THRESH ||
-            Math.abs(rx + (ch) - oL) <= EDGE_THRESH ||
+            Math.abs(rx + probeW(ch) - oL) <= EDGE_THRESH ||
             Math.abs(ry - (oT + oh)) <= EDGE_THRESH ||
             Math.abs(ry + probeH(ch) - oT) <= EDGE_THRESH
           );
@@ -301,7 +301,7 @@
     [0.555, 0.317],  // ch0 Referência
     [0.308, 0.317],  // ch1 Tela 2
     [0.432, 0.317],  // ch2 Tela 3
-    [0.675, 0.317],  // ch3 Tela 4
+    [0.679, 0.317],  // ch3 Tela 4
     [0.802, 0.317],  // ch4 Tela 5
   ];
 
