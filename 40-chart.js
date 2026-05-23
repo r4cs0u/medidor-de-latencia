@@ -114,7 +114,6 @@
       ? mainPanel.getBoundingClientRect()
       : { left: window.innerWidth - 248, top: 8, width: 228, height: 0 };
 
-    // Janela grande por padrão — ocupa toda a área disponível ao lado do painel
     const sidePanelW = (mpRect.width || 228) + 16;
     const INIT_W = Math.max(400, window.innerWidth - sidePanelW - 8);
     const INIT_H = Math.max(300, window.innerHeight - 16);
@@ -242,7 +241,6 @@
 
     const cardRefs = {};
 
-    // Cards compactos em linha única horizontal
     function buildCards() {
       const hasResults = results.some(r => !r.isReference && !r.error && !r.skipped);
       if (!hasResults) return;
@@ -250,7 +248,6 @@
       const bar = document.createElement('div');
       bar.style.cssText = 'display:flex;flex-wrap:nowrap;gap:4px;flex-shrink:0;overflow-x:auto;padding-bottom:2px';
 
-      // Referência
       const ref = ML.CHANNELS[0];
       bar.appendChild(mkCardCompact(ref.label, '\u2605', ref.color, '0.000s', null, null, null));
 
@@ -354,7 +351,7 @@
       if (idx === 0) return;
 
       const iv    = realIvMs(ch);
-      const range = Math.max(50, Math.round(ch.buffer.length * 1.0)); // ±100% do buffer
+      const range = Math.max(50, Math.round(ch.buffer.length * 1.0));
 
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:4px';
@@ -380,13 +377,15 @@
       const valLbl = document.createElement('span');
       valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
 
+      // CORRIGIDO: slider esquerda (negativo) aumenta offset, direita (positivo) diminui
+      // totalMs = autoOffset + sliderVal * iv
+      // fineShiftSamples = sliderVal (positivo = avança a curva = diminui offset relativo)
       function refreshLabel(sliderVal) {
-        const fine    = -sliderVal;
-        const totalMs = (autoOffsetMs[ch.id] || 0) - fine * iv;
+        const totalMs = (autoOffsetMs[ch.id] || 0) + sliderVal * iv;
         const s       = totalMs / 1000;
         valLbl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
         valLbl.style.color = sliderVal === 0 ? '#aaa' : (totalMs >= 0 ? '#ffd700' : '#00d4ff');
-        return { fine, totalMs };
+        return { totalMs };
       }
       refreshLabel(0);
 
@@ -401,9 +400,9 @@
 
       slider.addEventListener('input', () => {
         const sliderVal = parseInt(slider.value);
-        const fine      = -sliderVal;
-        // snap silencioso: verifica mas NÃO move o slider automaticamente
-        fineShiftSamples[ch.id] = fine;
+        // slider esquerda = sliderVal negativo = fineShift negativo = recua a curva = aumenta offset
+        // slider direita  = sliderVal positivo = fineShift positivo = avança a curva = diminui offset
+        fineShiftSamples[ch.id] = sliderVal;
         const { totalMs } = refreshLabel(sliderVal);
         if (manualMode) updateCardManual(ch.id, totalMs);
         rebuildCharts();
@@ -430,7 +429,8 @@
         if (idx === 0) return;
         const iv   = realIvMs(ch);
         const fine = fineShiftSamples[ch.id] || 0;
-        ML.manualOffsets[ch.id] = (autoOffsetMs[ch.id] || 0) - fine * iv;
+        // totalMs confirmado = autoOffset + fine * iv
+        ML.manualOffsets[ch.id] = (autoOffsetMs[ch.id] || 0) + fine * iv;
       });
       if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
       btnConfirm.textContent = '\u2714 Salvo!';
@@ -633,7 +633,6 @@
     requestAnimationFrame(() => rebuildCharts());
   }
 
-  // Card compacto horizontal: label | valor auto | confiança | [manual inline]
   function mkCardCompact(label, prefix, color, autoTxt, confTxt, autoColor, confColor) {
     const card = document.createElement('div');
     card.style.cssText = [
@@ -642,19 +641,15 @@
       `background:${color}0d;border-radius:4px;padding:3px 7px 3px 5px`,
       'white-space:nowrap;overflow:hidden',
     ].join(';');
-
     const nameEl = document.createElement('span');
     nameEl.style.cssText = `color:${color};font-weight:bold;font-size:9px`;
     nameEl.textContent = (prefix ? prefix + ' ' : '') + label;
-
     const valEl = document.createElement('span');
     valEl.style.cssText = `color:${autoColor||'#44ff88'};font-weight:bold;font-size:11px`;
     valEl.textContent = autoTxt;
-
     const manualEl = document.createElement('span');
     manualEl.style.cssText = `font-size:9px;display:none`;
     manualEl.textContent = '';
-
     card.append(nameEl, valEl);
     if (confTxt) {
       const confEl = document.createElement('span');
@@ -668,5 +663,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: snap indicator removido, janela grande padrão, cards compactos.');
+  console.log('[MedLat] 40-chart: direção do slider manual corrigida.');
 })();
