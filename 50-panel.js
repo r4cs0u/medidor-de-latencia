@@ -84,7 +84,6 @@
 
     document.body.appendChild(tip);
 
-    // Posiciona abaixo do painel principal
     function reposition() {
       const pr = anchorPanel.getBoundingClientRect();
       const top = pr.bottom + 6;
@@ -174,6 +173,40 @@
       return inp;
     }
 
+    // Seletor de preset de lag por canal
+    function mkLagSelect(ch) {
+      const sel = document.createElement('select');
+      sel.style.cssText = [
+        'background:#111827;border:1px solid #2a3a50;color:#aaa',
+        'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
+        'cursor:pointer;outline:none;flex-shrink:0',
+      ].join(';');
+      const opts = [
+        { value: 'auto',     label: 'Auto' },
+        { value: 'rapido',   label: '⚡ Rápido' },
+        { value: 'internet', label: '🌐 Internet' },
+      ];
+      opts.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.label;
+        if ((ch.lagPreset || 'auto') === o.value) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener('change', () => {
+        ch.lagPreset = sel.value;
+        // feedback visual: borda colorida quando não for Auto
+        sel.style.borderColor = sel.value === 'auto' ? '#2a3a50' : '#ffd70088';
+        sel.style.color       = sel.value === 'auto' ? '#aaa'    : '#ffd700';
+      });
+      // estado inicial
+      if ((ch.lagPreset || 'auto') !== 'auto') {
+        sel.style.borderColor = '#ffd70088';
+        sel.style.color       = '#ffd700';
+      }
+      return sel;
+    }
+
     /* PX Global */
     const secTelas = sec('Telas');
     const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 48);
@@ -252,7 +285,17 @@
         if (e.key==='ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)-2); }
       });
       r2.append(sp('px','font-size:8px;color:#aaa;flex-shrink:0'), szM, szInp, szP);
-      chWrap.append(r1, r2);
+
+      // Seletor de lag — não aparece na Referência (i===0)
+      if (i !== 0) {
+        const r3 = row(3);
+        const lagSel = mkLagSelect(ch);
+        r3.append(sp('lag','font-size:8px;color:#aaa;flex-shrink:0'), lagSel);
+        chWrap.append(r1, r2, r3);
+      } else {
+        chWrap.append(r1, r2);
+      }
+
       secDet.appendChild(chWrap);
     });
     panel.appendChild(secDet);
@@ -395,7 +438,6 @@
     document.body.appendChild(panel);
     ML._ui = { btnRec, btnAnalyze, statusEl, doStop };
 
-    // Boas práticas aparecem logo após o painel ser inserido no DOM
     requestAnimationFrame(() => showTips(panel));
 
     ML.panel.refreshOffsets = function(offsets) {
@@ -408,7 +450,6 @@
       });
     };
 
-    // Auto-stop: 3 ciclos de 1s sem crescer = buffer estabilizado
     const STABLE_TICKS = 3;
     setInterval(() => {
       const activeChannels = ML.CHANNELS.filter(c => c.active);
