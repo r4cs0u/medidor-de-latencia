@@ -113,7 +113,7 @@
     const existing = document.getElementById('ml-guide');
     if (existing) { existing.remove(); return; }
 
-    const { win } = makeDraggableWindow('ml-guide', '\ud83d\udccb Como Usar', '#00d4ff', 240);
+    const { win } = makeDraggableWindow('ml-guide', '? Como Usar', '#00d4ff', 240);
 
     const STEPS = [
       { section: '\u2699\ufe0f  PREPARA\u00c7\u00c3O', color: '#ffd700', items: [
@@ -155,6 +155,43 @@
     positionNearPanel(win, anchorPanel);
   }
 
+  /* ── Copiar tabela de resultados ── */
+  function copyResults(btn) {
+    const lines = ML.CHANNELS
+      .filter(ch => ch.active)
+      .map((ch, i) => {
+        const name   = (i === 0 ? '\u2605 REF' : ch.label).padEnd(12);
+        const offset = ch.offsetEl ? ch.offsetEl.textContent : '--';
+        return name + '\t' + offset;
+      });
+    const text = lines.join('\n');
+    const orig = btn.textContent;
+    try {
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = '\u2714 COPIADO!';
+        btn.style.background = '#0d4f3c';
+        btn.style.color = '#44ff88';
+        setTimeout(() => { btn.textContent = orig; btn.style.background = '#1a1a2e'; btn.style.color = '#00d4ff'; }, 1500);
+      }).catch(() => fallbackCopy(text, btn, orig));
+    } catch(e) {
+      fallbackCopy(text, btn, orig);
+    }
+  }
+
+  function fallbackCopy(text, btn, orig) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    ta.remove();
+    btn.textContent = '\u2714 COPIADO!';
+    btn.style.background = '#0d4f3c';
+    btn.style.color = '#44ff88';
+    setTimeout(() => { btn.textContent = orig; btn.style.background = '#1a1a2e'; btn.style.color = '#00d4ff'; }, 1500);
+  }
+
   function init() {
     ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-guide'].forEach(id => {
       const el = document.getElementById(id);
@@ -188,14 +225,14 @@
       const b = document.createElement('button');
       b.textContent = icon;
       b.title = title;
-      b.style.cssText = `background:transparent;border:1px solid ${color}44;color:${color};border-radius:3px;padding:0 4px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0`;
+      b.style.cssText = `background:transparent;border:1px solid ${color}44;color:${color};border-radius:3px;padding:0 5px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0;font-weight:bold`;
       b.addEventListener('mouseenter', () => b.style.background = color + '22');
       b.addEventListener('mouseleave', () => b.style.background = 'transparent');
       return b;
     }
 
     const btnTips  = mkIconBtn('\ud83d\udca1', 'Boas Pr\u00e1ticas', '#ffd700');
-    const btnGuide = mkIconBtn('\ud83d\udccb', 'Instru\u00e7\u00f5es de Uso', '#00d4ff');
+    const btnGuide = mkIconBtn('?', 'Instru\u00e7\u00f5es de Uso', '#00d4ff');
     const btnX     = document.createElement('button');
     btnX.textContent = '\u2715';
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
@@ -415,6 +452,24 @@
     });
     tbl.appendChild(tbody);
     secRes.appendChild(tbl);
+
+    /* ── Botão Copiar Resultados ── */
+    const btnCopy = document.createElement('button');
+    btnCopy.textContent = '\u29c9 COPIAR RESULTADOS';
+    btnCopy.title = 'Copiar tabela de resultados';
+    btnCopy.style.cssText = [
+      'display:block;width:calc(100% - 12px);margin:5px 6px 2px',
+      'background:#1a1a2e;border:1px solid #00d4ff44;color:#00d4ff',
+      'border-radius:3px;padding:4px 0;cursor:pointer',
+      'font-size:9px;font-family:monospace;font-weight:bold',
+      'letter-spacing:.06em;text-align:center',
+      'transition:background .15s,color .15s',
+    ].join(';');
+    btnCopy.addEventListener('mouseenter', () => { if (!btnCopy._copied) { btnCopy.style.background = '#00d4ff18'; } });
+    btnCopy.addEventListener('mouseleave', () => { if (!btnCopy._copied) { btnCopy.style.background = '#1a1a2e'; } });
+    btnCopy.onclick = () => copyResults(btnCopy);
+    secRes.appendChild(btnCopy);
+
     panel.appendChild(secRes);
 
     /* ── Seção: Analise ── */
