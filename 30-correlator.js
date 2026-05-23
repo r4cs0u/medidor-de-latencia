@@ -7,6 +7,75 @@
   const LANDMARK_TOP_N = 20;
   const LANDMARK_REFINE_RATIO = 0.20; // janela de refinamento: ±20% do lagMs estimado
 
+  // Fase 1: resampling temporal
+  // Limiar de drift: se o desvio padrão dos intervalos entre amostras
+  // for maior que DRIFT_THRESHOLD_RATIO * média, a série é considerada
+  // instável e será reamostrada para um grid uniforme antes da correlação.
+  const DRIFT_THRESHOLD_RATIO = 0.20;
+  const RESAMPLE_INTERVAL_MS  = 33; // ~30fps, grid alvo fixo
+
+  /**
+   * resampleToGrid: interpola linearmente uma série irregular {ts[], lum[]}
+   * para um grid uniforme de targetIntervalMs.
+   * Retorna { lum: number[], ts: number[], intervalMs: number }.
+   */
+  function resampleToGrid(lum, timestamps, targetIntervalMs) {
+    const n = lum.length;
+    if (n < 2) return { lum, ts: timestamps, intervalMs: targetIntervalMs };
+
+    const t0   = timestamps[0];
+    const tEnd = timestamps[n - 1];
+    const out  = [];
+    const outTs = [];
+
+    for (let t = t0; t <= tEnd; t += targetIntervalMs) {
+      // encontra o par de amostras vizinhas
+      let lo = 0;
+      for (let i = 1; i < n; i++) {
+        if (timestamps[i] <= t) lo = i;
+        else break;
+      }
+      const hi = Math.min(lo + 1, n - 1);
+      if (lo === hi) {
+        out.push(lum[lo]);
+      } else {
+        const span = timestamps[hi] - timestamps[lo];
+        const frac = span > 0 ? (t - timestamps[lo]) / span : 0;
+        out.push(lum[lo] + frac * (lum[hi] - lum[lo]));
+      }
+      outTs.push(t);
+    }
+    return { lum: out, ts: outTs, intervalMs: targetIntervalMs };
+  }
+
+  /**
+   * hasDrift: retorna true se o desvio padrão dos intervalos entre amostras
+   * for > DRIFT_THRESHOLD_RATIO * média dos intervalos.
+   */
+  function hasDrift(timestamps) {
+    const n = timestamps.length;
+    if (n < 3) return false;
+    const diffs = [];
+    for (let i = 1; i < n; i++) diffs.push(timestamps[i] - timestamps[i - 1]);
+    const mean = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+    const std  = Math.sqrt(diffs.reduce((a, b) => a + (b - mean) ** 2, 0) / diffs.length);
+    return std > mean * DRIFT_THRESHOLD_RATIO;
+  }
+
+  /**
+   * prepareSeries: aplica resampling se drift detectado.
+   * Retorna { lum, ts, intervalMs, resampled }.
+   */
+  function prepareSeries(seriesLum, seriesTs) {
+    if (hasDrift(seriesTs)) {
+      const r = resampleToGrid(seriesLum, seriesTs, RESAMPLE_INTERVAL_MS);
+      return { lum: r.lum, ts: r.ts, intervalMs: r.intervalMs, resampled: true };
+    }
+    const n    = seriesTs.length;
+    const ivMs = n > 1 ? (seriesTs[n - 1] - seriesTs[0]) / (n - 1) : ML.INTERVAL_MS;
+    return { lum: seriesLum, ts: seriesTs, intervalMs: ivMs, resampled: false };
+  }
+
   function adaptiveThreshold(arr) {
     const n = arr.length;
     if (!n) return DIFF_THRESHOLD_MIN;
@@ -81,18 +150,6 @@
     );
   }
 
-  function realIntervalMs(ser) {
-    const ch = ML.CHANNELS.find(c => c.label === ser.label);
-    if (ch && ch.buffer && ch.buffer.length > 1) {
-      const first = ch.buffer[0].ts;
-      const last  = ch.buffer[ch.buffer.length - 1].ts;
-      const n     = ch.buffer.length - 1;
-      const iv    = (last - first) / n;
-      if (iv >= 10 && iv <= 200) return iv;
-    }
-    return ML.INTERVAL_MS;
-  }
-
   function effectiveLag(serA, serB) {
     const minSamples = Math.min(serA.lum.length, serB.lum.length);
     const durationMs = minSamples * ML.INTERVAL_MS;
@@ -104,14 +161,11 @@
 
   /**
    * landmarkOffset: estima o offset dominante comparando timestamps dos top-N picos.
-   * Monta um histograma de votos de (peakB[j] - peakA[i]) em samples.
-   * Retorna o offset em samples com mais votos, ou null se não houver picos suficientes.
    */
   function landmarkOffset(lumA, lumB, maxLagSamples) {
     const diffA = diffSeries(lumA);
     const diffB = diffSeries(lumB);
 
-    // extrai top-N picos como índices
     function topPeakIndices(diff, n) {
       const candidates = [];
       diff.forEach((d, i) => { if (d > 0) candidates.push({ i, d }); });
@@ -123,11 +177,10 @@
     const peaksB = topPeakIndices(diffB, LANDMARK_TOP_N);
     if (peaksA.length < 3 || peaksB.length < 3) return null;
 
-    // histograma de offsets (quantizado em samples)
     const votes = {};
     peaksA.forEach(ia => {
       peaksB.forEach(ib => {
-        const delta = ib - ia; // offset em samples: B está atrasado se delta > 0
+        const delta = ib - ia;
         if (Math.abs(delta) > maxLagSamples) return;
         votes[delta] = (votes[delta] || 0) + 1;
       });
@@ -144,7 +197,8 @@
   }
 
   /**
-   * analyze: usa landmark para estimar centro, depois refina com cross-correlação
+   * analyze: prepara séries (com resampling se drift detectado),
+   * usa landmark para estimar centro, depois refina com cross-correlação
    * numa janela estreita ao redor desse centro.
    */
   function analyze(chA, chB, maxLagMs) {
@@ -153,15 +207,16 @@
     if (serA.lum.length < 30 || serB.lum.length < 30)
       return { error: 'Dados insuficientes (mínimo 30 amostras por canal).' };
 
-    const ivA  = realIntervalMs(serA);
-    const ivB  = realIntervalMs(serB);
-    const ivMs = (ivA + ivB) / 2;
+    // Fase 1: resampling temporal se drift detectado
+    const prepA = prepareSeries(serA.lum, serA.ts);
+    const prepB = prepareSeries(serB.lum, serB.ts);
+    const ivMs  = (prepA.intervalMs + prepB.intervalMs) / 2;
 
     const lagMs         = maxLagMs || effectiveLag(serA, serB);
     const maxLagSamples = Math.ceil(lagMs / ivMs);
 
     // 1. Estimativa rápida pelos picos (landmark)
-    const landmarkSamples = landmarkOffset(serA.lum, serB.lum, maxLagSamples);
+    const landmarkSamples = landmarkOffset(prepA.lum, prepB.lum, maxLagSamples);
 
     // 2. Janela de refinamento ao redor do landmark (ou varredura completa se falhou)
     let refineSamples;
@@ -173,10 +228,6 @@
     }
 
     // 3. Cross-correlação na janela de refinamento
-    const lumAu = landmarkSamples !== null ? serA.lum : serA.lum;
-    const lumBu = serB.lum;
-
-    // Aplica deslocamento do landmark antes de correlacionar (janela estreita)
     function shiftArr(arr, shift) {
       if (!shift) return arr;
       const n = arr.length, out = new Array(n).fill(0);
@@ -185,24 +236,25 @@
       return out;
     }
 
-    const lumBshifted = landmarkSamples !== null ? shiftArr(lumBu, landmarkSamples) : lumBu;
-    const corr = crossCorrelation(lumAu, lumBshifted, refineSamples);
+    const lumBshifted = landmarkSamples !== null ? shiftArr(prepB.lum, landmarkSamples) : prepB.lum;
+    const corr     = crossCorrelation(prepA.lum, lumBshifted, refineSamples);
     const peak     = selectRobustPeak(corr);
     const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
     const subFrame = parabolicPeak(corr, peakIdx);
 
-    // offset total = landmark + refinamento fino
     const refineLag = peak.lag + subFrame;
     const totalLag  = (landmarkSamples !== null ? landmarkSamples : 0) + refineLag;
     const offsetMs  = totalLag * ivMs;
 
     return {
       offsetMs,
-      confidence:      peak.r,
-      lagUsedMs:       lagMs,
-      intervalMs:      ivMs,
+      confidence:       peak.r,
+      lagUsedMs:        lagMs,
+      intervalMs:       ivMs,
       subFrame,
       landmarkSamples,
+      resampledA:       prepA.resampled,
+      resampledB:       prepB.resampled,
       corr, serA, serB,
       labelA: serA.label, labelB: serB.label,
     };
@@ -226,23 +278,25 @@
       }
       const r = analyzeBest(chRef, ch);
       results.push({
-        channel:         ch,
-        label:           ch.label,
-        offsetMs:        r.error ? null : r.offsetMs,
-        confidence:      r.error ? null : r.confidence,
-        lagUsedMs:       r.error ? null : r.lagUsedMs,
-        intervalMs:      r.error ? null : r.intervalMs,
-        subFrame:        r.error ? null : r.subFrame,
-        landmarkSamples: r.error ? null : r.landmarkSamples,
-        error:           r.error || null,
-        corr:            r.corr  || null,
-        serA:            r.serA  || null,
-        serB:            r.serB  || null,
+        channel:          ch,
+        label:            ch.label,
+        offsetMs:         r.error ? null : r.offsetMs,
+        confidence:       r.error ? null : r.confidence,
+        lagUsedMs:        r.error ? null : r.lagUsedMs,
+        intervalMs:       r.error ? null : r.intervalMs,
+        subFrame:         r.error ? null : r.subFrame,
+        landmarkSamples:  r.error ? null : r.landmarkSamples,
+        resampledA:       r.error ? null : r.resampledA,
+        resampledB:       r.error ? null : r.resampledB,
+        error:            r.error || null,
+        corr:             r.corr  || null,
+        serA:             r.serA  || null,
+        serB:             r.serB  || null,
       });
     });
     return results;
   }
 
   ML.correlator = { analyze, analyzeBest, analyzeBestAll, crossCorrelation, diffSeries, normalize };
-  console.log('[MedLat] 30-correlator: híbrido landmark+correlação, refinamento ±20% ao redor do pico dominante.');
+  console.log('[MedLat] 30-correlator: híbrido landmark+correlação, resampling temporal (fase 1), refinamento ±20% ao redor do pico dominante.');
 })();
