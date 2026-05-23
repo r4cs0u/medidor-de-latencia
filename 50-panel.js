@@ -14,7 +14,7 @@
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#ccc',
-      'user-select:none;width:210px;overflow:hidden',
+      'user-select:none;width:230px;overflow:hidden',
     ].join(';');
 
     // Header
@@ -109,8 +109,8 @@
     secGrid.appendChild(rowToggle);
     panel.appendChild(secGrid);
 
-    /* Detalhamento */
-    const secDet = sec('Detalhamento');
+    /* Detalhamento: probes + tabela de resultados */
+    const secDet = sec('Probes');
     ML.CHANNELS.forEach((ch, i) => {
       const chWrap = document.createElement('div');
       chWrap.style.cssText = [
@@ -135,7 +135,6 @@
       lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;width:22px;text-align:right;flex-shrink:0`;
       lumEl.textContent = '--'; ch.lumEl = lumEl;
 
-      // ptsEl: mostra contagem ou OK quando buffer estabilizou
       const ptsEl = document.createElement('span');
       ptsEl.style.cssText = 'color:#888;font-size:8px;width:26px;text-align:right;flex-shrink:0;white-space:nowrap';
       ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
@@ -155,17 +154,55 @@
         if (e.key==='ArrowUp')   { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)+2); }
         if (e.key==='ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)-2); }
       });
-      const offEl = document.createElement('span');
-      offEl.style.cssText = 'color:#ddd;font-size:9px;font-weight:bold;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0';
-      offEl.textContent = i === 0 ? '0.000s' : '--'; ch.offsetEl = offEl;
-      const confEl = document.createElement('span');
-      confEl.style.cssText = 'color:#aaa;font-size:8px;width:38px;text-align:right;flex-shrink:0;white-space:nowrap';
-      confEl.textContent = i === 0 ? '100%' : '--'; ch.confEl = confEl;
-      r2.append(sp('px','font-size:8px;color:#aaa;flex-shrink:0'), szM, szInp, szP, offEl, confEl);
+      r2.append(sp('px','font-size:8px;color:#aaa;flex-shrink:0'), szM, szInp, szP);
       chWrap.append(r1, r2);
       secDet.appendChild(chWrap);
     });
     panel.appendChild(secDet);
+
+    /* Tabela de Resultados */
+    const secRes = sec('Resultados vs Refer\u00eancia');
+    const tbl = document.createElement('table');
+    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
+    // cabecalho
+    const thead = document.createElement('thead');
+    const thr = document.createElement('tr');
+    ['Tela','Offset','Confiança'].forEach((h, hi) => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      th.style.cssText = 'color:#555;font-weight:bold;font-size:7px;letter-spacing:.08em;text-transform:uppercase;padding:1px 3px;text-align:' + (hi===0?'left':'right') + ';border-bottom:1px solid #1a1a30';
+      thr.appendChild(th);
+    });
+    thead.appendChild(thr);
+    tbl.appendChild(thead);
+    // linhas por canal
+    const tbody = document.createElement('tbody');
+    ML.CHANNELS.forEach((ch, i) => {
+      const tr = document.createElement('tr');
+      tr.style.cssText = `border-bottom:1px solid ${ch.color}22`;
+      // nome
+      const tdName = document.createElement('td');
+      tdName.style.cssText = `color:${ch.color};font-weight:bold;padding:2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px`;
+      tdName.textContent = (i===0?'\u2605 ':'') + ch.label;
+      ch._tdName = tdName;
+      // offset
+      const tdOff = document.createElement('td');
+      tdOff.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:10px;white-space:nowrap';
+      tdOff.textContent  = i===0 ? '0.000s' : '--';
+      tdOff.style.color  = i===0 ? '#44ff88' : '#444';
+      ch.offsetEl = tdOff;
+      // confianca
+      const tdConf = document.createElement('td');
+      tdConf.style.cssText = 'text-align:right;padding:2px 3px;font-size:8px;white-space:nowrap';
+      tdConf.textContent = i===0 ? 'REF' : '--';
+      tdConf.style.color = i===0 ? '#44ff88aa' : '#444';
+      ch.confEl = tdConf;
+      tr.append(tdName, tdOff, tdConf);
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    secRes.appendChild(tbl);
+    panel.appendChild(secRes);
 
     /* Analise */
     const secAn = sec('Analise');
@@ -189,14 +226,14 @@
         btnRec.style.background = '#7f0000'; btnRec.style.borderColor = '#c6282888'; btnRec.style.boxShadow = '0 0 8px #c6282855';
         statusEl.textContent = 'Gravando...'; statusEl.style.color = '#44ff88';
         btnAnalyze.disabled = true;
-        // reset OK state
-        ML.CHANNELS.forEach(ch => {
+        // reset resultados
+        ML.CHANNELS.forEach((ch, i) => {
           ch._prevPts   = 0;
           ch._stableCnt = 0;
           if (ch.ptsEl) { ch.ptsEl.textContent = '0pt'; ch.ptsEl.style.color = '#888'; }
-          if (ML.CHANNELS.indexOf(ch) !== 0) {
-            if (ch.offsetEl) ch.offsetEl.textContent = '--';
-            if (ch.confEl)   ch.confEl.textContent   = '--';
+          if (i !== 0) {
+            if (ch.offsetEl) { ch.offsetEl.textContent = '--'; ch.offsetEl.style.color = '#444'; }
+            if (ch.confEl)   { ch.confEl.textContent   = '--'; ch.confEl.style.color = '#444'; }
           }
         });
       } else {
@@ -207,6 +244,7 @@
     btnAnalyze.onclick = () => {
       statusEl.textContent = 'Calculando...'; statusEl.style.color = '#aaa';
       setTimeout(() => {
+        // Analisa todos os canais vs referencia de uma vez
         const results = ML.correlator.analyzeBestAll();
         results.forEach(r => {
           const ch = r.channel;
@@ -223,9 +261,8 @@
           }
           if (ch.confEl) {
             if (r.confidence != null && !r.error && !r.skipped) {
-              const pct  = Math.round(r.confidence * 100);
-              const lagS = r.lagUsedMs ? (r.lagUsedMs / 1000) + 's' : '';
-              ch.confEl.textContent = pct + '%' + (lagS ? '@' + lagS : '');
+              const pct = Math.round(r.confidence * 100);
+              ch.confEl.textContent = pct + '%';
               ch.confEl.style.color = r.confidence > 0.6 ? '#44ff88' : r.confidence > 0.3 ? '#ffd700' : '#ff4444';
             } else {
               ch.confEl.textContent = '--';
@@ -233,6 +270,7 @@
             }
           }
         });
+        // Abre grafico com todos os canais sobrepostos
         if (ML.chart && ML.chart.show) ML.chart.show(results);
         const errs = results.filter(r => r.error);
         statusEl.textContent = errs.length
@@ -267,17 +305,26 @@
     document.body.appendChild(panel);
     ML._ui = { btnRec, btnAnalyze, statusEl, doStop };
 
-    // ── Auto-stop: monitora estabilização do buffer (3s sem crescer = OK)
-    const STABLE_TICKS = 3; // 3 ciclos de 1s
+    // Expoe refreshOffsets para o chart atualizar os campos apos ajuste manual
+    ML.panel.refreshOffsets = function(offsets) {
+      ML.CHANNELS.forEach((ch, i) => {
+        if (i === 0 || !offsets[ch.id]) return;
+        if (!ch.offsetEl) return;
+        const s = offsets[ch.id] / 1000;
+        ch.offsetEl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
+        ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+      });
+    };
+
+    // Auto-stop: 3 ciclos de 1s sem crescer = OK
+    const STABLE_TICKS = 3;
     setInterval(() => {
       const activeChannels = ML.CHANNELS.filter(c => c.active);
       let allOk = activeChannels.length > 0;
-
       activeChannels.forEach(ch => {
         const pts = ch.buffer.length;
         if (ch.ptsEl) {
           if (ch._stableCnt >= STABLE_TICKS) {
-            // Já estabilizado
             ch.ptsEl.textContent = '\u2713OK';
             ch.ptsEl.style.color = '#44ff88';
           } else {
@@ -295,15 +342,13 @@
         }
         if (ch._stableCnt < STABLE_TICKS) allOk = false;
       });
-
-      // Dispara auto-stop quando TODOS os canais ativos estabilizaram
       if (ML.state.recording && allOk && activeChannels.length > 0) {
-        console.log('[MedLat] Buffer estabilizado em todos os canais. Auto-stop.');
+        console.log('[MedLat] Buffer estabilizado. Auto-stop.');
         doStop();
       }
     }, 1000);
 
-    console.log('[MedLat] 50-panel carregado. Auto-stop ativo (3s est\u00e1vel).');
+    console.log('[MedLat] 50-panel: tabela de resultados vs referencia.');
   }
 
   ML.panel = { init };
