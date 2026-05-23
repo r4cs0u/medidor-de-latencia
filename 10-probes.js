@@ -129,7 +129,7 @@
     }, 180);
   }
 
-  // Padrão: borda sólida (sem foco)
+  // Padrão: borda sólida 1px
   function applyDefaultStyle(ch) {
     if (!ch.probe) return;
     ch.probe.style.outline       = 'none';
@@ -138,12 +138,12 @@
     ch.probe.style.opacity       = '1';
   }
 
-  // Foco/drag: borda tracejada (sem outline duplo)
+  // Foco/drag: tracejada 1px (mesma espessura, sem outline)
   function applyFocusStyle(ch) {
     if (!ch.probe) return;
     ch.probe.style.outline       = 'none';
     ch.probe.style.outlineOffset = '0px';
-    ch.probe.style.border        = `2px dashed ${ch.color}`;
+    ch.probe.style.border        = `1px dashed ${ch.color}`;
     ch.probe.style.opacity       = '0.95';
   }
 
@@ -289,5 +289,5 @@
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  console.log('[MedLat] 10-probes: borda sólida padrão → tracejada no foco, colisão bordas sobrepostas.');
+  console.log('[MedLat] 10-probes: borda sólida 1px padrão → tracejada 1px no foco.');
 })();
