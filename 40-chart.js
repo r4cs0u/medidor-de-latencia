@@ -1,6 +1,6 @@
 (function () {
   const ML = window.MedLat;
-  const MAX_PEAKS = 15;
+  let MAX_PEAKS = 15;
   // Margem de snap: ±3 frames
   const SNAP_RADIUS = 3;
 
@@ -168,12 +168,33 @@
     updatePeaksBtn();
     btnPeaks.onclick = () => { showPeaks = !showPeaks; updatePeaksBtn(); rebuildCharts(); };
 
+    // Seletor de quantidade de picos
+    const selPeaks = document.createElement('select');
+    selPeaks.style.cssText = [
+      'background:#1e2a3a;border:1px solid #2a3a50;color:#ffd700',
+      'border-radius:3px;padding:1px 4px;cursor:pointer;font:bold 8px monospace',
+      'flex-shrink:0;outline:none;height:18px',
+    ].join(';');
+    [15, 20, 25, 30].forEach(n => {
+      const opt = document.createElement('option');
+      opt.value = n;
+      opt.textContent = n + ' picos';
+      if (n === MAX_PEAKS) opt.selected = true;
+      selPeaks.appendChild(opt);
+    });
+    selPeaks.addEventListener('change', () => {
+      MAX_PEAKS = parseInt(selPeaks.value);
+      // Limpa cache de picos para forçar recálculo
+      Object.keys(peaksByChannel).forEach(k => delete peaksByChannel[k]);
+      rebuildCharts();
+    });
+
     const btnClose = document.createElement('button');
     btnClose.textContent = '\u2715';
     btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnClose.onclick = () => panel.remove();
 
-    hdr.append(htitle, btnManual, btnPeaks, btnMode, btnClose);
+    hdr.append(htitle, btnManual, btnPeaks, selPeaks, btnMode, btnClose);
     panel.appendChild(hdr);
 
     let pdrag = false, pox = 0, poy = 0;
@@ -674,5 +695,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: SNAP_RADIUS=3, modo padrão paralelo.');
+  console.log('[MedLat] 40-chart: SNAP_RADIUS=3, modo padrão paralelo, seletor de picos 15/20/25/30.');
 })();
