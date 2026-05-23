@@ -289,9 +289,10 @@
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  // Posições iniciais calibradas manualmente via ferramenta de posicionamento.
+  // Posições iniciais calibradas manualmente.
   // Valores são o CENTRO de cada probe como fração da viewport.
-  // A probe é posicionada subtraindo metade do tamanho (238px) do centro.
+  // fracY reduzido em 5px equivalente: -5/vh aplicado no cálculo final.
+  // ch3 (Tela 4) e ch4 (Tela 5) deslocados 2px para esquerda no cálculo final.
   // ch0 Referência : fracX=0.555 fracY=0.322
   // ch1 Tela 2     : fracX=0.308 fracY=0.322
   // ch2 Tela 3     : fracX=0.432 fracY=0.322
@@ -304,6 +305,15 @@
     [0.681, 0.322],  // ch3 Tela 4
     [0.804, 0.322],  // ch4 Tela 5
   ];
+  // Ajustes finos em px aplicados após o cálculo fracional
+  // [offsetX, offsetY] — negativo = esquerda/cima
+  const INIT_FINE = [
+    [  0, -5],  // ch0 Referência: 5px acima
+    [  0, -5],  // ch1 Tela 2: 5px acima
+    [  0, -5],  // ch2 Tela 3: 5px acima
+    [ -2, -5],  // ch3 Tela 4: 5px acima + 2px esquerda
+    [ -2, -5],  // ch4 Tela 5: 5px acima + 2px esquerda
+  ];
 
   ML.state.probeW = 238;
 
@@ -311,13 +321,13 @@
     makeOff(ch);
     const pw = probeW(ch);
     const ph = probeH(ch);
-    const x = Math.round(vw * INIT_CENTER[i][0] - pw / 2);
-    const y = Math.round(vh * INIT_CENTER[i][1] - ph / 2);
-    mkProbe(ch, x, y);
+    const x = Math.round(vw * INIT_CENTER[i][0] - pw / 2) + INIT_FINE[i][0];
+    const y = Math.round(vh * INIT_CENTER[i][1] - ph / 2) + INIT_FINE[i][1];
+    mkProbe(ch, Math.max(0, x), Math.max(0, y));
   });
 
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  console.log('[MedLat] 10-probes carregado. Posições calibradas manualmente. px=238.');
+  console.log('[MedLat] 10-probes carregado. Posições calibradas. px=238. Ajuste fino aplicado.');
 })();

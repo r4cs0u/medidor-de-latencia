@@ -1,7 +1,6 @@
 (function () {
   const ML = window.MedLat;
   let MAX_PEAKS = 15;
-  // Margem de snap: ±3 frames
   const SNAP_RADIUS = 3;
 
   function loadChartJs() {
@@ -290,22 +289,23 @@
       bar.style.cssText = 'display:flex;flex-wrap:nowrap;gap:4px;flex-shrink:0;overflow-x:auto;padding-bottom:2px';
 
       const ref = ML.CHANNELS[0];
-      bar.appendChild(mkCardCompact(ref.label, '\u2605', ref.color, '0.000s', null, null, null));
+      bar.appendChild(mkCardCompact(ref.label, '\u2605', ref.color, '0.000s', ref.color));
 
       results.forEach(r => {
         if (r.isReference || !r.channel) return;
         const ch = r.channel;
-        let autoTxt='--', autoColor='#445', confTxt=null, confColor='#445';
+        let autoTxt = '--', autoColor = '#445';
         if (!r.error && !r.skipped) {
           const baseMs = autoOffsetMs[ch.id] || 0;
-          const s   = baseMs / 1000;
-          autoTxt   = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
-          autoColor = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#ff8844';
-          const pct = r.confidence != null ? Math.round(r.confidence * 100) : null;
-          if (pct != null) { confTxt = pct + '%'; confColor = pct>60?'#44ff88':pct>30?'#ffd700':'#ff4444'; }
-        } else { autoTxt = r.error ? 'ERR' : '--'; autoColor = r.error ? '#ff4444' : '#445'; }
+          const s      = baseMs / 1000;
+          autoTxt      = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
+          autoColor    = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+        } else {
+          autoTxt   = r.error ? 'ERR' : '--';
+          autoColor = r.error ? '#ff4444' : '#445';
+        }
 
-        const card = mkCardCompact(ch.label, '', ch.color, autoTxt, confTxt, autoColor, confColor);
+        const card = mkCardCompact(ch.label, '', ch.color, autoTxt, autoColor);
         cardRefs[ch.id] = { autoMs: autoOffsetMs[ch.id] || 0, ch, manualEl: card._manualEl };
         bar.appendChild(card);
       });
@@ -686,7 +686,8 @@
     requestAnimationFrame(() => rebuildCharts());
   }
 
-  function mkCardCompact(label, prefix, color, autoTxt, confTxt, autoColor, confColor) {
+  // Cards sem indicador de confiança — exibe apenas label + latência calculada
+  function mkCardCompact(label, prefix, color, autoTxt, autoColor) {
     const card = document.createElement('div');
     card.style.cssText = [
       'display:inline-flex;align-items:center;gap:5px;flex-shrink:0',
@@ -701,20 +702,13 @@
     valEl.style.cssText = `color:${autoColor||'#44ff88'};font-weight:bold;font-size:11px`;
     valEl.textContent = autoTxt;
     const manualEl = document.createElement('span');
-    manualEl.style.cssText = `font-size:9px;display:none`;
+    manualEl.style.cssText = 'font-size:9px;display:none';
     manualEl.textContent = '';
-    card.append(nameEl, valEl);
-    if (confTxt) {
-      const confEl = document.createElement('span');
-      confEl.style.cssText = `color:${confColor||'#aaa'};font-size:8px`;
-      confEl.textContent = confTxt;
-      card.appendChild(confEl);
-    }
-    card.appendChild(manualEl);
+    card.append(nameEl, valEl, manualEl);
     card._manualEl = manualEl;
     return card;
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: snap com centro branco e ±1 cinza; ajuste confirmado persiste no gráfico.');
+  console.log('[MedLat] 40-chart: confiança removida dos cards; snap com centro branco e ±1 cinza.');
 })();
