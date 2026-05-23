@@ -1,6 +1,8 @@
 (function () {
   const ML = window.MedLat;
   const MAX_PEAKS = 15;
+  // Margem de snap: ±10 frames
+  const SNAP_RADIUS = 10;
 
   function loadChartJs() {
     return new Promise((resolve) => {
@@ -325,7 +327,6 @@
 
     const sliderRefs = {};
     const peaksByChannel = {};
-    const SNAP_RADIUS = 3;
 
     function getPeakIndices(ch) {
       if (peaksByChannel[ch.id]) return peaksByChannel[ch.id];
@@ -377,9 +378,6 @@
       const valLbl = document.createElement('span');
       valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
 
-      // CORRIGIDO: slider esquerda (negativo) aumenta offset, direita (positivo) diminui
-      // totalMs = autoOffset + sliderVal * iv
-      // fineShiftSamples = sliderVal (positivo = avança a curva = diminui offset relativo)
       function refreshLabel(sliderVal) {
         const totalMs = (autoOffsetMs[ch.id] || 0) + sliderVal * iv;
         const s       = totalMs / 1000;
@@ -400,8 +398,6 @@
 
       slider.addEventListener('input', () => {
         const sliderVal = parseInt(slider.value);
-        // slider esquerda = sliderVal negativo = fineShift negativo = recua a curva = aumenta offset
-        // slider direita  = sliderVal positivo = fineShift positivo = avança a curva = diminui offset
         fineShiftSamples[ch.id] = sliderVal;
         const { totalMs } = refreshLabel(sliderVal);
         if (manualMode) updateCardManual(ch.id, totalMs);
@@ -429,7 +425,6 @@
         if (idx === 0) return;
         const iv   = realIvMs(ch);
         const fine = fineShiftSamples[ch.id] || 0;
-        // totalMs confirmado = autoOffset + fine * iv
         ML.manualOffsets[ch.id] = (autoOffsetMs[ch.id] || 0) + fine * iv;
       });
       if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
@@ -457,9 +452,12 @@
     body.appendChild(chartsArea);
 
     const refCh = activeChannels[0];
+
+    // Régua com label para cada frame: "f{i} ({s}s)"
+    // Chart.js usa autoSkip para evitar sobreposição — cada tick visível = 1 frame real
     const sharedLabels = refCh.buffer.slice(0, maxLen).map((p, i) => {
-      const s = ((p.ts - refCh.buffer[0].ts) / 1000).toFixed(1);
-      return i % Math.max(1, Math.floor(maxLen / 10)) === 0 ? s + 's' : '';
+      const s = ((p.ts - refCh.buffer[0].ts) / 1000).toFixed(2);
+      return `f${i} (${s}s)`;
     });
 
     let chartInstances = [];
@@ -476,6 +474,11 @@
       const visible = getVisibleChannels();
       if (!visible.length) return;
       chartMode === 'overlay' ? buildOverlay(visible) : buildParallel(visible);
+    }
+
+    // maxTicksLimit dinâmico: 1 tick a cada ~60px de largura
+    function xMaxTicks() {
+      return Math.max(5, Math.floor((chartsArea.offsetWidth || 400) / 60));
     }
 
     function shiftSeries(data, shift) {
@@ -514,6 +517,7 @@
     function buildParallel(channels) {
       const totalGap = (channels.length - 1) * 2;
       const rowH = Math.max(48, Math.floor((chartsArea.offsetHeight - totalGap) / channels.length));
+      const ticks = xMaxTicks();
       let refAnnotations = [];
       channels.forEach((ch, idx) => {
         const rawLums = ch.buffer.map(p => p.lum).slice(0, maxLen);
@@ -543,7 +547,11 @@
             plugins: { legend: { display: false }, tooltip: { enabled: false } },
             layout: { padding: { top: 1, right: 2, bottom: 0, left: 0 } },
             scales: {
-              x: { display: idx === channels.length - 1, ticks: { color: '#444', font: { size: 7 }, maxRotation: 0 }, grid: { color: '#16162a' } },
+              x: {
+                display: idx === channels.length - 1,
+                ticks: { color: '#556', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks },
+                grid: { color: '#16162a' },
+              },
               y: { ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 3 }, grid: { color: '#16162a' },
                    min: Math.max(0, Math.floor(lMin - rng * .10)), max: Math.min(255, Math.ceil(lMax + rng * .10)) },
             },
@@ -567,6 +575,7 @@
       const rng  = Math.max(1, globalMax - globalMin);
       const yMin = Math.max(0,   Math.floor(globalMin - rng * 0.10));
       const yMax = Math.min(255, Math.ceil(globalMax  + rng * 0.10));
+      const ticks = xMaxTicks();
 
       let refAnnotations = [];
       const allPeaks = showPeaks && ML.correlator
@@ -620,7 +629,10 @@
           },
           layout: { padding: { top: 2, right: 4, bottom: 0, left: 0 } },
           scales: {
-            x: { ticks: { color: '#444', font: { size: 7 }, maxRotation: 0 }, grid: { color: '#16162a' } },
+            x: {
+              ticks: { color: '#556', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks },
+              grid: { color: '#16162a' },
+            },
             y: { min: yMin, max: yMax, ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 5 }, grid: { color: '#16162a' } },
           },
         },
@@ -663,5 +675,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: direção do slider manual corrigida.');
+  console.log('[MedLat] 40-chart: régua por frame (f{i}) + SNAP_RADIUS=10.');
 })();
