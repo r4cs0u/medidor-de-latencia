@@ -18,7 +18,7 @@
     } catch(e) {}
   }
 
-  /* ── Boas Práticas ─────────────────────────────── */
+  /* ── Boas Práticas ─────────────────────────── */
   function showTips(anchorPanel) {
     if (ML._tipsShown) return;
     ML._tipsShown = true;
@@ -257,7 +257,6 @@
       ].join(';');
       ch._panelRow = chWrap;
 
-      // Linha 1: ● label | px − [n] +
       const r1 = row(4);
       const tog = document.createElement('button');
       tog.style.cssText = `width:9px;height:9px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
@@ -290,7 +289,6 @@
 
       r1.append(tog, lblInp, sp('px','font-size:8px;color:#fff;flex-shrink:0'), szM, szInp, szP);
 
-      // Linha 2: lag [select] | spacer | lum | pts
       const r2 = row(4);
 
       const lumEl = document.createElement('span');
@@ -317,7 +315,7 @@
     panel.appendChild(secDet);
 
     /* ── Seção: Resultados ── */
-    const secRes = sec('Resultados vs Refer\u00eancia');
+    const secRes = sec('Resultados vs Referência');
     const tbl = document.createElement('table');
     tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
     const thead = document.createElement('thead');
@@ -364,7 +362,6 @@
       statusEl.textContent = 'Pronto (' + pts + ')';
       statusEl.style.color = '#ffd700';
       btnAnalyze.disabled = false;
-      // Abre análise automaticamente após parar gravação
       setTimeout(() => btnAnalyze.onclick(), 300);
     }
 
@@ -410,7 +407,7 @@
         const errs = results.filter(r => r.error);
         statusEl.textContent = errs.length
           ? errs.map(r => r.label + ': ' + r.error).join(' | ')
-          : 'An\u00e1lise conclu\u00edda';
+          : 'Análise concluída';
         statusEl.style.color = errs.length ? '#ff8844' : '#44ff88';
       }, 30);
     };
