@@ -155,7 +155,7 @@
     positionNearPanel(win, anchorPanel);
   }
 
-  /* ── Parser de dedução: aceita formatos "±0,366s" "+0.1s" "-1s" etc ── */
+  /* ── Parser de dedução ── */
   function parseDeductionS(str) {
     if (!str) return null;
     const m = str.trim().replace(',', '.').match(/^([+-]?\d+(?:\.\d+)?)\s*s$/i);
@@ -169,7 +169,6 @@
   }
 
   /* ── Auto-detect de dedução ao mover probe ── */
-  // Busca textos próximos ao centro da probe com padrão numérico de tempo
   function autoDetectDeduction(ch) {
     if (!ch.probe) return null;
     const d = ch.probe;
@@ -177,7 +176,6 @@
     const cy = d.offsetTop  + d.offsetHeight / 2;
     const RADIUS = 120;
 
-    // Coleta todos os nós de texto visíveis na página
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         const p = node.parentElement;
@@ -226,13 +224,13 @@
         return name + '\t' + offset + '\t' + real;
       });
     const text = 'Tela\t\tResultado\tReal\n' + lines.join('\n');
-    const orig = btn.textContent;
+    const orig = btn.innerHTML;
     try {
       navigator.clipboard.writeText(text).then(() => {
-        btn.textContent = '\u2714 COPIADO!';
+        btn.innerHTML = '\u2714';
         btn.style.background = '#0d4f3c';
         btn.style.color = '#44ff88';
-        setTimeout(() => { btn.textContent = orig; btn.style.background = '#1a1a2e'; btn.style.color = '#00d4ff'; }, 1500);
+        setTimeout(() => { btn.innerHTML = orig; btn.style.background = 'transparent'; btn.style.color = '#00d4ff'; }, 1500);
       }).catch(() => fallbackCopy(text, btn, orig));
     } catch(e) {
       fallbackCopy(text, btn, orig);
@@ -247,13 +245,13 @@
     ta.focus(); ta.select();
     try { document.execCommand('copy'); } catch(e) {}
     ta.remove();
-    btn.textContent = '\u2714 COPIADO!';
+    btn.innerHTML = '\u2714';
     btn.style.background = '#0d4f3c';
     btn.style.color = '#44ff88';
-    setTimeout(() => { btn.textContent = orig; btn.style.background = '#1a1a2e'; btn.style.color = '#00d4ff'; }, 1500);
+    setTimeout(() => { btn.innerHTML = orig; btn.style.background = 'transparent'; btn.style.color = '#00d4ff'; }, 1500);
   }
 
-  /* ── Recalcula e exibe coluna Real para todos os canais ── */
+  /* ── Recalcula coluna Real ── */
   function refreshRealColumn() {
     const refDed = ML.CHANNELS[0].deduction || 0;
     ML.CHANNELS.forEach((ch, i) => {
@@ -268,7 +266,6 @@
         ch.realEl.style.color = '#fff';
         return;
       }
-      // parse offsetEl textContent  ex: "+3.000s" ou "-0.344s"
       const raw = ch.offsetEl.textContent.replace('s', '').replace(',', '.');
       const offsetS = parseFloat(raw);
       if (isNaN(offsetS)) { ch.realEl.textContent = '--'; ch.realEl.style.color = '#fff'; return; }
@@ -286,7 +283,7 @@
     });
 
     const vw = window.innerWidth;
-    const panelW = Math.round(Math.max(220, Math.min(300, vw * 0.14)));
+    const panelW = Math.round(Math.max(286, Math.min(390, vw * 0.18)));
 
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
@@ -298,7 +295,7 @@
       `user-select:none;width:${panelW}px;overflow:hidden`,
     ].join(';');
 
-    // Header
+    /* ── Header ── */
     const hdr = document.createElement('div');
     hdr.style.cssText = [
       'display:flex;align-items:center;gap:4px;overflow:hidden',
@@ -308,12 +305,12 @@
     ].join(';');
 
     const ttl = document.createElement('span');
-    ttl.textContent = '\uD83D\uDCE1 MED. LAT\u00CANCIA';
-    ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
+    ttl.textContent = '\u{1F550} ANALISADOR DE LAT\u00CANCIA';
+    ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
 
     function mkIconBtn(icon, title, color) {
       const b = document.createElement('button');
-      b.textContent = icon;
+      b.innerHTML = icon;
       b.title = title;
       b.style.cssText = `background:transparent;border:1px solid ${color}44;color:${color};border-radius:3px;padding:0 5px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0;font-weight:bold`;
       b.addEventListener('mouseenter', () => b.style.background = color + '22');
@@ -334,19 +331,22 @@
     hdr.append(ttl, btnTips, btnGuide, btnX);
     panel.appendChild(hdr);
 
-    // Drag
+    /* Drag */
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => { if (e.target !== hdr && e.target !== ttl) return; pdrag = true; panel.style.right = 'auto'; pox = e.clientX - panel.offsetLeft; poy = e.clientY - panel.offsetTop; });
     window.addEventListener('mousemove', e => { if (!pdrag) return; panel.style.left = Math.max(0, e.clientX - pox) + 'px'; panel.style.top = Math.max(0, e.clientY - poy) + 'px'; });
     window.addEventListener('mouseup', () => pdrag = false);
 
-    // Helpers
-    function sec(label) {
+    /* ── Helpers ── */
+    function sec(label, extraContent) {
       const wrap = document.createElement('div');
       wrap.style.cssText = 'padding:4px 8px;border-bottom:1px solid #1a1a30';
       const lh = document.createElement('div');
-      lh.textContent = label;
-      lh.style.cssText = 'font-size:7px;color:#fff;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #1a1a30;padding-bottom:2px;margin-bottom:4px';
+      lh.style.cssText = 'display:flex;align-items:center;justify-content:space-between;font-size:7px;color:#fff;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #1a1a30;padding-bottom:2px;margin-bottom:4px';
+      const lhText = document.createElement('span');
+      lhText.textContent = label;
+      lh.appendChild(lhText);
+      if (extraContent) lh.appendChild(extraContent);
       wrap.appendChild(lh);
       return wrap;
     }
@@ -381,12 +381,12 @@
       sel.style.cssText = [
         'background:#111827;border:1px solid #2a3a50;color:#fff',
         'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
-        'cursor:pointer;outline:none;flex-shrink:0',
+        'cursor:pointer;outline:none;width:100%',
       ].join(';');
       const opts = [
         { value: 'auto',     label: 'Auto' },
         { value: 'rapido',   label: 'At\u00e9 5s' },
-        { value: 'internet', label: 'Maior que 5s' },
+        { value: 'internet', label: '> 5s' },
       ];
       opts.forEach(o => {
         const opt = document.createElement('option');
@@ -407,16 +407,15 @@
       return sel;
     }
 
-    /* ── Campo de dedução ── */
     function mkDeductionInput(ch) {
       const inp = document.createElement('input');
       inp.type = 'text';
       inp.placeholder = '0.000s';
       inp.value = ch.deduction ? formatDeduction(ch.deduction) : '';
-      inp.title = 'Dedu\u00e7\u00e3o do multiviewer (ex: -0.366s). Preenche auto ao posicionar probe.';
+      inp.title = 'Dedu\u00e7\u00e3o do multiviewer (ex: -0.366s).';
       inp.style.cssText = [
         'background:#111827;border:1px solid #2a3a5088;color:#ff9d00',
-        'font:bold 9px monospace;width:54px;border-radius:3px',
+        'font:bold 8px monospace;width:100%;border-radius:3px',
         'padding:1px 3px;text-align:center;outline:none',
       ].join(';');
       inp.addEventListener('focus', () => inp.style.borderColor = '#ff9d0088');
@@ -439,10 +438,10 @@
       return inp;
     }
 
-    /* ── Seção: Telas & Grid ── */
-    const secTG = sec('Telas & Grid');
+    /* ── Seção: Posicionamento ── */
+    const secTG = sec('Posicionamento');
 
-    const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 48);
+    const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 44);
     function applyGlobalPx(v) {
       const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
       ML.state.probeW = c;
@@ -459,65 +458,80 @@
     btnPxP.onclick = () => applyGlobalPx(ML.state.probeW + 2);
     pxInp.addEventListener('change', () => applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW));
     pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
-    const rowPx = row(4);
-    rowPx.append(sp('PX Global', 'flex-shrink:0'), btnPxM, pxInp, btnPxP);
-    secTG.appendChild(rowPx);
 
-    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0;margin-top:4px');
+    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0');
     function updateSnapBtn() { btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF'; btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e'; btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#fff'; }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
 
-    const btnCol = mkBtn('', '#2a1a0d', 'flex:1;min-width:0;margin-top:4px');
+    const btnCol = mkBtn('', '#2a1a0d', 'flex:1;min-width:0');
     function updateColBtn() { btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF'; btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e'; btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#fff'; }
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
 
-    const rowToggle = row(4);
-    rowToggle.append(btnSnap, btnCol);
-    secTG.appendChild(rowToggle);
+    const rowPos = row(4);
+    rowPos.append(sp('PX', 'flex-shrink:0;font-size:8px'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
+    secTG.appendChild(rowPos);
     panel.appendChild(secTG);
 
-    /* ── Seção: Probes ── */
-    const secDet = sec('Probes');
+    /* ── Seção: Telas (grid 3×N) ── */
+    const secDet = sec('Telas');
+    const probeGrid = document.createElement('div');
+    probeGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px';
+
     ML.CHANNELS.forEach((ch, i) => {
       ch.deduction = ch.deduction || 0;
 
-      const chWrap = document.createElement('div');
-      chWrap.style.cssText = [
+      const card = document.createElement('div');
+      card.style.cssText = [
         'display:flex;flex-direction:column;gap:2px',
-        'padding:3px 4px;border-radius:4px;margin-bottom:3px;overflow:hidden',
+        'padding:3px 4px;border-radius:4px',
         `border:1px solid ${ch.color}55`,
         `background:${ch.color}0d`,
-        `border-left:2px solid ${ch.color}99`,
+        `border-top:2px solid ${ch.color}99`,
         `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
       ].join(';');
-      ch._panelRow = chWrap;
+      ch._panelRow = card;
 
-      // r1: toggle + label + px
-      const r1 = row(4);
+      /* linha 1: toggle + label + lum */
+      const r1 = row(3);
+      r1.style.overflow = 'hidden';
       const tog = document.createElement('button');
-      tog.style.cssText = `width:9px;height:9px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
+      tog.style.cssText = `width:8px;height:8px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
       tog.onclick = () => {
         ch.active = !ch.active;
         tog.style.background = ch.active ? ch.color : 'transparent';
-        chWrap.style.opacity = ch.active ? 1 : .4;
+        card.style.opacity = ch.active ? 1 : .4;
         ch.probe.style.display = ch.active ? 'block' : 'none';
         if (!ch.active) ch.prevLum = null;
       };
 
       const lblInp = document.createElement('input');
-      lblInp.value = i === 0 ? '\u2605 ' + ch.label : ch.label;
-      lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis`;
+      lblInp.value = i === 0 ? 'Ref.' : ch.label;
+      lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
       lblInp.addEventListener('change', () => {
         ch.label = lblInp.value.replace(/^\u2605\s*/, '');
         if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
         if (ch._tdName) ch._tdName.textContent = (i === 0 ? '\u2605 ' : '') + ch.label;
       });
 
-      const szInp = mkNum(ML.state.probeW, 16, 500, 2, 38);
+      const lumEl = document.createElement('span');
+      lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;flex-shrink:0`;
+      lumEl.textContent = '--'; ch.lumEl = lumEl;
+
+      /* pts: oculto mas necessário internamente */
+      const ptsEl = document.createElement('span');
+      ptsEl.style.cssText = 'display:none';
+      ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
+
+      r1.append(tog, lblInp, lumEl, ptsEl);
+
+      /* linha 2: px */
+      const r2 = row(2);
+      r2.style.overflow = 'hidden';
+      const szInp = mkNum(ML.state.probeW, 16, 500, 2, 34);
       ch._szInp = szInp;
       function applyChanPx(v) { const c = Math.max(16, Math.min(500, Math.round(v/2)*2)); ch.probeW = c; szInp.value = c; if (ch.active && ch.resize) ch.resize(); }
-      const szM = mkBtn('\u2212', '#1e2a3a', 'padding:1px 3px;font-size:8px');
-      const szP = mkBtn('+',    '#1e2a3a', 'padding:1px 3px;font-size:8px');
+      const szM = mkBtn('\u2212', '#1e2a3a', 'padding:1px 3px;font-size:8px;flex-shrink:0');
+      const szP = mkBtn('+',    '#1e2a3a', 'padding:1px 3px;font-size:8px;flex-shrink:0');
       szM.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) - 2);
       szP.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) + 2);
       szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
@@ -526,39 +540,26 @@
         if (e.key==='ArrowUp')   { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)+2); }
         if (e.key==='ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)-2); }
       });
+      r2.append(sp('px','font-size:7px;color:#aaa;flex-shrink:0'), szM, szInp, szP);
 
-      r1.append(tog, lblInp, sp('px','font-size:8px;color:#fff;flex-shrink:0'), szM, szInp, szP);
-
-      // r2: lag select + lum + pts
-      const r2 = row(4);
-      const lumEl = document.createElement('span');
-      lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;width:22px;text-align:right;flex-shrink:0`;
-      lumEl.textContent = '--'; ch.lumEl = lumEl;
-
-      const ptsEl = document.createElement('span');
-      ptsEl.style.cssText = 'color:#fff;font-size:8px;width:26px;text-align:right;flex-shrink:0;white-space:nowrap';
-      ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
-
-      const spacer = document.createElement('span');
-      spacer.style.cssText = 'flex:1';
-
+      /* linha 3: lag (só canais não-ref) */
       if (i !== 0) {
+        const r3 = row(2);
+        r3.style.overflow = 'hidden';
         const lagSel = mkLagSelect(ch);
-        r2.append(sp('lag','font-size:8px;color:#fff;flex-shrink:0'), lagSel, spacer, lumEl, ptsEl);
-      } else {
-        r2.append(spacer, lumEl, ptsEl);
+        r3.append(sp('lag','font-size:7px;color:#aaa;flex-shrink:0'), lagSel);
+        card.appendChild(r3);
       }
 
-      // r3: dedução
-      const r3 = row(4);
+      /* linha 4 (ou 3 para ref): dedução */
+      const r4 = row(2);
+      r4.style.overflow = 'hidden';
       const dedInp = mkDeductionInput(ch);
-      const dedLabel = sp('Ded.', 'font-size:8px;color:#ff9d00;flex-shrink:0');
 
-      // botão auto-detect
       const btnAuto = document.createElement('button');
-      btnAuto.textContent = '\u{1F50D}';
+      btnAuto.innerHTML = '\ud83d\udd0d';
       btnAuto.title = 'Detectar dedu\u00e7\u00e3o automaticamente';
-      btnAuto.style.cssText = 'background:#1e2a3a;border:1px solid #ff9d0044;color:#ff9d00;border-radius:3px;padding:0 4px;cursor:pointer;font-size:9px;line-height:16px;flex-shrink:0';
+      btnAuto.style.cssText = 'background:#1e2a3a;border:1px solid #ff9d0044;color:#ff9d00;border-radius:3px;padding:0 3px;cursor:pointer;font-size:9px;line-height:15px;flex-shrink:0';
       btnAuto.onclick = () => {
         const found = autoDetectDeduction(ch);
         if (found) {
@@ -575,17 +576,24 @@
         }
       };
 
-      r3.append(dedLabel, dedInp, btnAuto);
+      r4.append(sp('ded','font-size:7px;color:#ff9d00;flex-shrink:0'), dedInp, btnAuto);
 
-      chWrap.append(r1, r2, r3);
-      secDet.appendChild(chWrap);
+      card.append(r1, r2, r4);
+      /* inserir r3 (lag) antes de r4 se não-ref — já adicionado acima na ordem certa */
+      if (i !== 0) {
+        // move r4 para depois de r3
+        card.appendChild(r4);
+      }
+
+      probeGrid.appendChild(card);
     });
 
-    // Atualiza auto-detect quando probe para de ser arrastada
+    secDet.appendChild(probeGrid);
+
+    /* auto-detect dedução ao soltar mouse */
     window.addEventListener('mouseup', () => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch._dedInp) return;
-        // Só auto-preenche se o campo ainda estiver vazio
         if (ch._dedInp.value.trim() !== '') return;
         const found = autoDetectDeduction(ch);
         if (!found) return;
@@ -601,75 +609,10 @@
 
     panel.appendChild(secDet);
 
-    /* ── Seção: Resultados ── */
-    const secRes = sec('Resultados vs Refer\u00eancia');
-    const tbl = document.createElement('table');
-    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
-    const thead = document.createElement('thead');
-    const thr = document.createElement('tr');
-    [
-      { label: 'Tela',      align: 'left'  },
-      { label: 'Resultado', align: 'right' },
-      { label: 'Real',      align: 'right' },
-    ].forEach(({ label, align }) => {
-      const th = document.createElement('th');
-      th.textContent = label;
-      th.style.cssText = `color:#fff;font-weight:bold;font-size:7px;letter-spacing:.08em;text-transform:uppercase;padding:1px 3px;text-align:${align};border-bottom:1px solid #1a1a30`;
-      thr.appendChild(th);
-    });
-    thead.appendChild(thr);
-    tbl.appendChild(thead);
-
-    const tbody = document.createElement('tbody');
-    ML.CHANNELS.forEach((ch, i) => {
-      const tr = document.createElement('tr');
-      tr.style.cssText = `border-bottom:1px solid ${ch.color}22`;
-
-      const tdName = document.createElement('td');
-      tdName.style.cssText = `color:${ch.color};font-weight:bold;padding:2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px`;
-      tdName.textContent = (i===0?'\u2605 ':'') + ch.label;
-      ch._tdName = tdName;
-
-      const tdOff = document.createElement('td');
-      tdOff.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:10px;white-space:nowrap';
-      tdOff.textContent  = i===0 ? '0.000s' : '--';
-      tdOff.style.color  = i===0 ? '#44ff88' : '#fff';
-      ch.offsetEl = tdOff;
-
-      const tdReal = document.createElement('td');
-      tdReal.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:10px;white-space:nowrap;color:#fff';
-      tdReal.textContent = i===0 ? '0.000s' : '--';
-      tdReal.style.color = i===0 ? '#44ff88' : '#fff';
-      ch.realEl = tdReal;
-
-      tr.append(tdName, tdOff, tdReal);
-      tbody.appendChild(tr);
-    });
-    tbl.appendChild(tbody);
-    secRes.appendChild(tbl);
-
-    /* ── Botão Copiar Resultados ── */
-    const btnCopy = document.createElement('button');
-    btnCopy.textContent = '\u29c9 COPIAR RESULTADOS';
-    btnCopy.title = 'Copiar tabela de resultados';
-    btnCopy.style.cssText = [
-      'display:block;width:calc(100% - 12px);margin:5px 6px 2px',
-      'background:#1a1a2e;border:1px solid #00d4ff44;color:#00d4ff',
-      'border-radius:3px;padding:4px 0;cursor:pointer',
-      'font-size:9px;font-family:monospace;font-weight:bold',
-      'letter-spacing:.06em;text-align:center',
-      'transition:background .15s,color .15s',
-    ].join(';');
-    btnCopy.addEventListener('mouseenter', () => { if (!btnCopy._copied) { btnCopy.style.background = '#00d4ff18'; } });
-    btnCopy.addEventListener('mouseleave', () => { if (!btnCopy._copied) { btnCopy.style.background = '#1a1a2e'; } });
-    btnCopy.onclick = () => copyResults(btnCopy);
-    secRes.appendChild(btnCopy);
-    panel.appendChild(secRes);
-
-    /* ── Seção: Analise ── */
-    const secAn = sec('Analise');
-    const btnRec     = mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
-    const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
+    /* ── Seção: Análise ── */
+    const secAn = sec('An\u00e1lise');
+    const btnRec     = mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:3px 0;font-size:10px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
+    const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:3px 0;font-size:10px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
 
     function doStop() {
       ML.recorder.stop();
@@ -722,9 +665,7 @@
             }
           }
         });
-        // Atualiza coluna Real após preencher offsetEl
         refreshRealColumn();
-
         if (ML.chart && ML.chart.show) ML.chart.show(results);
         const errs = results.filter(r => r.error);
         statusEl.textContent = errs.length
@@ -740,12 +681,69 @@
     });
     btnAnalyze.disabled = true;
 
-    const rowBtns = row(6); rowBtns.style.marginBottom = '5px';
+    const rowBtns = row(6); rowBtns.style.marginBottom = '4px';
     rowBtns.append(btnRec, btnAnalyze);
     secAn.appendChild(rowBtns);
     panel.appendChild(secAn);
 
-    /* Status */
+    /* ── Seção: Resultados ── */
+    const btnCopyInline = document.createElement('button');
+    btnCopyInline.innerHTML = '\ud83d\udccb';
+    btnCopyInline.title = 'Copiar resultados';
+    btnCopyInline.style.cssText = 'background:transparent;border:1px solid #00d4ff44;color:#00d4ff;border-radius:3px;padding:0 4px;cursor:pointer;font-size:10px;line-height:14px';
+    btnCopyInline.addEventListener('mouseenter', () => btnCopyInline.style.background = '#00d4ff18');
+    btnCopyInline.addEventListener('mouseleave', () => btnCopyInline.style.background = 'transparent');
+    btnCopyInline.onclick = () => copyResults(btnCopyInline);
+
+    const secRes = sec('Resultados', btnCopyInline);
+
+    const tbl = document.createElement('table');
+    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
+    const thead = document.createElement('thead');
+    const thr = document.createElement('tr');
+    [
+      { label: 'Tela',  align: 'left'  },
+      { label: 'Res.',  align: 'right' },
+      { label: 'Real',  align: 'right' },
+    ].forEach(({ label, align }) => {
+      const th = document.createElement('th');
+      th.textContent = label;
+      th.style.cssText = `color:#aaa;font-weight:bold;font-size:7px;letter-spacing:.08em;text-transform:uppercase;padding:1px 3px;text-align:${align};border-bottom:1px solid #1a1a30`;
+      thr.appendChild(th);
+    });
+    thead.appendChild(thr);
+    tbl.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    ML.CHANNELS.forEach((ch, i) => {
+      const tr = document.createElement('tr');
+      tr.style.cssText = `border-bottom:1px solid ${ch.color}22`;
+
+      const tdName = document.createElement('td');
+      tdName.style.cssText = `color:${ch.color};font-weight:bold;padding:2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55px;font-size:8px`;
+      tdName.textContent = (i===0?'\u2605 Ref.':ch.label);
+      ch._tdName = tdName;
+
+      const tdOff = document.createElement('td');
+      tdOff.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:9px;white-space:nowrap';
+      tdOff.textContent  = i===0 ? '0.000s' : '--';
+      tdOff.style.color  = i===0 ? '#44ff88' : '#fff';
+      ch.offsetEl = tdOff;
+
+      const tdReal = document.createElement('td');
+      tdReal.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:9px;white-space:nowrap;color:#fff';
+      tdReal.textContent = i===0 ? '0.000s' : '--';
+      tdReal.style.color = i===0 ? '#44ff88' : '#fff';
+      ch.realEl = tdReal;
+
+      tr.append(tdName, tdOff, tdReal);
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    secRes.appendChild(tbl);
+    panel.appendChild(secRes);
+
+    /* ── Status ── */
     const statusEl = document.createElement('div');
     statusEl.style.cssText = [
       'font-size:9px;color:#fff;padding:3px 8px 4px',
@@ -801,7 +799,7 @@
       }
     }, 1000);
 
-    console.log(`[MedLat] 50-panel carregado. PX Global: ${ML.state.probeW}px. Painel: ${panelW}px. Deducao+Real ativos.`);
+    console.log(`[MedLat] 50-panel carregado. PX Global: ${ML.state.probeW}px. Painel: ${panelW}px.`);
   }
 
   ML.panel = { init };
