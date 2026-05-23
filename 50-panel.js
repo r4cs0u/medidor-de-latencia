@@ -46,7 +46,6 @@
     hdr.append(htitle, btnClose);
     win.appendChild(hdr);
 
-    // drag
     let drag = false, ox = 0, oy = 0;
     hdr.addEventListener('mousedown', e => { drag = true; ox = e.clientX - win.offsetLeft; oy = e.clientY - win.offsetTop; e.preventDefault(); });
     window.addEventListener('mousemove', e => { if (!drag) return; win.style.left = Math.max(0, e.clientX - ox) + 'px'; win.style.top = Math.max(0, e.clientY - oy) + 'px'; });
@@ -55,7 +54,6 @@
     return { win, hdr };
   }
 
-  /* ── posiciona janela perto do painel ── */
   function positionNearPanel(el, anchorPanel) {
     document.body.appendChild(el);
     requestAnimationFrame(() => {
@@ -106,7 +104,6 @@
       body.appendChild(r);
     });
     win.appendChild(body);
-
     positionNearPanel(win, anchorPanel);
   }
 
@@ -124,16 +121,16 @@
         '1. Ative as telas desejadas (\u25cf)',
         '2. Ajuste o tamanho via PX Global ou por tela',
         '3. Posicione cada tela sobre o v\u00eddeo (arrastar ou setas)',
-        '4. Selecione o lag estimado: \u201cAt\u00e9 5s\u201d ou \u201cMaior que 5s\u201d',
+        '4. Preencha a Dedu\u00e7\u00e3o caso o multiviewer exiba offset',
+        '5. Selecione o lag estimado: "At\u00e9 5s" ou "Maior que 5s"',
       ]},
       { section: '\u23fa  GRAVA\u00c7\u00c3O', color: '#44ff88', items: [
-        '5. Clique em \u25cf GRAVAR \u2014 a an\u00e1lise inicia sozinha ao terminar (~2 min)',
+        '6. Clique em \u25cf GRAVAR \u2014 a an\u00e1lise inicia sozinha ao terminar (~2 min)',
       ]},
       { section: '\ud83d\udcca  AN\u00c1LISE', color: '#ce93d8', items: [
-        '6. A lat\u00eancia estimada aparece por tela automaticamente',
-        '7. Para ajuste fino: clique em Manual e mova as r\u00e9guas',
-        '8. Alinhe as linhas tracejadas grossas (picos) entre os sinais',
-        '9. Ajuste a qtd. de picos vis\u00edveis na se\u00e7\u00e3o Picos',
+        '7. A lat\u00eancia estimada aparece por tela automaticamente',
+        '8. Coluna Real = Resultado + Dedu\u00e7\u00e3o canal \u2212 Dedu\u00e7\u00e3o ref.',
+        '9. Para ajuste fino: clique em Manual e mova as r\u00e9guas',
         '10. Clique em \u2714 Confirmar para exportar e copiar os resultados',
       ]},
     ];
@@ -146,7 +143,6 @@
       secLabel.textContent = section;
       secLabel.style.cssText = `color:${color};font-size:8px;font-weight:bold;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;padding-bottom:2px;border-bottom:1px solid ${color}33`;
       body.appendChild(secLabel);
-
       items.forEach(text => {
         const item = document.createElement('div');
         item.textContent = text;
@@ -159,16 +155,77 @@
     positionNearPanel(win, anchorPanel);
   }
 
+  /* ── Parser de dedução: aceita formatos "±0,366s" "+0.1s" "-1s" etc ── */
+  function parseDeductionS(str) {
+    if (!str) return null;
+    const m = str.trim().replace(',', '.').match(/^([+-]?\d+(?:\.\d+)?)\s*s$/i);
+    if (!m) return null;
+    return parseFloat(m[1]);
+  }
+
+  function formatDeduction(s) {
+    if (s === 0) return '0.000s';
+    return (s > 0 ? '+' : '') + s.toFixed(3) + 's';
+  }
+
+  /* ── Auto-detect de dedução ao mover probe ── */
+  // Busca textos próximos ao centro da probe com padrão numérico de tempo
+  function autoDetectDeduction(ch) {
+    if (!ch.probe) return null;
+    const d = ch.probe;
+    const cx = d.offsetLeft + d.offsetWidth  / 2;
+    const cy = d.offsetTop  + d.offsetHeight / 2;
+    const RADIUS = 120;
+
+    // Coleta todos os nós de texto visíveis na página
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const p = node.parentElement;
+        if (!p || p.closest('[id^="ml-"]')) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+
+    const RE = /([+-]?\d+[.,]\d+s|[+-]\d+s)/gi;
+    let best = null, bestDist = Infinity;
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const text = node.textContent;
+      let m;
+      RE.lastIndex = 0;
+      while ((m = RE.exec(text)) !== null) {
+        try {
+          const range = document.createRange();
+          range.setStart(node, m.index);
+          range.setEnd(node, m.index + m[0].length);
+          const rect = range.getBoundingClientRect();
+          if (!rect.width) continue;
+          const rx = rect.left + rect.width  / 2;
+          const ry = rect.top  + rect.height / 2;
+          const dist = Math.hypot(rx - cx, ry - cy);
+          if (dist < RADIUS && dist < bestDist) {
+            bestDist = dist;
+            best = m[0];
+          }
+        } catch(e) {}
+      }
+    }
+    return best;
+  }
+
   /* ── Copiar tabela de resultados ── */
   function copyResults(btn) {
+    const refDed = ML.CHANNELS[0].deduction || 0;
     const lines = ML.CHANNELS
       .filter(ch => ch.active)
       .map((ch, i) => {
         const name   = (i === 0 ? '\u2605 REF' : ch.label).padEnd(12);
         const offset = ch.offsetEl ? ch.offsetEl.textContent : '--';
-        return name + '\t' + offset;
+        const real   = ch.realEl   ? ch.realEl.textContent   : '--';
+        return name + '\t' + offset + '\t' + real;
       });
-    const text = lines.join('\n');
+    const text = 'Tela\t\tResultado\tReal\n' + lines.join('\n');
     const orig = btn.textContent;
     try {
       navigator.clipboard.writeText(text).then(() => {
@@ -196,15 +253,40 @@
     setTimeout(() => { btn.textContent = orig; btn.style.background = '#1a1a2e'; btn.style.color = '#00d4ff'; }, 1500);
   }
 
+  /* ── Recalcula e exibe coluna Real para todos os canais ── */
+  function refreshRealColumn() {
+    const refDed = ML.CHANNELS[0].deduction || 0;
+    ML.CHANNELS.forEach((ch, i) => {
+      if (!ch.realEl) return;
+      if (i === 0) {
+        ch.realEl.textContent = '0.000s';
+        ch.realEl.style.color = '#44ff88';
+        return;
+      }
+      if (!ch.offsetEl || ch.offsetEl.textContent === '--' || ch.offsetEl.textContent === 'ERRO') {
+        ch.realEl.textContent = '--';
+        ch.realEl.style.color = '#fff';
+        return;
+      }
+      // parse offsetEl textContent  ex: "+3.000s" ou "-0.344s"
+      const raw = ch.offsetEl.textContent.replace('s', '').replace(',', '.');
+      const offsetS = parseFloat(raw);
+      if (isNaN(offsetS)) { ch.realEl.textContent = '--'; ch.realEl.style.color = '#fff'; return; }
+      const ded = ch.deduction || 0;
+      const realS = offsetS + ded - refDed;
+      ch.realEl.textContent = (realS > 0 ? '+' : '') + realS.toFixed(3) + 's';
+      ch.realEl.style.color = Math.abs(realS) < 0.1 ? '#44ff88' : Math.abs(realS) < 1 ? '#ffd700' : '#ff8844';
+    });
+  }
+
   function init() {
     ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-guide'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.remove();
     });
 
-    // Largura responsiva do painel principal
     const vw = window.innerWidth;
-    const panelW = Math.round(Math.max(200, Math.min(280, vw * 0.13)));
+    const panelW = Math.round(Math.max(220, Math.min(300, vw * 0.14)));
 
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
@@ -325,10 +407,41 @@
       return sel;
     }
 
+    /* ── Campo de dedução ── */
+    function mkDeductionInput(ch) {
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.placeholder = '0.000s';
+      inp.value = ch.deduction ? formatDeduction(ch.deduction) : '';
+      inp.title = 'Dedu\u00e7\u00e3o do multiviewer (ex: -0.366s). Preenche auto ao posicionar probe.';
+      inp.style.cssText = [
+        'background:#111827;border:1px solid #2a3a5088;color:#ff9d00',
+        'font:bold 9px monospace;width:54px;border-radius:3px',
+        'padding:1px 3px;text-align:center;outline:none',
+      ].join(';');
+      inp.addEventListener('focus', () => inp.style.borderColor = '#ff9d0088');
+      inp.addEventListener('blur',  () => {
+        inp.style.borderColor = '#2a3a5088';
+        const v = parseDeductionS(inp.value);
+        if (v !== null) {
+          ch.deduction = v;
+          inp.value = formatDeduction(v);
+          inp.style.color = v !== 0 ? '#ff9d00' : '#fff';
+        } else if (inp.value.trim() === '' || inp.value === '0' || inp.value === '0.000s') {
+          ch.deduction = 0;
+          inp.value = '';
+          inp.style.color = '#fff';
+        }
+        refreshRealColumn();
+      });
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+      ch._dedInp = inp;
+      return inp;
+    }
+
     /* ── Seção: Telas & Grid ── */
     const secTG = sec('Telas & Grid');
 
-    // PX Global lido do estado inicializado pelo 10-probes.js
     const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 48);
     function applyGlobalPx(v) {
       const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
@@ -366,6 +479,8 @@
     /* ── Seção: Probes ── */
     const secDet = sec('Probes');
     ML.CHANNELS.forEach((ch, i) => {
+      ch.deduction = ch.deduction || 0;
+
       const chWrap = document.createElement('div');
       chWrap.style.cssText = [
         'display:flex;flex-direction:column;gap:2px',
@@ -377,6 +492,7 @@
       ].join(';');
       ch._panelRow = chWrap;
 
+      // r1: toggle + label + px
       const r1 = row(4);
       const tog = document.createElement('button');
       tog.style.cssText = `width:9px;height:9px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
@@ -391,7 +507,11 @@
       const lblInp = document.createElement('input');
       lblInp.value = i === 0 ? '\u2605 ' + ch.label : ch.label;
       lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis`;
-      lblInp.addEventListener('change', () => { ch.label = lblInp.value.replace(/^\u2605\s*/, ''); if (ch.probeLabel) ch.probeLabel.textContent = ch.label; });
+      lblInp.addEventListener('change', () => {
+        ch.label = lblInp.value.replace(/^\u2605\s*/, '');
+        if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
+        if (ch._tdName) ch._tdName.textContent = (i === 0 ? '\u2605 ' : '') + ch.label;
+      });
 
       const szInp = mkNum(ML.state.probeW, 16, 500, 2, 38);
       ch._szInp = szInp;
@@ -409,8 +529,8 @@
 
       r1.append(tog, lblInp, sp('px','font-size:8px;color:#fff;flex-shrink:0'), szM, szInp, szP);
 
+      // r2: lag select + lum + pts
       const r2 = row(4);
-
       const lumEl = document.createElement('span');
       lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;width:22px;text-align:right;flex-shrink:0`;
       lumEl.textContent = '--'; ch.lumEl = lumEl;
@@ -429,9 +549,56 @@
         r2.append(spacer, lumEl, ptsEl);
       }
 
-      chWrap.append(r1, r2);
+      // r3: dedução
+      const r3 = row(4);
+      const dedInp = mkDeductionInput(ch);
+      const dedLabel = sp('Ded.', 'font-size:8px;color:#ff9d00;flex-shrink:0');
+
+      // botão auto-detect
+      const btnAuto = document.createElement('button');
+      btnAuto.textContent = '\u{1F50D}';
+      btnAuto.title = 'Detectar dedu\u00e7\u00e3o automaticamente';
+      btnAuto.style.cssText = 'background:#1e2a3a;border:1px solid #ff9d0044;color:#ff9d00;border-radius:3px;padding:0 4px;cursor:pointer;font-size:9px;line-height:16px;flex-shrink:0';
+      btnAuto.onclick = () => {
+        const found = autoDetectDeduction(ch);
+        if (found) {
+          const v = parseDeductionS(found);
+          if (v !== null) {
+            ch.deduction = v;
+            dedInp.value = formatDeduction(v);
+            dedInp.style.color = '#ff9d00';
+            refreshRealColumn();
+          }
+        } else {
+          btnAuto.style.color = '#ff4444';
+          setTimeout(() => btnAuto.style.color = '#ff9d00', 800);
+        }
+      };
+
+      r3.append(dedLabel, dedInp, btnAuto);
+
+      chWrap.append(r1, r2, r3);
       secDet.appendChild(chWrap);
     });
+
+    // Atualiza auto-detect quando probe para de ser arrastada
+    window.addEventListener('mouseup', () => {
+      ML.CHANNELS.forEach(ch => {
+        if (!ch.active || !ch._dedInp) return;
+        // Só auto-preenche se o campo ainda estiver vazio
+        if (ch._dedInp.value.trim() !== '') return;
+        const found = autoDetectDeduction(ch);
+        if (!found) return;
+        const v = parseDeductionS(found);
+        if (v !== null) {
+          ch.deduction = v;
+          ch._dedInp.value = formatDeduction(v);
+          ch._dedInp.style.color = '#ff9d00';
+          refreshRealColumn();
+        }
+      });
+    });
+
     panel.appendChild(secDet);
 
     /* ── Seção: Resultados ── */
@@ -440,28 +607,42 @@
     tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
     const thead = document.createElement('thead');
     const thr = document.createElement('tr');
-    ['Tela','Offset'].forEach((h, hi) => {
+    [
+      { label: 'Tela',      align: 'left'  },
+      { label: 'Resultado', align: 'right' },
+      { label: 'Real',      align: 'right' },
+    ].forEach(({ label, align }) => {
       const th = document.createElement('th');
-      th.textContent = h;
-      th.style.cssText = 'color:#fff;font-weight:bold;font-size:7px;letter-spacing:.08em;text-transform:uppercase;padding:1px 3px;text-align:' + (hi===0?'left':'right') + ';border-bottom:1px solid #1a1a30';
+      th.textContent = label;
+      th.style.cssText = `color:#fff;font-weight:bold;font-size:7px;letter-spacing:.08em;text-transform:uppercase;padding:1px 3px;text-align:${align};border-bottom:1px solid #1a1a30`;
       thr.appendChild(th);
     });
     thead.appendChild(thr);
     tbl.appendChild(thead);
+
     const tbody = document.createElement('tbody');
     ML.CHANNELS.forEach((ch, i) => {
       const tr = document.createElement('tr');
       tr.style.cssText = `border-bottom:1px solid ${ch.color}22`;
+
       const tdName = document.createElement('td');
-      tdName.style.cssText = `color:${ch.color};font-weight:bold;padding:2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px`;
+      tdName.style.cssText = `color:${ch.color};font-weight:bold;padding:2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px`;
       tdName.textContent = (i===0?'\u2605 ':'') + ch.label;
       ch._tdName = tdName;
+
       const tdOff = document.createElement('td');
       tdOff.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:10px;white-space:nowrap';
       tdOff.textContent  = i===0 ? '0.000s' : '--';
       tdOff.style.color  = i===0 ? '#44ff88' : '#fff';
       ch.offsetEl = tdOff;
-      tr.append(tdName, tdOff);
+
+      const tdReal = document.createElement('td');
+      tdReal.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:10px;white-space:nowrap;color:#fff';
+      tdReal.textContent = i===0 ? '0.000s' : '--';
+      tdReal.style.color = i===0 ? '#44ff88' : '#fff';
+      ch.realEl = tdReal;
+
+      tr.append(tdName, tdOff, tdReal);
       tbody.appendChild(tr);
     });
     tbl.appendChild(tbody);
@@ -483,7 +664,6 @@
     btnCopy.addEventListener('mouseleave', () => { if (!btnCopy._copied) { btnCopy.style.background = '#1a1a2e'; } });
     btnCopy.onclick = () => copyResults(btnCopy);
     secRes.appendChild(btnCopy);
-
     panel.appendChild(secRes);
 
     /* ── Seção: Analise ── */
@@ -516,6 +696,7 @@
           if (ch.ptsEl) { ch.ptsEl.textContent = '0pt'; ch.ptsEl.style.color = '#fff'; }
           if (i !== 0) {
             if (ch.offsetEl) { ch.offsetEl.textContent = '--'; ch.offsetEl.style.color = '#fff'; }
+            if (ch.realEl)   { ch.realEl.textContent   = '--'; ch.realEl.style.color   = '#fff'; }
           }
         });
       } else {
@@ -541,6 +722,9 @@
             }
           }
         });
+        // Atualiza coluna Real após preencher offsetEl
+        refreshRealColumn();
+
         if (ML.chart && ML.chart.show) ML.chart.show(results);
         const errs = results.filter(r => r.error);
         statusEl.textContent = errs.length
@@ -583,6 +767,7 @@
         ch.offsetEl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
         ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
       });
+      refreshRealColumn();
     };
 
     const STABLE_TICKS = 3;
@@ -616,7 +801,7 @@
       }
     }, 1000);
 
-    console.log(`[MedLat] 50-panel carregado. PX Global: ${ML.state.probeW}px (sync 10-probes). Painel: ${panelW}px (vw=${vw}).`);
+    console.log(`[MedLat] 50-panel carregado. PX Global: ${ML.state.probeW}px. Painel: ${panelW}px. Deducao+Real ativos.`);
   }
 
   ML.panel = { init };
