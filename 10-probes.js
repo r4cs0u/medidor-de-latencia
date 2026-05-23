@@ -44,12 +44,8 @@
     try { ch.ctx.drawImage(m, sx, sy, pw, ph, 0, 0, pw, ph); } catch (e) { return -1; }
     let px;
     try { px = ch.ctx.getImageData(0, 0, pw, ph).data; } catch (e) { return -1; }
-
-    const xMin = Math.floor(pw * 0.10);
-    const xMax = Math.floor(pw * 0.90);
-    const yMin = Math.floor(ph * 0.10);
-    const yMax = Math.floor(ph * 0.90);
-
+    const xMin = Math.floor(pw * 0.10), xMax = Math.floor(pw * 0.90);
+    const yMin = Math.floor(ph * 0.10), yMax = Math.floor(ph * 0.90);
     let Y = 0, n = 0;
     for (let row = yMin; row < yMax; row++) {
       for (let col = xMin; col < xMax; col++) {
@@ -129,22 +125,42 @@
     }, 180);
   }
 
-  // Padrão: borda sólida 1px
-  function applyDefaultStyle(ch) {
-    if (!ch.probe) return;
-    ch.probe.style.outline       = 'none';
-    ch.probe.style.outlineOffset = '0px';
-    ch.probe.style.border        = `1px solid ${ch.color}99`;
-    ch.probe.style.opacity       = '1';
+  // Gera SVG de borda tracejada: traço=4px, espaço=8px, stroke-width=1
+  function dashedBorderSVG(w, h, color) {
+    const c = encodeURIComponent(color);
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'>`
+      + `<rect x='0.5' y='0.5' width='${w-1}' height='${h-1}' fill='none'`
+      + ` stroke='${c}' stroke-width='1' stroke-dasharray='4 8'/>`
+      + `</svg>`;
+    return `url("data:image/svg+xml,${svg.replace(/#/g,'%23')}")` ;
   }
 
-  // Foco/drag: tracejada 1px (mesma espessura, sem outline)
+  // Padrão: borda sólida 1px via border CSS
+  function applyDefaultStyle(ch) {
+    if (!ch.probe) return;
+    const d = ch.probe;
+    d.style.border          = `1px solid ${ch.color}99`;
+    d.style.backgroundImage = 'none';
+    d.style.backgroundSize  = '';
+    d.style.outline         = 'none';
+    d.style.opacity         = '1';
+  }
+
+  // Foco/drag: remove border, usa SVG inline como borda tracejada fina
   function applyFocusStyle(ch) {
     if (!ch.probe) return;
-    ch.probe.style.outline       = 'none';
-    ch.probe.style.outlineOffset = '0px';
-    ch.probe.style.border        = `1px dashed ${ch.color}`;
-    ch.probe.style.opacity       = '0.95';
+    const d = ch.probe;
+    const pw = probeW(ch), ph = probeH(ch);
+    d.style.border          = '1px solid transparent';
+    d.style.backgroundImage = dashedBorderSVG(pw, ph, ch.color);
+    d.style.backgroundSize  = '100% 100%';
+    d.style.outline         = 'none';
+    d.style.opacity         = '0.95';
+  }
+
+  // Atualiza SVG quando probe é redimensionada
+  function refreshFocusBorder(ch) {
+    if (focusedProbe === ch) applyFocusStyle(ch);
   }
 
   function setFocus(ch) {
@@ -161,13 +177,13 @@
       `position:fixed;left:${x}px;top:${y}px`,
       `width:${pw}px;height:${ph}px`,
       `border:1px solid ${ch.color}99`,
-      `background:${ch.color}10`,
+      `background-color:${ch.color}10`,
       `box-shadow:0 0 6px ${ch.color}88`,
       'cursor:move',
       'z-index:99997',
       'box-sizing:border-box',
       'pointer-events:auto',
-      'transition:opacity .2s,border .15s,box-shadow .15s',
+      'transition:opacity .2s,box-shadow .15s',
     ].join(';');
 
     const hLine = document.createElement('div');
@@ -199,6 +215,7 @@
       mask.style.left = '10%'; mask.style.top = '10%';
       mask.style.width = '80%'; mask.style.height = '80%';
       makeOff(ch);
+      refreshFocusBorder(ch);
     };
     d.style.display = ch.active ? 'block' : 'none';
 
@@ -289,5 +306,5 @@
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  console.log('[MedLat] 10-probes: borda sólida 1px padrão → tracejada 1px no foco.');
+  console.log('[MedLat] 10-probes: foco via SVG inline — traço 4px / espaço 8px / stroke 1px.');
 })();
