@@ -1,8 +1,8 @@
 (function () {
   const ML = window.MedLat;
   const MAX_PEAKS = 15;
-  // Margem de snap: ±10 frames
-  const SNAP_RADIUS = 10;
+  // Margem de snap: ±3 frames
+  const SNAP_RADIUS = 3;
 
   function loadChartJs() {
     return new Promise((resolve) => {
@@ -144,6 +144,7 @@
     htitle.textContent = '\uD83D\uDCCA Lumin\u00e2ncia';
     htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 
+    // Modo padrão é sempre 'parallel', tanto no auto quanto no manual
     let chartMode = 'parallel';
     const btnMode = document.createElement('button');
     btnMode.style.cssText = 'background:#1e2a3a;border:1px solid #2a3a50;color:#00d4ff;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap';
@@ -434,11 +435,12 @@
     manualBar.appendChild(btnConfirm);
     body.appendChild(manualBar);
 
+    // Ativar manual NÃO muda o chartMode — paralelo permanece paralelo
+    // O modo só muda se o usuário clicar explicitamente no botão Paralelo/Sobreposto
     btnManual.onclick = () => {
       manualMode = !manualMode;
       updateManualBtn();
       manualBar.style.display = manualMode ? 'flex' : 'none';
-      if (manualMode && chartMode !== 'overlay') { chartMode = 'overlay'; updateModeBtn(); }
       if (manualMode) {
         Object.values(sliderRefs).forEach(r => r.doReset());
         activeChannels.forEach(ch => hideCardManual(ch.id));
@@ -453,8 +455,6 @@
 
     const refCh = activeChannels[0];
 
-    // Régua com label para cada frame: "f{i} ({s}s)"
-    // Chart.js usa autoSkip para evitar sobreposição — cada tick visível = 1 frame real
     const sharedLabels = refCh.buffer.slice(0, maxLen).map((p, i) => {
       const s = ((p.ts - refCh.buffer[0].ts) / 1000).toFixed(2);
       return `f${i} (${s}s)`;
@@ -476,7 +476,6 @@
       chartMode === 'overlay' ? buildOverlay(visible) : buildParallel(visible);
     }
 
-    // maxTicksLimit dinâmico: 1 tick a cada ~60px de largura
     function xMaxTicks() {
       return Math.max(5, Math.floor((chartsArea.offsetWidth || 400) / 60));
     }
@@ -675,5 +674,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: régua por frame (f{i}) + SNAP_RADIUS=10.');
+  console.log('[MedLat] 40-chart: SNAP_RADIUS=3, modo padrão paralelo.');
 })();
