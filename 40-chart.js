@@ -228,7 +228,6 @@
       return ML.INTERVAL_MS;
     }
 
-    // autoOffsetMs[id] = offsetMs positivo → B está ATRASADO → shift POSITIVO → gráfico move para ESQUERDA ✓
     const autoOffsetMs = {};
     ML.CHANNELS.forEach(ch => { autoOffsetMs[ch.id] = 0; });
     results.forEach(r => {
@@ -236,7 +235,6 @@
       autoOffsetMs[r.channel.id] = r.offsetMs;
     });
 
-    // fineShiftSamples: positivo = mais para esquerda, negativo = mais para direita
     const fineShiftSamples = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
 
@@ -357,7 +355,7 @@
       if (idx === 0) return;
 
       const iv    = realIvMs(ch);
-      const range = Math.max(50, Math.round(ch.buffer.length * 0.25));
+      const range = Math.max(50, Math.round(ch.buffer.length * 1.0)); // ±100% do buffer
 
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:4px';
@@ -383,10 +381,6 @@
       const valLbl = document.createElement('span');
       valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
 
-      // Semântica do slider:
-      //   slider ← (valor negativo) → fine = -sliderVal = positivo → gráfico ← (mais deslocamento)
-      //   slider → (valor positivo) → fine = -sliderVal = negativo → gráfico → (menos deslocamento)
-      // totalMs = autoOffset - fine*iv  → slider← reduz offset, slider→ aumenta offset
       function refreshLabel(sliderVal) {
         const fine      = -sliderVal;
         const totalMs   = (autoOffsetMs[ch.id] || 0) - fine * iv;
@@ -410,13 +404,13 @@
 
       slider.addEventListener('input', () => {
         const sliderVal   = parseInt(slider.value);
-        let fine          = -sliderVal; // slider← = fine+ = mais esquerda
+        let fine          = -sliderVal;
         const autoSamples = Math.round((autoOffsetMs[ch.id] || 0) / iv);
         const totalShift  = autoSamples + fine;
         const snapDelta   = checkSnap(ch, totalShift);
         if (snapDelta !== null) {
           fine = Math.max(-range, Math.min(range, fine + snapDelta));
-          slider.value = -fine; // reflete snap no slider
+          slider.value = -fine;
           snapIndicator.style.display = 'block';
           if (snapTimeout) clearTimeout(snapTimeout);
           snapTimeout = setTimeout(() => { snapIndicator.style.display = 'none'; }, 1200);
@@ -501,7 +495,6 @@
       const n   = data.length;
       const out = new Array(n).fill(null);
       if (shift > 0) {
-        // shift positivo → consome amostras futuras → gráfico move para ESQUERDA (alinha canal atrasado)
         for (let i = 0; i < n - shift; i++) out[i] = data[i + shift];
       } else {
         const s = -shift;
@@ -510,11 +503,10 @@
       return out;
     }
 
-    // CORRIGIDO: autoOffset positivo → B atrasado → shift POSITIVO → gráfico ← ✓
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
       const iv          = realIvMs(ch);
-      const autoSamples = Math.round((autoOffsetMs[ch.id] || 0) / iv); // sem negativo
+      const autoSamples = Math.round((autoOffsetMs[ch.id] || 0) / iv);
       if (!manualMode) return autoSamples;
       return autoSamples + (fineShiftSamples[ch.id] || 0);
     }
@@ -688,5 +680,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: fix shift auto+, slider esq=esq, label totalMs corrigida.');
+  console.log('[MedLat] 40-chart: slider range ±100% do buffer.');
 })();
