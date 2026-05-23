@@ -125,7 +125,6 @@
     }, 180);
   }
 
-  // Gera SVG de borda tracejada: traço=4px, espaço=8px, stroke-width=1
   function dashedBorderSVG(w, h, color) {
     const c = encodeURIComponent(color);
     const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'>`
@@ -135,7 +134,6 @@
     return `url("data:image/svg+xml,${svg.replace(/#/g,'%23')}")` ;
   }
 
-  // Padrão: borda sólida 1px via border CSS
   function applyDefaultStyle(ch) {
     if (!ch.probe) return;
     const d = ch.probe;
@@ -146,7 +144,6 @@
     d.style.opacity         = '1';
   }
 
-  // Foco/drag: remove border, usa SVG inline como borda tracejada fina
   function applyFocusStyle(ch) {
     if (!ch.probe) return;
     const d = ch.probe;
@@ -158,7 +155,6 @@
     d.style.opacity         = '0.95';
   }
 
-  // Atualiza SVG quando probe é redimensionada
   function refreshFocusBorder(ch) {
     if (focusedProbe === ch) applyFocusStyle(ch);
   }
@@ -291,12 +287,13 @@
   }, true);
 
   const vw = window.innerWidth, vh = window.innerHeight;
-  const startPos = [
-    [Math.round(vw*.10), Math.round(vh*.15)],
-    [Math.round(vw*.28), Math.round(vh*.15)],
-    [Math.round(vw*.46), Math.round(vh*.15)],
-    [Math.round(vw*.64), Math.round(vh*.15)],
-  ];
+  const n  = ML.CHANNELS.length;
+
+  // Posições iniciais distribuídas dinamicamente pela largura da tela
+  const startPos = ML.CHANNELS.map((_, i) => [
+    Math.round(vw * (0.10 + i * (0.80 / Math.max(n - 1, 1)))),
+    Math.round(vh * 0.15),
+  ]);
 
   ML.CHANNELS.forEach((ch, i) => {
     makeOff(ch);
@@ -306,5 +303,5 @@
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  console.log('[MedLat] 10-probes: foco via SVG inline — traço 4px / espaço 8px / stroke 1px.');
+  console.log('[MedLat] 10-probes carregado. ' + n + ' probes, startPos dinamico.');
 })();
