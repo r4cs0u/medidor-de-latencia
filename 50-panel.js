@@ -158,7 +158,12 @@
   /* ── Parser de dedução ── */
   function parseDeductionS(str) {
     if (!str) return null;
-    const m = str.trim().replace(',', '.').match(/^([+-]?\d+(?:\.\d+)?)\s*s$/i);
+    // Normaliza: hífen unicode → -, vírgula → ponto, espaços → nada
+    const norm = str.trim()
+      .replace(/\u2212/g, '-')   // sinal de menos unicode
+      .replace(/,/g, '.')
+      .replace(/\s/g, '');
+    const m = norm.match(/^([+-]?\d+(?:\.\d+)?)s$/i);
     if (!m) return null;
     return parseFloat(m[1]);
   }
@@ -168,13 +173,20 @@
     return (s > 0 ? '+' : '') + s.toFixed(3) + 's';
   }
 
-  /* ── Auto-detect de dedução ao mover probe ── */
+  /* ── Auto-detect de dedução ao mover probe ──
+     Estratégia: busca textos com padrão de tempo em toda a página,
+     calcula distância horizontal (eixo X alinhado à tela no multiviewer)
+     e distância total. Prioriza o mais próximo dentro do raio.
+  ── */
   function autoDetectDeduction(ch) {
     if (!ch.probe) return null;
     const d = ch.probe;
     const cx = d.offsetLeft + d.offsetWidth  / 2;
     const cy = d.offsetTop  + d.offsetHeight / 2;
-    const RADIUS = 120;
+
+    // Raio ampliado: textos ficam na barra superior, bem acima da probe
+    const RADIUS_X = 300;
+    const RADIUS_Y = 500;
 
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
@@ -184,7 +196,8 @@
       }
     });
 
-    const RE = /([+-]?\d+[.,]\d+s|[+-]\d+s)/gi;
+    // Aceita: -0,366s  +0.1s  -1s  −0,366s  0,1s  (com ou sem sinal)
+    const RE = /([\u2212+-]?\d+[.,]\d+\s*s|[\u2212+-]\d+\s*s)/gi;
     let best = null, bestDist = Infinity;
 
     while (walker.nextNode()) {
@@ -201,8 +214,11 @@
           if (!rect.width) continue;
           const rx = rect.left + rect.width  / 2;
           const ry = rect.top  + rect.height / 2;
-          const dist = Math.hypot(rx - cx, ry - cy);
-          if (dist < RADIUS && dist < bestDist) {
+          const dx = Math.abs(rx - cx);
+          const dy = Math.abs(ry - cy);
+          if (dx > RADIUS_X || dy > RADIUS_Y) continue;
+          const dist = Math.hypot(dx, dy);
+          if (dist < bestDist) {
             bestDist = dist;
             best = m[0];
           }
@@ -540,7 +556,7 @@
       });
       r2.append(sp('px','font-size:7px;color:#aaa;flex-shrink:0'), szM, szInp, szP);
 
-      /* linha 3: dedução (todos os canais) */
+      /* linha 3: dedução */
       const r3ded = row(2);
       r3ded.style.overflow = 'hidden';
       const dedInp = mkDeductionInput(ch);
@@ -581,7 +597,7 @@
 
     secDet.appendChild(probeGrid);
 
-    /* auto-detect dedução ao soltar mouse */
+    /* auto-detect dedução ao soltar mouse após arrastar */
     window.addEventListener('mouseup', () => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch._dedInp) return;
