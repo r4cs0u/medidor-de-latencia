@@ -85,13 +85,26 @@
     document.body.appendChild(tip);
 
     function reposition() {
-      const pr = anchorPanel.getBoundingClientRect();
-      const top = pr.bottom + 6;
-      const left = pr.left;
-      const maxBottom = window.innerHeight - tip.offsetHeight - 6;
+      const pr      = anchorPanel.getBoundingClientRect();
+      const tipH    = tip.offsetHeight;
+      const tipW    = tip.offsetWidth;
+      const vw      = window.innerWidth;
+      const vh      = window.innerHeight;
+      const margin  = 6;
+
+      // Prefere abaixo do painel; se não couber, aparece acima
+      let top  = pr.bottom + margin;
+      if (top + tipH > vh - margin) top = Math.max(margin, pr.top - tipH - margin);
+
+      // Alinha à esquerda do painel, clampado para não sair da tela
+      let left = pr.left;
+      if (left + tipW > vw - margin) left = vw - tipW - margin;
+      if (left < margin) left = margin;
+
+      tip.style.top  = top  + 'px';
       tip.style.left = left + 'px';
-      tip.style.top  = Math.min(top, maxBottom) + 'px';
     }
+
     requestAnimationFrame(reposition);
     window.addEventListener('resize', reposition);
   }
@@ -173,7 +186,6 @@
       return inp;
     }
 
-    // Seletor de preset de lag por canal
     function mkLagSelect(ch) {
       const sel = document.createElement('select');
       sel.style.cssText = [
@@ -195,11 +207,9 @@
       });
       sel.addEventListener('change', () => {
         ch.lagPreset = sel.value;
-        // feedback visual: borda colorida quando não for Auto
         sel.style.borderColor = sel.value === 'auto' ? '#2a3a50' : '#ffd70088';
         sel.style.color       = sel.value === 'auto' ? '#aaa'    : '#ffd700';
       });
-      // estado inicial
       if ((ch.lagPreset || 'auto') !== 'auto') {
         sel.style.borderColor = '#ffd70088';
         sel.style.color       = '#ffd700';
@@ -207,8 +217,10 @@
       return sel;
     }
 
-    /* PX Global */
-    const secTelas = sec('Telas');
+    /* ── Seção: Telas & Grid ── */
+    const secTG = sec('Telas & Grid');
+
+    // PX Global
     const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 48);
     function applyGlobalPx(v) {
       const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
@@ -223,23 +235,23 @@
     pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
     const rowPx = row(4);
     rowPx.append(sp('PX Global', 'flex-shrink:0'), btnPxM, pxInp, btnPxP);
-    secTelas.appendChild(rowPx);
-    panel.appendChild(secTelas);
+    secTG.appendChild(rowPx);
 
-    /* Grid toggles */
-    const secGrid = sec('Grid');
-    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0');
+    // Snap + Col na mesma linha
+    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0;margin-top:4px');
     function updateSnapBtn() { btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF'; btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e'; btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#888'; }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
-    const btnCol = mkBtn('', '#2a1a0d', 'flex:1;min-width:0');
+
+    const btnCol = mkBtn('', '#2a1a0d', 'flex:1;min-width:0;margin-top:4px');
     function updateColBtn() { btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF'; btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e'; btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#888'; }
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
+
     const rowToggle = row(4);
     rowToggle.append(btnSnap, btnCol);
-    secGrid.appendChild(rowToggle);
-    panel.appendChild(secGrid);
+    secTG.appendChild(rowToggle);
+    panel.appendChild(secTG);
 
-    /* Detalhamento: probes */
+    /* ── Seção: Probes ── */
     const secDet = sec('Probes');
     ML.CHANNELS.forEach((ch, i) => {
       const chWrap = document.createElement('div');
@@ -253,29 +265,23 @@
       ].join(';');
       ch._panelRow = chWrap;
 
+      // Linha 1: ● label | px − [n] +
       const r1 = row(4);
       const tog = document.createElement('button');
       tog.style.cssText = `width:9px;height:9px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
       tog.onclick = () => { ch.active = !ch.active; tog.style.background = ch.active ? ch.color : 'transparent'; chWrap.style.opacity = ch.active ? 1 : .4; ch.probe.style.display = ch.active ? 'block' : 'none'; if (!ch.active) ch.prevLum = null; };
+
       const lblInp = document.createElement('input');
       lblInp.value = i === 0 ? '\u2605 ' + ch.label : ch.label;
       lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis`;
       lblInp.addEventListener('change', () => { ch.label = lblInp.value.replace(/^\u2605\s*/, ''); if (ch.probeLabel) ch.probeLabel.textContent = ch.label; });
-      const lumEl = document.createElement('span');
-      lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;width:22px;text-align:right;flex-shrink:0`;
-      lumEl.textContent = '--'; ch.lumEl = lumEl;
 
-      const ptsEl = document.createElement('span');
-      ptsEl.style.cssText = 'color:#888;font-size:8px;width:26px;text-align:right;flex-shrink:0;white-space:nowrap';
-      ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
-      r1.append(tog, lblInp, lumEl, ptsEl);
-
-      const r2 = row(3);
-      const szInp = mkNum(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 42);
+      // px inline (sem label, compacto)
+      const szInp = mkNum(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 38);
       ch._szInp = szInp;
       function applyChanPx(v) { const c = Math.max(16, Math.min(500, Math.round(v/2)*2)); ch.probeW = c; szInp.value = c; if (ch.active && ch.resize) ch.resize(); }
-      const szM = mkBtn('\u2212', '#1e2a3a', 'padding:1px 4px');
-      const szP = mkBtn('+',    '#1e2a3a', 'padding:1px 4px');
+      const szM = mkBtn('\u2212', '#1e2a3a', 'padding:1px 3px;font-size:8px');
+      const szP = mkBtn('+',    '#1e2a3a', 'padding:1px 3px;font-size:8px');
       szM.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) - 2);
       szP.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) + 2);
       szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
@@ -284,23 +290,39 @@
         if (e.key==='ArrowUp')   { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)+2); }
         if (e.key==='ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)-2); }
       });
-      r2.append(sp('px','font-size:8px;color:#aaa;flex-shrink:0'), szM, szInp, szP);
 
-      // Seletor de lag — não aparece na Referência (i===0)
+      r1.append(tog, lblInp, sp('px','font-size:8px;color:#555;flex-shrink:0'), szM, szInp, szP);
+
+      // Linha 2: lag [select] | lum | pts   (Referência: só lum | pts)
+      const r2 = row(4);
+
+      const lumEl = document.createElement('span');
+      lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;width:22px;text-align:right;flex-shrink:0`;
+      lumEl.textContent = '--'; ch.lumEl = lumEl;
+
+      const ptsEl = document.createElement('span');
+      ptsEl.style.cssText = 'color:#888;font-size:8px;width:26px;text-align:right;flex-shrink:0;white-space:nowrap';
+      ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
+
       if (i !== 0) {
-        const r3 = row(3);
         const lagSel = mkLagSelect(ch);
-        r3.append(sp('lag','font-size:8px;color:#aaa;flex-shrink:0'), lagSel);
-        chWrap.append(r1, r2, r3);
+        r2.append(sp('lag','font-size:8px;color:#aaa;flex-shrink:0'), lagSel);
+        // spacer
+        const spacer = document.createElement('span');
+        spacer.style.cssText = 'flex:1';
+        r2.append(spacer, lumEl, ptsEl);
       } else {
-        chWrap.append(r1, r2);
+        const spacer = document.createElement('span');
+        spacer.style.cssText = 'flex:1';
+        r2.append(spacer, lumEl, ptsEl);
       }
 
+      chWrap.append(r1, r2);
       secDet.appendChild(chWrap);
     });
     panel.appendChild(secDet);
 
-    /* Tabela de Resultados */
+    /* ── Seção: Resultados ── */
     const secRes = sec('Resultados vs Refer\u00eancia');
     const tbl = document.createElement('table');
     tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
@@ -339,7 +361,7 @@
     secRes.appendChild(tbl);
     panel.appendChild(secRes);
 
-    /* Analise */
+    /* ── Seção: Analise ── */
     const secAn = sec('Analise');
     const btnRec     = mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:5px 0;font-size:11px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
