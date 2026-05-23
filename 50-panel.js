@@ -18,97 +18,148 @@
     } catch(e) {}
   }
 
-  /* ── Boas Práticas ─────────────────────────── */
-  function showTips(anchorPanel) {
-    if (ML._tipsShown) return;
-    ML._tipsShown = true;
-
-    const TIPS = [
-      ['🎯', 'Centralize as probes sobre a imagem'],
-      ['📺', 'Grave durante o programa, nunca no intervalo'],
-      ['⏱️', 'Não interrompa — aguarde o sinal sonoro (~2 min)'],
-      ['🖥️', 'Evite processos pesados durante a gravação'],
-    ];
-
-    const tip = document.createElement('div');
-    tip.id = 'ml-tips';
-    tip.style.cssText = [
+  /* ── helper: janela arrastável genérica ── */
+  function makeDraggableWindow(id, titleText, titleColor, width) {
+    const win = document.createElement('div');
+    win.id = id;
+    win.style.cssText = [
       'position:fixed;z-index:99998',
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:10px;color:#ccc',
-      'width:230px;overflow:hidden',
+      `width:${width}px;overflow:hidden`,
     ].join(';');
 
     const hdr = document.createElement('div');
     hdr.style.cssText = [
-      'display:flex;align-items:center;padding:4px 8px',
+      'display:flex;align-items:center;padding:4px 8px;cursor:move',
       'background:#1a1a2e;border-bottom:1px solid #1e1e3a',
-      'border-radius:6px 6px 0 0',
+      'border-radius:6px 6px 0 0;user-select:none',
     ].join(';');
     const htitle = document.createElement('span');
-    htitle.textContent = '💡 Boas Práticas';
-    htitle.style.cssText = 'color:#ffd700;font-weight:bold;font-size:9px;letter-spacing:.06em;flex:1';
-    hdr.appendChild(htitle);
-    tip.appendChild(hdr);
+    htitle.textContent = titleText;
+    htitle.style.cssText = `color:${titleColor};font-weight:bold;font-size:9px;letter-spacing:.06em;flex:1`;
+    const btnClose = document.createElement('button');
+    btnClose.textContent = '\u2715';
+    btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 5px;cursor:pointer;font-size:10px;line-height:16px;flex-shrink:0';
+    btnClose.onclick = () => win.remove();
+    hdr.append(htitle, btnClose);
+    win.appendChild(hdr);
+
+    // drag
+    let drag = false, ox = 0, oy = 0;
+    hdr.addEventListener('mousedown', e => { drag = true; ox = e.clientX - win.offsetLeft; oy = e.clientY - win.offsetTop; e.preventDefault(); });
+    window.addEventListener('mousemove', e => { if (!drag) return; win.style.left = Math.max(0, e.clientX - ox) + 'px'; win.style.top = Math.max(0, e.clientY - oy) + 'px'; });
+    window.addEventListener('mouseup', () => drag = false);
+
+    return { win, hdr };
+  }
+
+  /* ── posiciona janela perto do painel ── */
+  function positionNearPanel(el, anchorPanel) {
+    document.body.appendChild(el);
+    requestAnimationFrame(() => {
+      const pr  = anchorPanel.getBoundingClientRect();
+      const elW = el.offsetWidth;
+      const elH = el.offsetHeight;
+      const vw  = window.innerWidth;
+      const vh  = window.innerHeight;
+      const mg  = 6;
+      let top  = pr.top;
+      let left = pr.left - elW - mg;
+      if (left < mg) left = pr.right + mg;
+      if (left + elW > vw - mg) left = mg;
+      if (top + elH > vh - mg) top = Math.max(mg, vh - elH - mg);
+      el.style.top  = top  + 'px';
+      el.style.left = left + 'px';
+    });
+  }
+
+  /* ── Boas Práticas ── */
+  function toggleTips(anchorPanel) {
+    const existing = document.getElementById('ml-tips');
+    if (existing) { existing.remove(); return; }
+
+    const TIPS = [
+      ['\ud83c\udfaf', 'Centralize as probes sobre a imagem'],
+      ['\ud83d\udcfa', 'Grave durante o programa, nunca no intervalo'],
+      ['\u23f1\ufe0f', 'N\u00e3o interrompa \u2014 aguarde o sinal sonoro (~2 min)'],
+      ['\ud83d\udda5\ufe0f', 'Evite processos pesados durante a grava\u00e7\u00e3o'],
+    ];
+
+    const { win } = makeDraggableWindow('ml-tips', '\ud83d\udca1 Boas Pr\u00e1ticas', '#ffd700', 230);
 
     const body = document.createElement('div');
     body.style.cssText = 'padding:6px 8px;display:flex;flex-direction:column;gap:5px';
     TIPS.forEach(([icon, text]) => {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:flex-start;gap:5px;line-height:1.35';
+      const r = document.createElement('div');
+      r.style.cssText = 'display:flex;align-items:flex-start;gap:5px;line-height:1.35';
       const ic = document.createElement('span');
       ic.textContent = icon;
       ic.style.cssText = 'font-size:11px;flex-shrink:0;margin-top:1px';
       const tx = document.createElement('span');
       tx.textContent = text;
       tx.style.cssText = 'font-size:9px;color:#fff';
-      row.append(ic, tx);
-      body.appendChild(row);
+      r.append(ic, tx);
+      body.appendChild(r);
     });
-    tip.appendChild(body);
+    win.appendChild(body);
 
-    const foot = document.createElement('div');
-    foot.style.cssText = 'padding:5px 8px;border-top:1px solid #1a1a30';
-    const btnOk = document.createElement('button');
-    btnOk.textContent = '✔ Entendido';
-    btnOk.style.cssText = [
-      'width:100%;background:#1a2a1a;border:1px solid #44ff8855',
-      'color:#44ff88;border-radius:3px;padding:3px 0',
-      'cursor:pointer;font:bold 9px monospace',
-    ].join(';');
-    btnOk.onclick = () => tip.remove();
-    foot.appendChild(btnOk);
-    tip.appendChild(foot);
+    positionNearPanel(win, anchorPanel);
+  }
 
-    document.body.appendChild(tip);
+  /* ── Instruções de Uso ── */
+  function toggleGuide(anchorPanel) {
+    const existing = document.getElementById('ml-guide');
+    if (existing) { existing.remove(); return; }
 
-    function reposition() {
-      const pr      = anchorPanel.getBoundingClientRect();
-      const tipH    = tip.offsetHeight;
-      const tipW    = tip.offsetWidth;
-      const vw      = window.innerWidth;
-      const vh      = window.innerHeight;
-      const margin  = 6;
-      let top  = pr.bottom + margin;
-      if (top + tipH > vh - margin) top = Math.max(margin, pr.top - tipH - margin);
-      let left = pr.left;
-      if (left + tipW > vw - margin) left = vw - tipW - margin;
-      if (left < margin) left = margin;
-      tip.style.top  = top  + 'px';
-      tip.style.left = left + 'px';
-    }
+    const { win } = makeDraggableWindow('ml-guide', '\ud83d\udccb Como Usar', '#00d4ff', 240);
 
-    requestAnimationFrame(reposition);
-    window.addEventListener('resize', reposition);
+    const STEPS = [
+      { section: '\u2699\ufe0f  PREPARA\u00c7\u00c3O', color: '#ffd700', items: [
+        '1. Ative as telas desejadas (\u25cf)',
+        '2. Ajuste o tamanho via PX Global ou por tela',
+        '3. Posicione cada tela sobre o v\u00eddeo (arrastar ou setas)',
+        '4. Selecione o lag estimado: \u201cAt\u00e9 5s\u201d ou \u201cMaior que 5s\u201d',
+      ]},
+      { section: '\u23fa  GRAVA\u00c7\u00c3O', color: '#44ff88', items: [
+        '5. Clique em \u25cf GRAVAR \u2014 a an\u00e1lise inicia sozinha ao terminar (~2 min)',
+      ]},
+      { section: '\ud83d\udcca  AN\u00c1LISE', color: '#ce93d8', items: [
+        '6. A lat\u00eancia estimada aparece por tela automaticamente',
+        '7. Para ajuste fino: clique em Manual e mova as r\u00e9guas',
+        '8. Alinhe as linhas tracejadas grossas (picos) entre os sinais',
+        '9. Ajuste a qtd. de picos vis\u00edveis na se\u00e7\u00e3o Picos',
+        '10. Clique em \u2714 Confirmar para exportar e copiar os resultados',
+      ]},
+    ];
+
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:6px 8px;display:flex;flex-direction:column;gap:6px';
+
+    STEPS.forEach(({ section, color, items }) => {
+      const secLabel = document.createElement('div');
+      secLabel.textContent = section;
+      secLabel.style.cssText = `color:${color};font-size:8px;font-weight:bold;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;padding-bottom:2px;border-bottom:1px solid ${color}33`;
+      body.appendChild(secLabel);
+
+      items.forEach(text => {
+        const item = document.createElement('div');
+        item.textContent = text;
+        item.style.cssText = 'font-size:9px;color:#ddd;line-height:1.5;padding-left:4px';
+        body.appendChild(item);
+      });
+    });
+
+    win.appendChild(body);
+    positionNearPanel(win, anchorPanel);
   }
 
   function init() {
-    ['ml-panel', 'ml-chart-overlay', 'ml-tips'].forEach(id => {
+    ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-guide'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.remove();
     });
-    ML._tipsShown = false;
 
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
@@ -123,24 +174,42 @@
     // Header
     const hdr = document.createElement('div');
     hdr.style.cssText = [
-      'display:flex;align-items:center;gap:6px;overflow:hidden',
+      'display:flex;align-items:center;gap:4px;overflow:hidden',
       'padding:4px 8px;cursor:move',
       'border-bottom:1px solid #1e1e3a',
       'background:#1a1a2e;border-radius:6px 6px 0 0',
     ].join(';');
+
     const ttl = document.createElement('span');
     ttl.textContent = '\uD83D\uDCE1 MED. LAT\u00CANCIA';
     ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
-    const btnX = document.createElement('button');
+
+    function mkIconBtn(icon, title, color) {
+      const b = document.createElement('button');
+      b.textContent = icon;
+      b.title = title;
+      b.style.cssText = `background:transparent;border:1px solid ${color}44;color:${color};border-radius:3px;padding:0 4px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0`;
+      b.addEventListener('mouseenter', () => b.style.background = color + '22');
+      b.addEventListener('mouseleave', () => b.style.background = 'transparent');
+      return b;
+    }
+
+    const btnTips  = mkIconBtn('\ud83d\udca1', 'Boas Pr\u00e1ticas', '#ffd700');
+    const btnGuide = mkIconBtn('\ud83d\udccb', 'Instru\u00e7\u00f5es de Uso', '#00d4ff');
+    const btnX     = document.createElement('button');
     btnX.textContent = '\u2715';
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove()); };
-    hdr.append(ttl, btnX);
+
+    btnTips.onclick  = () => toggleTips(panel);
+    btnGuide.onclick = () => toggleGuide(panel);
+
+    hdr.append(ttl, btnTips, btnGuide, btnX);
     panel.appendChild(hdr);
 
     // Drag
     let pdrag = false, pox = 0, poy = 0;
-    hdr.addEventListener('mousedown', e => { pdrag = true; panel.style.right = 'auto'; pox = e.clientX - panel.offsetLeft; poy = e.clientY - panel.offsetTop; });
+    hdr.addEventListener('mousedown', e => { if (e.target !== hdr && e.target !== ttl) return; pdrag = true; panel.style.right = 'auto'; pox = e.clientX - panel.offsetLeft; poy = e.clientY - panel.offsetTop; });
     window.addEventListener('mousemove', e => { if (!pdrag) return; panel.style.left = Math.max(0, e.clientX - pox) + 'px'; panel.style.top = Math.max(0, e.clientY - poy) + 'px'; });
     window.addEventListener('mouseup', () => pdrag = false);
 
@@ -189,7 +258,7 @@
       ].join(';');
       const opts = [
         { value: 'auto',     label: 'Auto' },
-        { value: 'rapido',   label: 'Até 5s' },
+        { value: 'rapido',   label: 'At\u00e9 5s' },
         { value: 'internet', label: 'Maior que 5s' },
       ];
       opts.forEach(o => {
@@ -315,7 +384,7 @@
     panel.appendChild(secDet);
 
     /* ── Seção: Resultados ── */
-    const secRes = sec('Resultados vs Referência');
+    const secRes = sec('Resultados vs Refer\u00eancia');
     const tbl = document.createElement('table');
     tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
     const thead = document.createElement('thead');
@@ -407,7 +476,7 @@
         const errs = results.filter(r => r.error);
         statusEl.textContent = errs.length
           ? errs.map(r => r.label + ': ' + r.error).join(' | ')
-          : 'Análise concluída';
+          : 'An\u00e1lise conclu\u00edda';
         statusEl.style.color = errs.length ? '#ff8844' : '#44ff88';
       }, 30);
     };
@@ -436,8 +505,6 @@
 
     document.body.appendChild(panel);
     ML._ui = { btnRec, btnAnalyze, statusEl, doStop };
-
-    requestAnimationFrame(() => showTips(panel));
 
     ML.panel.refreshOffsets = function(offsets) {
       ML.CHANNELS.forEach((ch, i) => {
