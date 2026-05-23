@@ -1,6 +1,23 @@
 (function () {
   const ML = window.MedLat;
 
+  function playDone() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [[660, 0], [880, 0.15], [1100, 0.30]].forEach(([freq, t]) => {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.15, ctx.currentTime + t);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
+        osc.start(ctx.currentTime + t);
+        osc.stop(ctx.currentTime + t + 0.2);
+      });
+    } catch(e) {}
+  }
+
   function init() {
     ['ml-panel', 'ml-chart-overlay'].forEach(id => {
       const el = document.getElementById(id);
@@ -109,7 +126,7 @@
     secGrid.appendChild(rowToggle);
     panel.appendChild(secGrid);
 
-    /* Detalhamento: probes + tabela de resultados */
+    /* Detalhamento: probes */
     const secDet = sec('Probes');
     ML.CHANNELS.forEach((ch, i) => {
       const chWrap = document.createElement('div');
@@ -164,10 +181,9 @@
     const secRes = sec('Resultados vs Refer\u00eancia');
     const tbl = document.createElement('table');
     tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
-    // cabecalho
     const thead = document.createElement('thead');
     const thr = document.createElement('tr');
-    ['Tela','Offset','Confiança'].forEach((h, hi) => {
+    ['Tela','Offset','Confian\u00e7a'].forEach((h, hi) => {
       const th = document.createElement('th');
       th.textContent = h;
       th.style.cssText = 'color:#555;font-weight:bold;font-size:7px;letter-spacing:.08em;text-transform:uppercase;padding:1px 3px;text-align:' + (hi===0?'left':'right') + ';border-bottom:1px solid #1a1a30';
@@ -175,23 +191,19 @@
     });
     thead.appendChild(thr);
     tbl.appendChild(thead);
-    // linhas por canal
     const tbody = document.createElement('tbody');
     ML.CHANNELS.forEach((ch, i) => {
       const tr = document.createElement('tr');
       tr.style.cssText = `border-bottom:1px solid ${ch.color}22`;
-      // nome
       const tdName = document.createElement('td');
       tdName.style.cssText = `color:${ch.color};font-weight:bold;padding:2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px`;
       tdName.textContent = (i===0?'\u2605 ':'') + ch.label;
       ch._tdName = tdName;
-      // offset
       const tdOff = document.createElement('td');
       tdOff.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:10px;white-space:nowrap';
       tdOff.textContent  = i===0 ? '0.000s' : '--';
       tdOff.style.color  = i===0 ? '#44ff88' : '#444';
       ch.offsetEl = tdOff;
-      // confianca
       const tdConf = document.createElement('td');
       tdConf.style.cssText = 'text-align:right;padding:2px 3px;font-size:8px;white-space:nowrap';
       tdConf.textContent = i===0 ? 'REF' : '--';
@@ -211,6 +223,7 @@
 
     function doStop() {
       ML.recorder.stop();
+      playDone();
       btnRec.textContent = '\u25cf GRAVAR';
       btnRec.style.background = '#1b5e20'; btnRec.style.borderColor = '#2e7d3288'; btnRec.style.boxShadow = '0 0 8px #1b5e2066';
       const pts = ML.CHANNELS.filter(c => c.active).map(c => c.buffer.length + 'pt').join(', ');
@@ -226,7 +239,6 @@
         btnRec.style.background = '#7f0000'; btnRec.style.borderColor = '#c6282888'; btnRec.style.boxShadow = '0 0 8px #c6282855';
         statusEl.textContent = 'Gravando...'; statusEl.style.color = '#44ff88';
         btnAnalyze.disabled = true;
-        // reset resultados
         ML.CHANNELS.forEach((ch, i) => {
           ch._prevPts   = 0;
           ch._stableCnt = 0;
@@ -244,7 +256,6 @@
     btnAnalyze.onclick = () => {
       statusEl.textContent = 'Calculando...'; statusEl.style.color = '#aaa';
       setTimeout(() => {
-        // Analisa todos os canais vs referencia de uma vez
         const results = ML.correlator.analyzeBestAll();
         results.forEach(r => {
           const ch = r.channel;
@@ -270,7 +281,6 @@
             }
           }
         });
-        // Abre grafico com todos os canais sobrepostos
         if (ML.chart && ML.chart.show) ML.chart.show(results);
         const errs = results.filter(r => r.error);
         statusEl.textContent = errs.length
@@ -305,7 +315,6 @@
     document.body.appendChild(panel);
     ML._ui = { btnRec, btnAnalyze, statusEl, doStop };
 
-    // Expoe refreshOffsets para o chart atualizar os campos apos ajuste manual
     ML.panel.refreshOffsets = function(offsets) {
       ML.CHANNELS.forEach((ch, i) => {
         if (i === 0 || !offsets[ch.id]) return;
@@ -316,7 +325,7 @@
       });
     };
 
-    // Auto-stop: 3 ciclos de 1s sem crescer = OK
+    // Auto-stop: 3 ciclos de 1s sem crescer = buffer estabilizado
     const STABLE_TICKS = 3;
     setInterval(() => {
       const activeChannels = ML.CHANNELS.filter(c => c.active);
@@ -348,7 +357,7 @@
       }
     }, 1000);
 
-    console.log('[MedLat] 50-panel: tabela de resultados vs referencia.');
+    console.log('[MedLat] 50-panel carregado.');
   }
 
   ML.panel = { init };
