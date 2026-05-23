@@ -18,11 +18,91 @@
     } catch(e) {}
   }
 
+  /* ── Boas Práticas ─────────────────────────────── */
+  function showTips(anchorPanel) {
+    if (ML._tipsShown) return;
+    ML._tipsShown = true;
+
+    const TIPS = [
+      ['🎯', 'Centralize as probes — evite bordas, legendas e barras'],
+      ['📺', 'Grave durante o programa, nunca no intervalo'],
+      ['⏱️', 'Não interrompa — aguarde o sinal sonoro (~2 min)'],
+      ['🌐', 'Feeds via internet têm dilatação temporal variável'],
+      ['🖥️', 'Evite processos pesados durante a gravação'],
+    ];
+
+    const tip = document.createElement('div');
+    tip.id = 'ml-tips';
+    tip.style.cssText = [
+      'position:fixed;z-index:99998',
+      'background:#12121fee;border:1px solid #2a2a4a',
+      'border-radius:6px;box-shadow:0 4px 24px #000c',
+      'font-family:monospace;font-size:10px;color:#ccc',
+      'width:230px;overflow:hidden',
+    ].join(';');
+
+    const hdr = document.createElement('div');
+    hdr.style.cssText = [
+      'display:flex;align-items:center;padding:4px 8px',
+      'background:#1a1a2e;border-bottom:1px solid #1e1e3a',
+      'border-radius:6px 6px 0 0',
+    ].join(';');
+    const htitle = document.createElement('span');
+    htitle.textContent = '💡 Boas Práticas';
+    htitle.style.cssText = 'color:#ffd700;font-weight:bold;font-size:9px;letter-spacing:.06em;flex:1';
+    hdr.appendChild(htitle);
+    tip.appendChild(hdr);
+
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:6px 8px;display:flex;flex-direction:column;gap:5px';
+    TIPS.forEach(([icon, text]) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:flex-start;gap:5px;line-height:1.35';
+      const ic = document.createElement('span');
+      ic.textContent = icon;
+      ic.style.cssText = 'font-size:11px;flex-shrink:0;margin-top:1px';
+      const tx = document.createElement('span');
+      tx.textContent = text;
+      tx.style.cssText = 'font-size:9px;color:#aaa';
+      row.append(ic, tx);
+      body.appendChild(row);
+    });
+    tip.appendChild(body);
+
+    const foot = document.createElement('div');
+    foot.style.cssText = 'padding:5px 8px;border-top:1px solid #1a1a30';
+    const btnOk = document.createElement('button');
+    btnOk.textContent = '✔ Entendido';
+    btnOk.style.cssText = [
+      'width:100%;background:#1a2a1a;border:1px solid #44ff8855',
+      'color:#44ff88;border-radius:3px;padding:3px 0',
+      'cursor:pointer;font:bold 9px monospace',
+    ].join(';');
+    btnOk.onclick = () => tip.remove();
+    foot.appendChild(btnOk);
+    tip.appendChild(foot);
+
+    document.body.appendChild(tip);
+
+    // Posiciona abaixo do painel principal
+    function reposition() {
+      const pr = anchorPanel.getBoundingClientRect();
+      const top = pr.bottom + 6;
+      const left = pr.left;
+      const maxBottom = window.innerHeight - tip.offsetHeight - 6;
+      tip.style.left = left + 'px';
+      tip.style.top  = Math.min(top, maxBottom) + 'px';
+    }
+    requestAnimationFrame(reposition);
+    window.addEventListener('resize', reposition);
+  }
+
   function init() {
-    ['ml-panel', 'ml-chart-overlay'].forEach(id => {
+    ['ml-panel', 'ml-chart-overlay', 'ml-tips'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.remove();
     });
+    ML._tipsShown = false;
 
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
@@ -314,6 +394,9 @@
 
     document.body.appendChild(panel);
     ML._ui = { btnRec, btnAnalyze, statusEl, doStop };
+
+    // Boas práticas aparecem logo após o painel ser inserido no DOM
+    requestAnimationFrame(() => showTips(panel));
 
     ML.panel.refreshOffsets = function(offsets) {
       ML.CHANNELS.forEach((ch, i) => {
