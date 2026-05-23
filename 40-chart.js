@@ -166,21 +166,14 @@
       return ML.INTERVAL_MS;
     }
 
-    /*
-     * baseShiftSamples[chId] = offset automático em samples
-     *   POSITIVO = canal está ATRASADO = precisamos deslocar a série para a ESQUERDA
-     *   para alinhar visualmente (avançar no tempo = shift negativo no array)
-     * fineShiftSamples[chId] = ajuste fino do slider (samples relativos, inicia 0)
-     */
     const baseShiftSamples = {};
     const fineShiftSamples = {};
-    const autoOffsetMs     = {}; // guarda offsetMs original para exibição
+    const autoOffsetMs     = {};
     ML.CHANNELS.forEach(ch => { baseShiftSamples[ch.id] = 0; fineShiftSamples[ch.id] = 0; autoOffsetMs[ch.id] = 0; });
     results.forEach(r => {
       if (r.isReference || !r.channel || r.error || r.skipped || r.offsetMs == null) return;
       const iv = realIvMs(r.channel);
       autoOffsetMs[r.channel.id]     = r.offsetMs;
-      // offsetMs > 0 = canal atrasado: para alinhar avançamos a série (shift negativo)
       baseShiftSamples[r.channel.id] = -Math.round(r.offsetMs / iv);
     });
 
@@ -215,14 +208,13 @@
     }
     buildCards();
 
-    // Atualiza o valor exibido no card: mostra "orig → ajustado" quando diferente
     function updateCardOffset(chId, totalAdjMs) {
       const ref = cardRefs[chId];
       if (!ref) return;
       const origMs = ref.origMs;
       const origS  = origMs / 1000;
       const adjS   = totalAdjMs / 1000;
-      const isDiff = Math.abs(totalAdjMs - origMs) > 1; // >1ms = houve ajuste
+      const isDiff = Math.abs(totalAdjMs - origMs) > 1;
       if (isDiff) {
         ref.offEl.innerHTML =
           `<span style="color:#888;text-decoration:line-through;font-size:8px">${(origS>=0?'+':'')}${origS.toFixed(3)}s</span>` +
@@ -266,7 +258,6 @@
     manualHint.textContent = 'Centro = offset auto  |  arraste para ajuste fino';
     manualBar.appendChild(manualHint);
 
-    // Botão Reset Tudo
     const btnResetAll = document.createElement('button');
     btnResetAll.textContent = '\u21ba Reset tudo';
     btnResetAll.style.cssText = [
@@ -294,10 +285,9 @@
       slider.min   = -range;
       slider.max   =  range;
       slider.step  = 1;
-      slider.value = 0; // centro = offset automático
+      slider.value = 0;
       slider.style.cssText = `flex:1;accent-color:${ch.color};cursor:pointer;height:14px`;
 
-      // Botão reset individual
       const btnReset = document.createElement('button');
       btnReset.textContent = '\u21ba';
       btnReset.title = 'Reset ' + ch.label;
@@ -306,19 +296,13 @@
       const valLbl = document.createElement('span');
       valLbl.style.cssText = 'color:#aaa;font-size:8px;width:56px;flex-shrink:0;text-align:right;white-space:nowrap';
 
-      /*
-       * totalAdjMs = autoOffsetMs (original) + fineShift * iv
-       * Quando slider = 0  → totalAdjMs = autoOffsetMs (sem mudança)
-       * Quando slider = +N → canal se move N samples para frente
-       *                       = offsetMs diminui (menos atraso)
-       */
       function refreshLabel() {
-        const fine      = parseInt(slider.value);
+        const fine        = parseInt(slider.value);
         const fineDeltaMs = fine * iv;
-        const totalMs   = autoOffsetMs[ch.id] + fineDeltaMs;
-        const s         = totalMs / 1000;
-        const fineS     = fineDeltaMs / 1000;
-        const fineStr   = fine === 0 ? '' : ` (${fineS>=0?'+':''}${fineS.toFixed(3)})`;
+        const totalMs     = autoOffsetMs[ch.id] + fineDeltaMs;
+        const s           = totalMs / 1000;
+        const fineS       = fineDeltaMs / 1000;
+        const fineStr     = fine === 0 ? '' : ` (${fineS>=0?'+':''}${fineS.toFixed(3)})`;
         valLbl.textContent = (s>=0?'+':'') + s.toFixed(3) + 's' + fineStr;
         return { fine, totalMs };
       }
@@ -345,12 +329,9 @@
       manualBar.appendChild(row);
     });
 
-    btnResetAll.onclick = () => {
-      Object.values(sliderRefs).forEach(r => r.doReset());
-    };
+    btnResetAll.onclick = () => { Object.values(sliderRefs).forEach(r => r.doReset()); };
     manualBar.appendChild(btnResetAll);
 
-    // Botão confirmar
     const btnConfirm = document.createElement('button');
     btnConfirm.textContent = '\u2714 Confirmar ajuste';
     btnConfirm.style.cssText = [
@@ -375,19 +356,12 @@
     manualBar.appendChild(btnConfirm);
     body.appendChild(manualBar);
 
-    /* ativar modo manual */
     btnManual.onclick = () => {
       manualMode = !manualMode;
       updateManualBtn();
       manualBar.style.display = manualMode ? 'flex' : 'none';
-      if (manualMode && chartMode !== 'overlay') {
-        chartMode = 'overlay';
-        updateModeBtn();
-      }
-      if (manualMode) {
-        // reset fine ao entrar no modo manual
-        Object.values(sliderRefs).forEach(r => r.doReset());
-      }
+      if (manualMode && chartMode !== 'overlay') { chartMode = 'overlay'; updateModeBtn(); }
+      if (manualMode) { Object.values(sliderRefs).forEach(r => r.doReset()); }
       rebuildCharts();
     };
     btnMode.onclick = () => { chartMode = chartMode === 'parallel' ? 'overlay' : 'parallel'; updateModeBtn(); rebuildCharts(); };
@@ -419,33 +393,19 @@
       chartMode === 'overlay' ? buildOverlay(visible) : buildParallel(visible);
     }
 
-    /*
-     * shiftSeries:
-     *   shift > 0 → avança a série (remove início, padding null no fim)
-     *   shift < 0 → atrasa a série (null no início, remove fim)
-     *
-     * Para alinhar canais ATRASADOS (offsetMs > 0):
-     *   baseShiftSamples = -round(offsetMs/iv)  → shift negativo = atrasa visualmente a referência
-     *   Ou equivalente: avançamos o canal atrasado → shift positivo sobre ele
-     *   Aqui usamos: shiftSeries(canalAtrasado, +samples) para avançar a curva
-     */
     function shiftSeries(data, shift) {
       if (!shift) return data;
       const n   = data.length;
       const out = new Array(n).fill(null);
       if (shift > 0) {
-        // avança: pega data[shift..n], coloca em out[0..n-shift]
         for (let i = 0; i < n - shift; i++) out[i] = data[i + shift];
       } else {
-        // atrasa: pega data[0..n+shift], coloca em out[-shift..n]
         const s = -shift;
         for (let i = s; i < n; i++) out[i] = data[i - s];
       }
       return out;
     }
 
-    // totalShift em samples para deslocar a série visualmente
-    // = baseShiftSamples (alinha com auto) + fineShiftSamples (ajuste fino)
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
       if (!manualMode) return 0;
@@ -463,8 +423,9 @@
         const lMin = validLums.length ? Math.min(...validLums) : 0;
         const lMax = validLums.length ? Math.max(...validLums) : 255;
         const rng  = Math.max(1, lMax - lMin);
+        // picos calculados sobre a série já deslocada
         const peaks = showPeaks && ML.correlator
-          ? ML.correlator.diffSeries(rawLums).reduce((acc, d, i) => { if (d > 0) acc.push({ xIndex: i, color: ch.color }); return acc; }, [])
+          ? ML.correlator.diffSeries(lums.map(v => v ?? 0)).reduce((acc, d, i) => { if (d > 0) acc.push({ xIndex: i, color: ch.color }); return acc; }, [])
           : [];
         const row = document.createElement('div');
         row.style.cssText = `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0;padding:2px 3px;border-radius:4px;background:${ch.color}0d;border-left:2px solid ${ch.color};overflow:hidden`;
@@ -495,28 +456,52 @@
     }
 
     function buildOverlay(channels) {
+      // 1. Calcula amplitude global: min/max entre todos os canais visíveis (com shift aplicado)
+      let globalMin = Infinity, globalMax = -Infinity;
+      const allLumsShifted = channels.map((ch, idx) => {
+        const raw   = ch.buffer.map(p => p.lum).slice(0, maxLen);
+        const shift = getTotalShift(ch, idx);
+        const lums  = shiftSeries(raw, shift);
+        lums.forEach(v => { if (v !== null) { if (v < globalMin) globalMin = v; if (v > globalMax) globalMax = v; } });
+        return { ch, lums };
+      });
+      if (!isFinite(globalMin)) { globalMin = 0; globalMax = 255; }
+      const rng = Math.max(1, globalMax - globalMin);
+      const yMin = Math.max(0,   Math.floor(globalMin - rng * 0.10));
+      const yMax = Math.min(255, Math.ceil(globalMax  + rng * 0.10));
+
+      // 2. Picos calculados sobre a série JÁ deslocada de cada canal
       const allPeaks = showPeaks && ML.correlator
-        ? channels.flatMap(ch => {
-            const lums = ch.buffer.map(p => p.lum).slice(0, maxLen);
-            return ML.correlator.diffSeries(lums).reduce((acc, d, i) => { if (d > 0) acc.push({ xIndex: i, color: ch.color }); return acc; }, []);
-          })
+        ? allLumsShifted.flatMap(({ ch, lums }) =>
+            ML.correlator.diffSeries(lums.map(v => v ?? 0))
+              .reduce((acc, d, i) => { if (d > 0) acc.push({ xIndex: i, color: ch.color }); return acc; }, [])
+          )
         : [];
+
       const wrap = document.createElement('div');
       wrap.style.cssText = 'flex:1;min-height:0;overflow:hidden;border-radius:4px;background:#0a0a16;border:1px solid #1a1a30;position:relative';
       if (manualMode) {
         const hint = document.createElement('div');
         hint.style.cssText = 'position:absolute;top:2px;left:50%;transform:translateX(-50%);color:#ffd70088;font-size:7px;pointer-events:none;z-index:2;white-space:nowrap';
-        hint.textContent = 'Slider=0 → offset auto  |  arraste para ajuste fino';
+        hint.textContent = 'Slider=0 \u2192 offset auto  |  arraste para ajuste fino';
         wrap.appendChild(hint);
       }
       const cvs = document.createElement('canvas');
       wrap.appendChild(cvs); chartsArea.appendChild(wrap);
-      const datasets = channels.map((ch, idx) => {
-        const rawLums = ch.buffer.map(p => p.lum).slice(0, maxLen);
-        const shift   = getTotalShift(ch, idx);
-        const lums    = shiftSeries(rawLums, shift);
-        return { label: ch.label, data: lums, borderColor: ch.color, backgroundColor: 'transparent', borderWidth: 1.6, pointRadius: 0, tension: 0.2, fill: false, spanGaps: false };
-      });
+
+      // 3. Datasets com fill colorido (igual ao paralelo: cor + '18')
+      const datasets = allLumsShifted.map(({ ch, lums }, idx) => ({
+        label:           ch.label,
+        data:            lums,
+        borderColor:     ch.color,
+        backgroundColor: ch.color + '18',   // mesmo fill do paralelo
+        borderWidth:     1.6,
+        pointRadius:     0,
+        tension:         0.2,
+        fill:            true,              // ativado igual ao paralelo
+        spanGaps:        false,
+      }));
+
       const ci = new Chart(cvs, {
         type: 'line', data: { labels: sharedLabels, datasets },
         options: {
@@ -537,7 +522,8 @@
           layout: { padding: { top: 2, right: 4, bottom: 0, left: 0 } },
           scales: {
             x: { ticks: { color: '#444', font: { size: 7 }, maxRotation: 0 }, grid: { color: '#16162a' } },
-            y: { min: 0, max: 255, ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 5 }, grid: { color: '#16162a' } },
+            // 4. Amplitude ajustada ao min/max global dos canais visíveis
+            y: { min: yMin, max: yMax, ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 5 }, grid: { color: '#16162a' } },
           },
         },
         plugins: allPeaks.length ? [makePeakPlugin(allPeaks)] : [],
@@ -570,5 +556,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: ajuste manual corrigido — sinal, original→ajustado, reset.');
+  console.log('[MedLat] 40-chart: overlay com fill, amplitude global min/max, picos com shift.');
 })();
