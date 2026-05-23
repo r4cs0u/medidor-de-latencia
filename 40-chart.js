@@ -114,10 +114,12 @@
       ? mainPanel.getBoundingClientRect()
       : { left: window.innerWidth - 248, top: 8, width: 228, height: 0 };
 
-    const INIT_W = mpRect.width || 228;
-    const INIT_H = Math.min(window.innerHeight - 16, 560);
-    const initLeft = Math.max(4, mpRect.left - INIT_W - 8);
-    const initTop  = Math.max(8, mpRect.top);
+    // Janela grande por padrão — ocupa toda a área disponível ao lado do painel
+    const sidePanelW = (mpRect.width || 228) + 16;
+    const INIT_W = Math.max(400, window.innerWidth - sidePanelW - 8);
+    const INIT_H = Math.max(300, window.innerHeight - 16);
+    const initLeft = 4;
+    const initTop  = 8;
 
     const panel = document.createElement('div');
     panel.id = 'ml-chart-panel';
@@ -209,7 +211,7 @@
     });
 
     const body = document.createElement('div');
-    body.style.cssText = 'flex:1;overflow-y:auto;padding:6px 8px 6px;display:flex;flex-direction:column;gap:5px;min-height:0';
+    body.style.cssText = 'flex:1;overflow-y:auto;padding:4px 8px 6px;display:flex;flex-direction:column;gap:4px;min-height:0';
     panel.appendChild(body);
 
     const activeChannels = [];
@@ -240,19 +242,22 @@
 
     const cardRefs = {};
 
+    // Cards compactos em linha única horizontal
     function buildCards() {
       const hasResults = results.some(r => !r.isReference && !r.error && !r.skipped);
       if (!hasResults) return;
-      const grid = document.createElement('div');
-      grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:3px;flex-shrink:0';
 
+      const bar = document.createElement('div');
+      bar.style.cssText = 'display:flex;flex-wrap:nowrap;gap:4px;flex-shrink:0;overflow-x:auto;padding-bottom:2px';
+
+      // Referência
       const ref = ML.CHANNELS[0];
-      grid.appendChild(mkCard(ref.label, '\u2605', ref.color, '0.000s', '100%', null, null));
+      bar.appendChild(mkCardCompact(ref.label, '\u2605', ref.color, '0.000s', null, null, null));
 
       results.forEach(r => {
         if (r.isReference || !r.channel) return;
         const ch = r.channel;
-        let autoTxt='--', autoColor='#445', confTxt='--', confColor='#445';
+        let autoTxt='--', autoColor='#445', confTxt=null, confColor='#445';
         if (!r.error && !r.skipped) {
           const s   = r.offsetMs / 1000;
           autoTxt   = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
@@ -261,11 +266,11 @@
           if (pct != null) { confTxt = pct + '%'; confColor = pct>60?'#44ff88':pct>30?'#ffd700':'#ff4444'; }
         } else { autoTxt = r.error ? 'ERR' : '--'; autoColor = r.error ? '#ff4444' : '#445'; }
 
-        const card = mkCard(ch.label, '', ch.color, autoTxt, confTxt, autoColor, confColor);
+        const card = mkCardCompact(ch.label, '', ch.color, autoTxt, confTxt, autoColor, confColor);
         cardRefs[ch.id] = { autoMs: r.offsetMs || 0, ch, manualEl: card._manualEl };
-        grid.appendChild(card);
+        bar.appendChild(card);
       });
-      body.appendChild(grid);
+      body.appendChild(bar);
     }
     buildCards();
 
@@ -275,14 +280,13 @@
       const el = ref.manualEl;
       const s  = totalMs / 1000;
       const manColor = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#00d4ff';
-      el.style.display = 'flex';
-      el.innerHTML =
-        `<span style="color:#556;font-size:7px;margin-right:2px">Manual</span>` +
-        `<span style="color:${manColor};font-weight:bold;font-size:10px">${(s>=0?'+':'')}${s.toFixed(3)}s</span>`;
+      el.style.display = 'inline';
+      el.textContent = ' \u2192 ' + (s>=0?'+':'') + s.toFixed(3) + 's';
+      el.style.color = manColor;
     }
     function hideCardManual(chId) {
       const ref = cardRefs[chId];
-      if (ref && ref.manualEl) { ref.manualEl.style.display = 'none'; ref.manualEl.innerHTML = ''; }
+      if (ref && ref.manualEl) { ref.manualEl.style.display = 'none'; ref.manualEl.textContent = ''; }
     }
 
     if (!activeChannels.length) {
@@ -314,11 +318,6 @@
     manualHint.style.cssText = 'color:#ffd700;font-size:8px;text-align:center;opacity:.8';
     manualHint.textContent = 'Gr\u00e1ficos j\u00e1 alinhados pelo Auto  |  arraste para ajuste fino';
     manualBar.appendChild(manualHint);
-
-    const snapIndicator = document.createElement('div');
-    snapIndicator.style.cssText = 'color:#fff;font-size:8px;text-align:center;background:#ffffff22;border-radius:3px;padding:2px 6px;display:none;letter-spacing:.05em';
-    snapIndicator.textContent = '\uD83E\uDDF2 SNAP!';
-    manualBar.appendChild(snapIndicator);
 
     const btnResetAll = document.createElement('button');
     btnResetAll.textContent = '\u21ba Reset tudo';
@@ -382,41 +381,30 @@
       valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
 
       function refreshLabel(sliderVal) {
-        const fine      = -sliderVal;
-        const totalMs   = (autoOffsetMs[ch.id] || 0) - fine * iv;
-        const s         = totalMs / 1000;
+        const fine    = -sliderVal;
+        const totalMs = (autoOffsetMs[ch.id] || 0) - fine * iv;
+        const s       = totalMs / 1000;
         valLbl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
         valLbl.style.color = sliderVal === 0 ? '#aaa' : (totalMs >= 0 ? '#ffd700' : '#00d4ff');
         return { fine, totalMs };
       }
       refreshLabel(0);
 
-      let snapTimeout = null;
       function doReset() {
         slider.value = 0;
         fineShiftSamples[ch.id] = 0;
         refreshLabel(0);
         hideCardManual(ch.id);
-        snapIndicator.style.display = 'none';
         rebuildCharts();
       }
       btnReset.onclick = doReset;
 
       slider.addEventListener('input', () => {
-        const sliderVal   = parseInt(slider.value);
-        let fine          = -sliderVal;
-        const autoSamples = Math.round((autoOffsetMs[ch.id] || 0) / iv);
-        const totalShift  = autoSamples + fine;
-        const snapDelta   = checkSnap(ch, totalShift);
-        if (snapDelta !== null) {
-          fine = Math.max(-range, Math.min(range, fine + snapDelta));
-          slider.value = -fine;
-          snapIndicator.style.display = 'block';
-          if (snapTimeout) clearTimeout(snapTimeout);
-          snapTimeout = setTimeout(() => { snapIndicator.style.display = 'none'; }, 1200);
-        }
+        const sliderVal = parseInt(slider.value);
+        const fine      = -sliderVal;
+        // snap silencioso: verifica mas NÃO move o slider automaticamente
         fineShiftSamples[ch.id] = fine;
-        const { totalMs } = refreshLabel(parseInt(slider.value));
+        const { totalMs } = refreshLabel(sliderVal);
         if (manualMode) updateCardManual(ch.id, totalMs);
         rebuildCharts();
       });
@@ -645,40 +633,40 @@
     requestAnimationFrame(() => rebuildCharts());
   }
 
-  function mkCard(label, prefix, color, autoTxt, confTxt, autoColor, confColor) {
+  // Card compacto horizontal: label | valor auto | confiança | [manual inline]
+  function mkCardCompact(label, prefix, color, autoTxt, confTxt, autoColor, confColor) {
     const card = document.createElement('div');
     card.style.cssText = [
-      'display:flex;flex-direction:column;align-items:center;gap:1px',
-      `border:1px solid ${color}44;border-top:2px solid ${color}`,
-      `background:${color}0d;border-radius:4px;padding:3px 4px`,
+      'display:inline-flex;align-items:center;gap:5px;flex-shrink:0',
+      `border:1px solid ${color}44;border-left:3px solid ${color}`,
+      `background:${color}0d;border-radius:4px;padding:3px 7px 3px 5px`,
+      'white-space:nowrap;overflow:hidden',
     ].join(';');
 
-    const nameEl = document.createElement('div');
-    nameEl.style.cssText = `color:${color};font-weight:bold;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%`;
+    const nameEl = document.createElement('span');
+    nameEl.style.cssText = `color:${color};font-weight:bold;font-size:9px`;
     nameEl.textContent = (prefix ? prefix + ' ' : '') + label;
 
-    const autoRow = document.createElement('div');
-    autoRow.style.cssText = 'display:flex;align-items:baseline;gap:3px';
-    const autoLbl = document.createElement('span');
-    autoLbl.style.cssText = 'color:#556;font-size:7px';
-    autoLbl.textContent = prefix ? '' : 'Auto';
-    const autoVal = document.createElement('span');
-    autoVal.style.cssText = `color:${autoColor||'#44ff88'};font-weight:bold;font-size:10px;line-height:1.2;white-space:nowrap`;
-    autoVal.textContent = autoTxt;
-    autoRow.append(autoLbl, autoVal);
+    const valEl = document.createElement('span');
+    valEl.style.cssText = `color:${autoColor||'#44ff88'};font-weight:bold;font-size:11px`;
+    valEl.textContent = autoTxt;
 
-    const manualRow = document.createElement('div');
-    manualRow.style.cssText = 'display:none;align-items:baseline;gap:3px';
+    const manualEl = document.createElement('span');
+    manualEl.style.cssText = `font-size:9px;display:none`;
+    manualEl.textContent = '';
 
-    const confEl = document.createElement('div');
-    confEl.style.cssText = `color:${confColor||'#44ff88'};font-size:7px;white-space:nowrap`;
-    confEl.textContent = confTxt;
-
-    card.append(nameEl, autoRow, manualRow, confEl);
-    card._manualEl = manualRow;
+    card.append(nameEl, valEl);
+    if (confTxt) {
+      const confEl = document.createElement('span');
+      confEl.style.cssText = `color:${confColor||'#aaa'};font-size:8px`;
+      confEl.textContent = confTxt;
+      card.appendChild(confEl);
+    }
+    card.appendChild(manualEl);
+    card._manualEl = manualEl;
     return card;
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: slider range ±100% do buffer.');
+  console.log('[MedLat] 40-chart: snap indicator removido, janela grande padrão, cards compactos.');
 })();
