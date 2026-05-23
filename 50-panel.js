@@ -214,7 +214,6 @@
 
   /* ── Copiar tabela de resultados ── */
   function copyResults(btn) {
-    const refDed = ML.CHANNELS[0].deduction || 0;
     const lines = ML.CHANNELS
       .filter(ch => ch.active)
       .map((ch, i) => {
@@ -517,7 +516,6 @@
       lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;flex-shrink:0`;
       lumEl.textContent = '--'; ch.lumEl = lumEl;
 
-      /* pts: oculto mas necessário internamente */
       const ptsEl = document.createElement('span');
       ptsEl.style.cssText = 'display:none';
       ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
@@ -542,20 +540,10 @@
       });
       r2.append(sp('px','font-size:7px;color:#aaa;flex-shrink:0'), szM, szInp, szP);
 
-      /* linha 3: lag (só canais não-ref) */
-      if (i !== 0) {
-        const r3 = row(2);
-        r3.style.overflow = 'hidden';
-        const lagSel = mkLagSelect(ch);
-        r3.append(sp('lag','font-size:7px;color:#aaa;flex-shrink:0'), lagSel);
-        card.appendChild(r3);
-      }
-
-      /* linha 4 (ou 3 para ref): dedução */
-      const r4 = row(2);
-      r4.style.overflow = 'hidden';
+      /* linha 3: dedução (todos os canais) */
+      const r3ded = row(2);
+      r3ded.style.overflow = 'hidden';
       const dedInp = mkDeductionInput(ch);
-
       const btnAuto = document.createElement('button');
       btnAuto.innerHTML = '\ud83d\udd0d';
       btnAuto.title = 'Detectar dedu\u00e7\u00e3o automaticamente';
@@ -575,16 +563,19 @@
           setTimeout(() => btnAuto.style.color = '#ff9d00', 800);
         }
       };
+      r3ded.append(sp('ded','font-size:7px;color:#ff9d00;flex-shrink:0'), dedInp, btnAuto);
 
-      r4.append(sp('ded','font-size:7px;color:#ff9d00;flex-shrink:0'), dedInp, btnAuto);
-
-      card.append(r1, r2, r4);
-      /* inserir r3 (lag) antes de r4 se não-ref — já adicionado acima na ordem certa */
+      /* linha 4: lag (só canais não-ref) */
+      const rows = [r1, r2, r3ded];
       if (i !== 0) {
-        // move r4 para depois de r3
-        card.appendChild(r4);
+        const r4lag = row(2);
+        r4lag.style.overflow = 'hidden';
+        const lagSel = mkLagSelect(ch);
+        r4lag.append(sp('lag','font-size:7px;color:#aaa;flex-shrink:0'), lagSel);
+        rows.push(r4lag);
       }
 
+      rows.forEach(r => card.appendChild(r));
       probeGrid.appendChild(card);
     });
 
