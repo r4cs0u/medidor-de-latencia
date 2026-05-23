@@ -31,15 +31,29 @@
         const yAxis = chart.scales.y;
         if (!xAxis || !yAxis) return;
         ctx.save();
-        peakAnnotations.forEach(({ xIndex, color, snap: isSnap }) => {
+        peakAnnotations.forEach(({ xIndex, color, snapDist }) => {
           const xPx = xAxis.getPixelForValue(xIndex);
           if (xPx < xAxis.left || xPx > xAxis.right) return;
           ctx.beginPath();
           ctx.moveTo(xPx, yAxis.top);
           ctx.lineTo(xPx, yAxis.bottom);
-          ctx.strokeStyle = isSnap ? '#ffffff88' : color + '40';
-          ctx.lineWidth   = isSnap ? 2 : 1;
-          ctx.setLineDash(isSnap ? [3, 3] : []);
+          if (snapDist === 0) {
+            ctx.strokeStyle = '#ffffff88';
+            ctx.lineWidth   = 2;
+            ctx.setLineDash([3, 3]);
+          } else if (Math.abs(snapDist) === 1) {
+            ctx.strokeStyle = '#88888888';
+            ctx.lineWidth   = 1.5;
+            ctx.setLineDash([]);
+          } else if (snapDist != null && Math.abs(snapDist) <= SNAP_RADIUS) {
+            ctx.strokeStyle = '#55555544';
+            ctx.lineWidth   = 1;
+            ctx.setLineDash([]);
+          } else {
+            ctx.strokeStyle = color + '40';
+            ctx.lineWidth   = 1;
+            ctx.setLineDash([]);
+          }
           ctx.stroke();
           ctx.setLineDash([]);
         });
@@ -144,7 +158,6 @@
     htitle.textContent = '\uD83D\uDCCA Lumin\u00e2ncia';
     htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 
-    // Modo padrão é sempre 'parallel', tanto no auto quanto no manual
     let chartMode = 'parallel';
     const btnMode = document.createElement('button');
     btnMode.style.cssText = 'background:#1e2a3a;border:1px solid #2a3a50;color:#00d4ff;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap';
@@ -168,7 +181,6 @@
     updatePeaksBtn();
     btnPeaks.onclick = () => { showPeaks = !showPeaks; updatePeaksBtn(); rebuildCharts(); };
 
-    // Seletor de quantidade de picos
     const selPeaks = document.createElement('select');
     selPeaks.style.cssText = [
       'background:#1e2a3a;border:1px solid #2a3a50;color:#ffd700',
@@ -184,7 +196,6 @@
     });
     selPeaks.addEventListener('change', () => {
       MAX_PEAKS = parseInt(selPeaks.value);
-      // Limpa cache de picos para forçar recálculo
       Object.keys(peaksByChannel).forEach(k => delete peaksByChannel[k]);
       rebuildCharts();
     });
@@ -254,10 +265,16 @@
     }
 
     const autoOffsetMs = {};
-    ML.CHANNELS.forEach(ch => { autoOffsetMs[ch.id] = 0; });
+    ML.CHANNELS.forEach(ch => {
+      autoOffsetMs[ch.id] = (ML.manualOffsets && typeof ML.manualOffsets[ch.id] === 'number')
+        ? ML.manualOffsets[ch.id]
+        : 0;
+    });
     results.forEach(r => {
       if (r.isReference || !r.channel || r.error || r.skipped || r.offsetMs == null) return;
-      autoOffsetMs[r.channel.id] = r.offsetMs;
+      if (!(ML.manualOffsets && typeof ML.manualOffsets[r.channel.id] === 'number')) {
+        autoOffsetMs[r.channel.id] = r.offsetMs;
+      }
     });
 
     const fineShiftSamples = {};
@@ -280,7 +297,8 @@
         const ch = r.channel;
         let autoTxt='--', autoColor='#445', confTxt=null, confColor='#445';
         if (!r.error && !r.skipped) {
-          const s   = r.offsetMs / 1000;
+          const baseMs = autoOffsetMs[ch.id] || 0;
+          const s   = baseMs / 1000;
           autoTxt   = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
           autoColor = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#ff8844';
           const pct = r.confidence != null ? Math.round(r.confidence * 100) : null;
@@ -288,7 +306,7 @@
         } else { autoTxt = r.error ? 'ERR' : '--'; autoColor = r.error ? '#ff4444' : '#445'; }
 
         const card = mkCardCompact(ch.label, '', ch.color, autoTxt, confTxt, autoColor, confColor);
-        cardRefs[ch.id] = { autoMs: r.offsetMs || 0, ch, manualEl: card._manualEl };
+        cardRefs[ch.id] = { autoMs: autoOffsetMs[ch.id] || 0, ch, manualEl: card._manualEl };
         bar.appendChild(card);
       });
       body.appendChild(bar);
@@ -357,17 +375,6 @@
       const diff = ML.correlator.diffSeries(lums);
       peaksByChannel[ch.id] = topPeaks(diff, ch.color, MAX_PEAKS).map(p => p.xIndex);
       return peaksByChannel[ch.id];
-    }
-
-    function checkSnap(ch, totalShiftSamples) {
-      const refPeaks = getPeakIndices(activeChannels[0]);
-      const chPeaks  = getPeakIndices(ch).map(p => p + totalShiftSamples);
-      for (const cp of chPeaks) {
-        for (const rp of refPeaks) {
-          if (Math.abs(cp - rp) <= SNAP_RADIUS) return rp - (cp - totalShiftSamples);
-        }
-      }
-      return null;
     }
 
     activeChannels.forEach((ch, idx) => {
@@ -442,28 +449,35 @@
       'width:100%;margin-top:1px',
     ].join(';');
     btnConfirm.onclick = () => {
-      ML.manualOffsets = {};
+      ML.manualOffsets = ML.manualOffsets || {};
       activeChannels.forEach((ch, idx) => {
         if (idx === 0) return;
         const iv   = realIvMs(ch);
         const fine = fineShiftSamples[ch.id] || 0;
-        ML.manualOffsets[ch.id] = (autoOffsetMs[ch.id] || 0) + fine * iv;
+        const totalMs = (autoOffsetMs[ch.id] || 0) + fine * iv;
+        ML.manualOffsets[ch.id] = totalMs;
+        autoOffsetMs[ch.id] = totalMs;
+        fineShiftSamples[ch.id] = 0;
+        if (sliderRefs[ch.id]) {
+          sliderRefs[ch.id].slider.value = 0;
+          sliderRefs[ch.id].valLbl.textContent = (totalMs >= 0 ? '+' : '') + (totalMs / 1000).toFixed(3) + 's';
+          sliderRefs[ch.id].valLbl.style.color = '#aaa';
+        }
+        hideCardManual(ch.id);
       });
       if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
+      rebuildCharts();
       btnConfirm.textContent = '\u2714 Salvo!';
       setTimeout(() => { btnConfirm.textContent = '\u2714 Confirmar ajuste'; }, 1500);
     };
     manualBar.appendChild(btnConfirm);
     body.appendChild(manualBar);
 
-    // Ativar manual NÃO muda o chartMode — paralelo permanece paralelo
-    // O modo só muda se o usuário clicar explicitamente no botão Paralelo/Sobreposto
     btnManual.onclick = () => {
       manualMode = !manualMode;
       updateManualBtn();
       manualBar.style.display = manualMode ? 'flex' : 'none';
-      if (manualMode) {
-        Object.values(sliderRefs).forEach(r => r.doReset());
+      if (!manualMode) {
         activeChannels.forEach(ch => hideCardManual(ch.id));
       }
       rebuildCharts();
@@ -530,7 +544,14 @@
 
     function markSnapPeaks(annotations, refAnnotations) {
       annotations.forEach(a => {
-        if (refAnnotations.some(r => Math.abs(r.xIndex - a.xIndex) <= SNAP_RADIUS)) a.snap = true;
+        let bestDist = null;
+        refAnnotations.forEach(r => {
+          const dist = a.xIndex - r.xIndex;
+          if (Math.abs(dist) <= SNAP_RADIUS && (bestDist == null || Math.abs(dist) < Math.abs(bestDist))) {
+            bestDist = dist;
+          }
+        });
+        if (bestDist != null) a.snapDist = bestDist;
       });
     }
 
@@ -695,5 +716,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: SNAP_RADIUS=3, modo padrão paralelo, seletor de picos 15/20/25/30.');
+  console.log('[MedLat] 40-chart: snap com centro branco e ±1 cinza; ajuste confirmado persiste no gráfico.');
 })();
