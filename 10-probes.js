@@ -68,7 +68,6 @@
   }
 
   const EDGE_THRESH = 8;
-  // PROBE_GAP = 0: bordas se sobrepõem (sem margem entre probes)
   const PROBE_GAP   = 0;
 
   function edgeSnap(ch, x, y) {
@@ -107,7 +106,6 @@
       const oT = parseInt(od.style.top)  || 0;
       const oR = oL + ow, oB = oT + oh;
       const bL = x, bR = x + pw, bT = y, bB = y + ph;
-      // PROBE_GAP=0: colisão apenas quando há sobreposição real (bordas podem se tocar)
       if (bR <= oL || bL >= oR || bB <= oT || bT >= oB) return;
       const overlapL = bR - oL, overlapR = oR - bL;
       const overlapT = bB - oT, overlapB = oB - bT;
@@ -131,21 +129,21 @@
     }, 180);
   }
 
-  // Estado padrão (sem foco): borda tracejada
-  // Estado focado: borda sólida brilhante
+  // Padrão: borda sólida (sem foco)
   function applyDefaultStyle(ch) {
     if (!ch.probe) return;
     ch.probe.style.outline       = 'none';
     ch.probe.style.outlineOffset = '0px';
-    ch.probe.style.border        = `1px dashed ${ch.color}99`;
+    ch.probe.style.border        = `1px solid ${ch.color}99`;
     ch.probe.style.opacity       = '1';
   }
 
+  // Foco/drag: borda tracejada (sem outline duplo)
   function applyFocusStyle(ch) {
     if (!ch.probe) return;
-    ch.probe.style.border        = `1px solid ${ch.color}`;
-    ch.probe.style.outline       = `2px solid ${ch.color}cc`;
-    ch.probe.style.outlineOffset = '1px';
+    ch.probe.style.outline       = 'none';
+    ch.probe.style.outlineOffset = '0px';
+    ch.probe.style.border        = `2px dashed ${ch.color}`;
     ch.probe.style.opacity       = '0.95';
   }
 
@@ -162,15 +160,14 @@
     d.style.cssText = [
       `position:fixed;left:${x}px;top:${y}px`,
       `width:${pw}px;height:${ph}px`,
-      // borda padrão tracejada
-      `border:1px dashed ${ch.color}99`,
+      `border:1px solid ${ch.color}99`,
       `background:${ch.color}10`,
       `box-shadow:0 0 6px ${ch.color}88`,
       'cursor:move',
       'z-index:99997',
       'box-sizing:border-box',
       'pointer-events:auto',
-      'transition:opacity .2s,border .15s,outline .15s,box-shadow .15s',
+      'transition:opacity .2s,border .15s,box-shadow .15s',
     ].join(';');
 
     const hLine = document.createElement('div');
@@ -292,5 +289,5 @@
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  console.log('[MedLat] 10-probes: borda tracejada padrão, colisão bordas sobrepostas (PROBE_GAP=0).');
+  console.log('[MedLat] 10-probes: borda sólida padrão → tracejada no foco, colisão bordas sobrepostas.');
 })();

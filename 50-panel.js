@@ -24,10 +24,9 @@
     ML._tipsShown = true;
 
     const TIPS = [
-      ['🎯', 'Centralize as probes — evite bordas, legendas e barras'],
+      ['🎯', 'Centralize as probes sobre a imagem'],
       ['📺', 'Grave durante o programa, nunca no intervalo'],
       ['⏱️', 'Não interrompa — aguarde o sinal sonoro (~2 min)'],
-      ['🌐', 'Feeds via internet têm dilatação temporal variável'],
       ['🖥️', 'Evite processos pesados durante a gravação'],
     ];
 
@@ -63,7 +62,7 @@
       ic.style.cssText = 'font-size:11px;flex-shrink:0;margin-top:1px';
       const tx = document.createElement('span');
       tx.textContent = text;
-      tx.style.cssText = 'font-size:9px;color:#aaa';
+      tx.style.cssText = 'font-size:9px;color:#fff';
       row.append(ic, tx);
       body.appendChild(row);
     });
@@ -117,7 +116,7 @@
       'position:fixed;top:8px;right:8px;z-index:99999',
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
-      'font-family:monospace;font-size:11px;color:#ccc',
+      'font-family:monospace;font-size:11px;color:#fff',
       'user-select:none;width:230px;overflow:hidden',
     ].join(';');
 
@@ -151,7 +150,7 @@
       wrap.style.cssText = 'padding:4px 8px;border-bottom:1px solid #1a1a30';
       const lh = document.createElement('div');
       lh.textContent = label;
-      lh.style.cssText = 'font-size:7px;color:#666;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #1a1a30;padding-bottom:2px;margin-bottom:4px';
+      lh.style.cssText = 'font-size:7px;color:#fff;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #1a1a30;padding-bottom:2px;margin-bottom:4px';
       wrap.appendChild(lh);
       return wrap;
     }
@@ -163,7 +162,7 @@
     function sp(txt, extra) {
       const s = document.createElement('span');
       s.textContent = txt;
-      s.style.cssText = 'font-size:9px;color:#aaa;white-space:nowrap;' + (extra || '');
+      s.style.cssText = 'font-size:9px;color:#fff;white-space:nowrap;' + (extra || '');
       return s;
     }
     function mkBtn(txt, bg, extra) {
@@ -181,12 +180,10 @@
       return inp;
     }
 
-    // — seletor de preset de lag
-    // labels atualizados: 'Até 5s' e 'Maior que 5s'
     function mkLagSelect(ch) {
       const sel = document.createElement('select');
       sel.style.cssText = [
-        'background:#111827;border:1px solid #2a3a50;color:#aaa',
+        'background:#111827;border:1px solid #2a3a50;color:#fff',
         'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
         'cursor:pointer;outline:none;flex-shrink:0',
       ].join(';');
@@ -205,7 +202,7 @@
       sel.addEventListener('change', () => {
         ch.lagPreset = sel.value;
         sel.style.borderColor = sel.value === 'auto' ? '#2a3a50' : '#ffd70088';
-        sel.style.color       = sel.value === 'auto' ? '#aaa'    : '#ffd700';
+        sel.style.color       = sel.value === 'auto' ? '#fff'    : '#ffd700';
       });
       if ((ch.lagPreset || 'auto') !== 'auto') {
         sel.style.borderColor = '#ffd70088';
@@ -234,11 +231,11 @@
     secTG.appendChild(rowPx);
 
     const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0;margin-top:4px');
-    function updateSnapBtn() { btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF'; btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e'; btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#888'; }
+    function updateSnapBtn() { btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF'; btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e'; btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#fff'; }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
 
     const btnCol = mkBtn('', '#2a1a0d', 'flex:1;min-width:0;margin-top:4px');
-    function updateColBtn() { btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF'; btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e'; btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#888'; }
+    function updateColBtn() { btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF'; btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e'; btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#fff'; }
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
 
     const rowToggle = row(4);
@@ -250,13 +247,12 @@
     const secDet = sec('Probes');
     ML.CHANNELS.forEach((ch, i) => {
       const chWrap = document.createElement('div');
-      // borda tracejada no card de probe (espelha estilo da probe na tela)
       chWrap.style.cssText = [
         'display:flex;flex-direction:column;gap:2px',
         'padding:3px 4px;border-radius:4px;margin-bottom:3px;overflow:hidden',
-        `border:1px dashed ${ch.color}55`,
+        `border:1px solid ${ch.color}55`,
         `background:${ch.color}0d`,
-        `border-left:2px dashed ${ch.color}99`,
+        `border-left:2px solid ${ch.color}99`,
         `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
       ].join(';');
       ch._panelRow = chWrap;
@@ -292,7 +288,7 @@
         if (e.key==='ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)-2); }
       });
 
-      r1.append(tog, lblInp, sp('px','font-size:8px;color:#555;flex-shrink:0'), szM, szInp, szP);
+      r1.append(tog, lblInp, sp('px','font-size:8px;color:#fff;flex-shrink:0'), szM, szInp, szP);
 
       // Linha 2: lag [select] | spacer | lum | pts
       const r2 = row(4);
@@ -302,7 +298,7 @@
       lumEl.textContent = '--'; ch.lumEl = lumEl;
 
       const ptsEl = document.createElement('span');
-      ptsEl.style.cssText = 'color:#888;font-size:8px;width:26px;text-align:right;flex-shrink:0;white-space:nowrap';
+      ptsEl.style.cssText = 'color:#fff;font-size:8px;width:26px;text-align:right;flex-shrink:0;white-space:nowrap';
       ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
 
       const spacer = document.createElement('span');
@@ -310,7 +306,7 @@
 
       if (i !== 0) {
         const lagSel = mkLagSelect(ch);
-        r2.append(sp('lag','font-size:8px;color:#aaa;flex-shrink:0'), lagSel, spacer, lumEl, ptsEl);
+        r2.append(sp('lag','font-size:8px;color:#fff;flex-shrink:0'), lagSel, spacer, lumEl, ptsEl);
       } else {
         r2.append(spacer, lumEl, ptsEl);
       }
@@ -326,10 +322,10 @@
     tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
     const thead = document.createElement('thead');
     const thr = document.createElement('tr');
-    ['Tela','Offset','Confian\u00e7a'].forEach((h, hi) => {
+    ['Tela','Offset'].forEach((h, hi) => {
       const th = document.createElement('th');
       th.textContent = h;
-      th.style.cssText = 'color:#555;font-weight:bold;font-size:7px;letter-spacing:.08em;text-transform:uppercase;padding:1px 3px;text-align:' + (hi===0?'left':'right') + ';border-bottom:1px solid #1a1a30';
+      th.style.cssText = 'color:#fff;font-weight:bold;font-size:7px;letter-spacing:.08em;text-transform:uppercase;padding:1px 3px;text-align:' + (hi===0?'left':'right') + ';border-bottom:1px solid #1a1a30';
       thr.appendChild(th);
     });
     thead.appendChild(thr);
@@ -345,14 +341,9 @@
       const tdOff = document.createElement('td');
       tdOff.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:10px;white-space:nowrap';
       tdOff.textContent  = i===0 ? '0.000s' : '--';
-      tdOff.style.color  = i===0 ? '#44ff88' : '#444';
+      tdOff.style.color  = i===0 ? '#44ff88' : '#fff';
       ch.offsetEl = tdOff;
-      const tdConf = document.createElement('td');
-      tdConf.style.cssText = 'text-align:right;padding:2px 3px;font-size:8px;white-space:nowrap';
-      tdConf.textContent = i===0 ? 'REF' : '--';
-      tdConf.style.color = i===0 ? '#44ff88aa' : '#444';
-      ch.confEl = tdConf;
-      tr.append(tdName, tdOff, tdConf);
+      tr.append(tdName, tdOff);
       tbody.appendChild(tr);
     });
     tbl.appendChild(tbody);
@@ -385,10 +376,9 @@
         ML.CHANNELS.forEach((ch, i) => {
           ch._prevPts   = 0;
           ch._stableCnt = 0;
-          if (ch.ptsEl) { ch.ptsEl.textContent = '0pt'; ch.ptsEl.style.color = '#888'; }
+          if (ch.ptsEl) { ch.ptsEl.textContent = '0pt'; ch.ptsEl.style.color = '#fff'; }
           if (i !== 0) {
-            if (ch.offsetEl) { ch.offsetEl.textContent = '--'; ch.offsetEl.style.color = '#444'; }
-            if (ch.confEl)   { ch.confEl.textContent   = '--'; ch.confEl.style.color = '#444'; }
+            if (ch.offsetEl) { ch.offsetEl.textContent = '--'; ch.offsetEl.style.color = '#fff'; }
           }
         });
       } else {
@@ -397,7 +387,7 @@
     };
 
     btnAnalyze.onclick = () => {
-      statusEl.textContent = 'Calculando...'; statusEl.style.color = '#aaa';
+      statusEl.textContent = 'Calculando...'; statusEl.style.color = '#fff';
       setTimeout(() => {
         const results = ML.correlator.analyzeBestAll();
         results.forEach(r => {
@@ -406,21 +396,11 @@
           if (ch.offsetEl) {
             if (r.skipped || r.error) {
               ch.offsetEl.textContent = r.error ? 'ERRO' : '--';
-              ch.offsetEl.style.color = r.error ? '#ff4444' : '#555';
+              ch.offsetEl.style.color = r.error ? '#ff4444' : '#fff';
             } else {
               const s = r.offsetMs / 1000;
               ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
               ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
-            }
-          }
-          if (ch.confEl) {
-            if (r.confidence != null && !r.error && !r.skipped) {
-              const pct = Math.round(r.confidence * 100);
-              ch.confEl.textContent = pct + '%';
-              ch.confEl.style.color = r.confidence > 0.6 ? '#44ff88' : r.confidence > 0.3 ? '#ffd700' : '#ff4444';
-            } else {
-              ch.confEl.textContent = '--';
-              ch.confEl.style.color = '#555';
             }
           }
         });
@@ -447,7 +427,7 @@
     /* Status */
     const statusEl = document.createElement('div');
     statusEl.style.cssText = [
-      'font-size:9px;color:#888;padding:3px 8px 4px',
+      'font-size:9px;color:#fff;padding:3px 8px 4px',
       'border-top:1px solid #1a1a30;text-align:center;font-style:italic',
       'background:#0e0e1a;border-radius:0 0 6px 6px',
       'overflow:hidden;white-space:nowrap;text-overflow:ellipsis',
@@ -482,7 +462,7 @@
             ch.ptsEl.style.color = '#44ff88';
           } else {
             ch.ptsEl.textContent = pts + 'pt';
-            ch.ptsEl.style.color = '#888';
+            ch.ptsEl.style.color = '#fff';
           }
         }
         if (!ML.state.recording) { ch._prevPts = pts; ch._stableCnt = 0; return; }
