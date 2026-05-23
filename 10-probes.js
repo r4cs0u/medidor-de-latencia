@@ -289,31 +289,35 @@
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  // Posições iniciais baseadas no layout do multiviewer da imagem de referência.
-  // Coordenadas expressas como fração da viewport para se adaptarem a qualquer resolução.
-  // Referência: área de vídeo ocupa ~25%-88% horizontal e ~14%-87% vertical.
-  // ch0 Referência: célula 2 linha 1  (~37%, 24%)
-  // ch1 Tela 2    : célula 1 linha 1  (~26%, 24%)
-  // ch2 Tela 3    : célula 3 linha 1  (~52%, 24%)
-  // ch3 Tela 4    : célula 3 linha 2  (~63%, 40%)
-  // ch4 Tela 5    : célula 5 linha 1  (~76%, 24%)
-  const INIT_POS = [
-    [0.37, 0.24],  // ch0 Referência
-    [0.26, 0.24],  // ch1 Tela 2
-    [0.52, 0.24],  // ch2 Tela 3
-    [0.63, 0.40],  // ch3 Tela 4
-    [0.76, 0.24],  // ch4 Tela 5
+  // Posições iniciais calibradas manualmente via ferramenta de posicionamento.
+  // Valores são o CENTRO de cada probe como fração da viewport.
+  // A probe é posicionada subtraindo metade do tamanho (238px) do centro.
+  // ch0 Referência : fracX=0.555 fracY=0.322
+  // ch1 Tela 2     : fracX=0.308 fracY=0.322
+  // ch2 Tela 3     : fracX=0.432 fracY=0.322
+  // ch3 Tela 4     : fracX=0.681 fracY=0.322
+  // ch4 Tela 5     : fracX=0.804 fracY=0.322
+  const INIT_CENTER = [
+    [0.555, 0.322],  // ch0 Referência
+    [0.308, 0.322],  // ch1 Tela 2
+    [0.432, 0.322],  // ch2 Tela 3
+    [0.681, 0.322],  // ch3 Tela 4
+    [0.804, 0.322],  // ch4 Tela 5
   ];
+
+  ML.state.probeW = 238;
 
   ML.CHANNELS.forEach((ch, i) => {
     makeOff(ch);
-    const x = Math.round(vw * INIT_POS[i][0]);
-    const y = Math.round(vh * INIT_POS[i][1]);
+    const pw = probeW(ch);
+    const ph = probeH(ch);
+    const x = Math.round(vw * INIT_CENTER[i][0] - pw / 2);
+    const y = Math.round(vh * INIT_CENTER[i][1] - ph / 2);
     mkProbe(ch, x, y);
   });
 
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  console.log('[MedLat] 10-probes carregado. Posições iniciais baseadas no layout do multiviewer.');
+  console.log('[MedLat] 10-probes carregado. Posições calibradas manualmente. px=238.');
 })();
