@@ -1,3 +1,4 @@
+
 (function () {
   const ML = window.MedLat;
 
@@ -18,10 +19,10 @@
     } catch(e) {}
   }
 
-  /* ── Boas Práticas ─────────────────────────────── */
+  /* ── Boas Práticas (toggle, arrastável) ──────────── */
   function showTips(anchorPanel) {
-    if (ML._tipsShown) return;
-    ML._tipsShown = true;
+    const existing = document.getElementById('ml-tips');
+    if (existing) { existing.remove(); return; }
 
     const TIPS = [
       ['🎯', 'Centralize as probes sobre a imagem'],
@@ -42,15 +43,26 @@
 
     const hdr = document.createElement('div');
     hdr.style.cssText = [
-      'display:flex;align-items:center;padding:4px 8px',
+      'display:flex;align-items:center;padding:4px 8px;gap:4px',
       'background:#1a1a2e;border-bottom:1px solid #1e1e3a',
-      'border-radius:6px 6px 0 0',
+      'border-radius:6px 6px 0 0;cursor:move',
     ].join(';');
     const htitle = document.createElement('span');
     htitle.textContent = '💡 Boas Práticas';
-    htitle.style.cssText = 'color:#ffd700;font-weight:bold;font-size:9px;letter-spacing:.06em;flex:1';
-    hdr.appendChild(htitle);
+    htitle.style.cssText = 'color:#ffd700;font-weight:bold;font-size:9px;letter-spacing:.06em;flex:1;pointer-events:none';
+    const btnClose = document.createElement('button');
+    btnClose.textContent = '✕';
+    btnClose.title = 'Fechar';
+    btnClose.style.cssText = 'background:#c6282833;border:none;color:#ff8888;border-radius:3px;padding:0 5px;cursor:pointer;font-size:10px;line-height:16px;flex-shrink:0';
+    btnClose.onclick = () => tip.remove();
+    hdr.append(htitle, btnClose);
     tip.appendChild(hdr);
+
+    // drag
+    let td=false,tx2=0,ty2=0;
+    hdr.addEventListener('mousedown',e=>{if(e.target===btnClose)return;td=true;tx2=e.clientX-tip.offsetLeft;ty2=e.clientY-tip.offsetTop;});
+    window.addEventListener('mousemove',e=>{if(!td)return;tip.style.left=Math.max(0,e.clientX-tx2)+'px';tip.style.top=Math.max(0,e.clientY-ty2)+'px';});
+    window.addEventListener('mouseup',()=>td=false);
 
     const body = document.createElement('div');
     body.style.cssText = 'padding:6px 8px;display:flex;flex-direction:column;gap:5px';
@@ -67,20 +79,6 @@
       body.appendChild(row);
     });
     tip.appendChild(body);
-
-    const foot = document.createElement('div');
-    foot.style.cssText = 'padding:5px 8px;border-top:1px solid #1a1a30';
-    const btnOk = document.createElement('button');
-    btnOk.textContent = '✔ Entendido';
-    btnOk.style.cssText = [
-      'width:100%;background:#1a2a1a;border:1px solid #44ff8855',
-      'color:#44ff88;border-radius:3px;padding:3px 0',
-      'cursor:pointer;font:bold 9px monospace',
-    ].join(';');
-    btnOk.onclick = () => tip.remove();
-    foot.appendChild(btnOk);
-    tip.appendChild(foot);
-
     document.body.appendChild(tip);
 
     function reposition() {
@@ -100,15 +98,110 @@
     }
 
     requestAnimationFrame(reposition);
-    window.addEventListener('resize', reposition);
+  }
+
+  /* ── Instruções de Uso (toggle, arrastável) ──────── */
+  function showInstructions(anchorPanel) {
+    const existing = document.getElementById('ml-instructions');
+    if (existing) { existing.remove(); return; }
+
+    const STEPS = [
+      { section: '⚙️ PREPARAÇÃO', items: [
+        '① Defina a quantidade de telas (probes)',
+        '② Ajuste o tamanho global ou por tela (px)',
+        '③ Posicione cada probe sobre o vídeo — mouse ou setas',
+        '④ Selecione o lag estimado por tela: Até 5s ou Maior que 5s',
+      ]},
+      { section: '⏺ GRAVAÇÃO', items: [
+        '⑤ Clique em ● GRAVAR — aguarde o sinal sonoro (~2 min)',
+      ]},
+      { section: '📊 ANÁLISE', items: [
+        '⑥ A latência estimada é exibida por tela automaticamente',
+        '⑦ Ajuste fino: clique em Manual e mova as réguas',
+        '⑧ Alinhe os picos tracejados (linhas grossas) entre os sinais',
+        '⑨ Ajuste a quantidade de picos visíveis em Picos',
+        '⑩ Clique em ✔ Confirmar para exportar e copiar os resultados',
+      ]},
+    ];
+
+    const win = document.createElement('div');
+    win.id = 'ml-instructions';
+    win.style.cssText = [
+      'position:fixed;z-index:99998',
+      'background:#12121fee;border:1px solid #2a2a4a',
+      'border-radius:6px;box-shadow:0 4px 24px #000c',
+      'font-family:monospace;color:#ccc',
+      'width:250px;overflow:hidden',
+    ].join(';');
+
+    const hdr = document.createElement('div');
+    hdr.style.cssText = [
+      'display:flex;align-items:center;padding:4px 8px;gap:4px',
+      'background:#1a1a2e;border-bottom:1px solid #1e1e3a',
+      'border-radius:6px 6px 0 0;cursor:move',
+    ].join(';');
+    const htitle = document.createElement('span');
+    htitle.textContent = '📋 Como usar';
+    htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:9px;letter-spacing:.06em;flex:1;pointer-events:none';
+    const btnClose = document.createElement('button');
+    btnClose.textContent = '✕';
+    btnClose.title = 'Fechar';
+    btnClose.style.cssText = 'background:#c6282833;border:none;color:#ff8888;border-radius:3px;padding:0 5px;cursor:pointer;font-size:10px;line-height:16px;flex-shrink:0';
+    btnClose.onclick = () => win.remove();
+    hdr.append(htitle, btnClose);
+    win.appendChild(hdr);
+
+    // drag
+    let id2=false,ix=0,iy=0;
+    hdr.addEventListener('mousedown',e=>{if(e.target===btnClose)return;id2=true;ix=e.clientX-win.offsetLeft;iy=e.clientY-win.offsetTop;});
+    window.addEventListener('mousemove',e=>{if(!id2)return;win.style.left=Math.max(0,e.clientX-ix)+'px';win.style.top=Math.max(0,e.clientY-iy)+'px';});
+    window.addEventListener('mouseup',()=>id2=false);
+
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:6px 8px;display:flex;flex-direction:column;gap:6px';
+
+    STEPS.forEach(({ section, items }) => {
+      const secDiv = document.createElement('div');
+      const secLbl = document.createElement('div');
+      secLbl.textContent = section;
+      secLbl.style.cssText = 'font-size:8px;font-weight:bold;color:#ffd700;letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid #2a2a4a;padding-bottom:3px;margin-bottom:4px';
+      secDiv.appendChild(secLbl);
+      items.forEach(txt => {
+        const item = document.createElement('div');
+        item.textContent = txt;
+        item.style.cssText = 'font-size:9px;color:#ddd;line-height:1.5;padding-left:2px';
+        secDiv.appendChild(item);
+      });
+      body.appendChild(secDiv);
+    });
+
+    win.appendChild(body);
+    document.body.appendChild(win);
+
+    function reposition() {
+      const pr  = anchorPanel.getBoundingClientRect();
+      const wH  = win.offsetHeight;
+      const wW  = win.offsetWidth;
+      const vw  = window.innerWidth;
+      const vh  = window.innerHeight;
+      const mg  = 6;
+      let top  = pr.bottom + mg;
+      if (top + wH > vh - mg) top = Math.max(mg, pr.top - wH - mg);
+      let left = pr.left;
+      if (left + wW > vw - mg) left = vw - wW - mg;
+      if (left < mg) left = mg;
+      win.style.top  = top  + 'px';
+      win.style.left = left + 'px';
+    }
+
+    requestAnimationFrame(reposition);
   }
 
   function init() {
-    ['ml-panel', 'ml-chart-overlay', 'ml-tips'].forEach(id => {
+    ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-instructions'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.remove();
     });
-    ML._tipsShown = false;
 
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
@@ -123,7 +216,7 @@
     // Header
     const hdr = document.createElement('div');
     hdr.style.cssText = [
-      'display:flex;align-items:center;gap:6px;overflow:hidden',
+      'display:flex;align-items:center;gap:4px;overflow:hidden',
       'padding:4px 8px;cursor:move',
       'border-bottom:1px solid #1e1e3a',
       'background:#1a1a2e;border-radius:6px 6px 0 0',
@@ -131,11 +224,26 @@
     const ttl = document.createElement('span');
     ttl.textContent = '\uD83D\uDCE1 MED. LAT\u00CANCIA';
     ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
+
     const btnX = document.createElement('button');
     btnX.textContent = '\u2715';
+    btnX.title = 'Fechar tudo';
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove()); };
-    hdr.append(ttl, btnX);
+
+    const btnTips = document.createElement('button');
+    btnTips.textContent = '💡';
+    btnTips.title = 'Boas Práticas';
+    btnTips.style.cssText = 'background:#2a2a1a;border:1px solid #ffd70044;color:#ffd700;border-radius:3px;padding:0 5px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
+    btnTips.onclick = (e) => { e.stopPropagation(); showTips(panel); };
+
+    const btnInstr = document.createElement('button');
+    btnInstr.textContent = '📋';
+    btnInstr.title = 'Como usar';
+    btnInstr.style.cssText = 'background:#1a2a2a;border:1px solid #00d4ff44;color:#00d4ff;border-radius:3px;padding:0 5px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
+    btnInstr.onclick = (e) => { e.stopPropagation(); showInstructions(panel); };
+
+    hdr.append(ttl, btnTips, btnInstr, btnX);
     panel.appendChild(hdr);
 
     // Drag
@@ -230,90 +338,100 @@
     rowPx.append(sp('PX Global', 'flex-shrink:0'), btnPxM, pxInp, btnPxP);
     secTG.appendChild(rowPx);
 
-    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0;margin-top:4px');
-    function updateSnapBtn() { btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF'; btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e'; btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#fff'; }
-    btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
+    const cntInp = mkNum(ML.CHANNELS.filter(c => c.active).length, 1, ML.CHANNELS.length, 1, 38);
+    function applyCount(n) {
+      const c = Math.max(1, Math.min(ML.CHANNELS.length, n));
+      cntInp.value = c;
+      ML.CHANNELS.forEach((ch, i) => {
+        const want = i < c;
+        if (want && !ch.active) { ch.active = true; ch.show(); }
+        else if (!want && ch.active) { ch.active = false; ch.hide(); }
+      });
+      renderChannelRows();
+    }
+    const btnCntM = mkBtn('\u2212', '#1e2a3a', 'padding:2px 5px');
+    const btnCntP = mkBtn('+', '#1e2a3a', 'padding:2px 5px');
+    btnCntM.onclick = () => applyCount((parseInt(cntInp.value) || 1) - 1);
+    btnCntP.onclick = () => applyCount((parseInt(cntInp.value) || 1) + 1);
+    cntInp.addEventListener('change', () => applyCount(parseInt(cntInp.value) || 1));
+    cntInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyCount(parseInt(cntInp.value) || 1); cntInp.blur(); } });
+    const rowCnt = row(4);
+    rowCnt.append(sp('Telas', 'flex-shrink:0'), btnCntM, cntInp, btnCntP);
+    secTG.appendChild(rowCnt);
 
-    const btnCol = mkBtn('', '#2a1a0d', 'flex:1;min-width:0;margin-top:4px');
-    function updateColBtn() { btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF'; btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e'; btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#fff'; }
-    btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
-
-    const rowToggle = row(4);
-    rowToggle.append(btnSnap, btnCol);
-    secTG.appendChild(rowToggle);
     panel.appendChild(secTG);
 
-    /* ── Seção: Probes ── */
-    const secDet = sec('Probes');
-    ML.CHANNELS.forEach((ch, i) => {
-      const chWrap = document.createElement('div');
-      chWrap.style.cssText = [
-        'display:flex;flex-direction:column;gap:2px',
-        'padding:3px 4px;border-radius:4px;margin-bottom:3px;overflow:hidden',
-        `border:1px solid ${ch.color}55`,
-        `background:${ch.color}0d`,
-        `border-left:2px solid ${ch.color}99`,
-        `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
-      ].join(';');
-      ch._panelRow = chWrap;
+    /* ── Seção: Detalhes por canal ── */
+    const secDet = sec('Detalhes');
+    function renderChannelRows() {
+      while (secDet.children.length > 1) secDet.removeChild(secDet.lastChild);
+      ML.CHANNELS.forEach((ch, i) => {
+        if (!ch.active) return;
+        const chWrap = document.createElement('div');
+        chWrap.style.cssText = `border-bottom:1px solid ${ch.color}22;padding:3px 0 3px 0`;
 
-      // Linha 1: ● label | px − [n] +
-      const r1 = row(4);
-      const tog = document.createElement('button');
-      tog.style.cssText = `width:9px;height:9px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
-      tog.onclick = () => {
-        ch.active = !ch.active;
-        tog.style.background = ch.active ? ch.color : 'transparent';
-        chWrap.style.opacity = ch.active ? 1 : .4;
-        ch.probe.style.display = ch.active ? 'block' : 'none';
-        if (!ch.active) ch.prevLum = null;
-      };
+        // Linha 1: toggle | label | px [−] [inp] [+]
+        const r1 = row(3);
+        r1.style.overflow = 'hidden';
 
-      const lblInp = document.createElement('input');
-      lblInp.value = i === 0 ? '\u2605 ' + ch.label : ch.label;
-      lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis`;
-      lblInp.addEventListener('change', () => { ch.label = lblInp.value.replace(/^\u2605\s*/, ''); if (ch.probeLabel) ch.probeLabel.textContent = ch.label; });
+        const tog = document.createElement('div');
+        tog.style.cssText = `width:8px;height:8px;border-radius:50%;background:${ch.color};flex-shrink:0;cursor:pointer`;
+        tog.title = `${ch.label} – clique para mostrar/ocultar probe`;
+        tog.onclick = () => {
+          ch._probeVisible = !ch._probeVisible;
+          if (ch._probeEl) ch._probeEl.style.display = ch._probeVisible === false ? 'none' : '';
+          tog.style.opacity = ch._probeVisible === false ? '0.35' : '1';
+        };
 
-      const szInp = mkNum(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 38);
-      ch._szInp = szInp;
-      function applyChanPx(v) { const c = Math.max(16, Math.min(500, Math.round(v/2)*2)); ch.probeW = c; szInp.value = c; if (ch.active && ch.resize) ch.resize(); }
-      const szM = mkBtn('\u2212', '#1e2a3a', 'padding:1px 3px;font-size:8px');
-      const szP = mkBtn('+',    '#1e2a3a', 'padding:1px 3px;font-size:8px');
-      szM.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) - 2);
-      szP.onclick = () => applyChanPx((ch.probeW != null ? ch.probeW : ML.state.probeW) + 2);
-      szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
-      szInp.addEventListener('keydown', e => {
-        if (e.key==='Enter')     { e.preventDefault(); applyChanPx(parseInt(szInp.value)||ML.state.probeW); szInp.blur(); }
-        if (e.key==='ArrowUp')   { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)+2); }
-        if (e.key==='ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value)||16)-2); }
+        const lblInp = document.createElement('input');
+        lblInp.type = 'text';
+        lblInp.value = ch.label;
+        lblInp.title = 'Nome do canal (clique para editar)';
+        lblInp.style.cssText = `background:transparent;border:none;border-bottom:1px solid ${ch.color}55;color:${ch.color};font:bold 9px monospace;width:0;flex:1;min-width:0;outline:none;padding:0 2px`;
+        lblInp.addEventListener('change', () => { ch.label = lblInp.value.trim() || ch.label; if (ch._tdName) ch._tdName.textContent = (i===0?'\u2605 ':'') + ch.label; });
+
+        const szInp = mkNum(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 42);
+        ch._szInp = szInp;
+        function applySz(v) {
+          const c2 = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
+          ch.probeW = c2; szInp.value = c2;
+          if (ch.active && ch.resize) ch.resize();
+        }
+        const szM = mkBtn('\u2212', '#1e2a3a', 'padding:1px 4px;font-size:9px');
+        const szP = mkBtn('+', '#1e2a3a', 'padding:1px 4px;font-size:9px');
+        szM.onclick = () => applySz((parseInt(szInp.value) || ML.state.probeW) - 2);
+        szP.onclick = () => applySz((parseInt(szInp.value) || ML.state.probeW) + 2);
+        szInp.addEventListener('change', () => applySz(parseInt(szInp.value) || ML.state.probeW));
+        szInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applySz(parseInt(szInp.value) || ML.state.probeW); szInp.blur(); } });
+
+        r1.append(tog, lblInp, sp('px','font-size:8px;color:#fff;flex-shrink:0'), szM, szInp, szP);
+
+        // Linha 2: lag [select] | spacer | lum | pts
+        const r2 = row(4);
+
+        const lumEl = document.createElement('span');
+        lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;width:22px;text-align:right;flex-shrink:0`;
+        lumEl.textContent = '--'; ch.lumEl = lumEl;
+
+        const ptsEl = document.createElement('span');
+        ptsEl.style.cssText = 'color:#fff;font-size:8px;width:26px;text-align:right;flex-shrink:0;white-space:nowrap';
+        ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
+
+        const spacer = document.createElement('span');
+        spacer.style.cssText = 'flex:1';
+
+        if (i !== 0) {
+          const lagSel = mkLagSelect(ch);
+          r2.append(sp('lag','font-size:8px;color:#fff;flex-shrink:0'), lagSel, spacer, lumEl, ptsEl);
+        } else {
+          r2.append(spacer, lumEl, ptsEl);
+        }
+
+        chWrap.append(r1, r2);
+        secDet.appendChild(chWrap);
       });
-
-      r1.append(tog, lblInp, sp('px','font-size:8px;color:#fff;flex-shrink:0'), szM, szInp, szP);
-
-      // Linha 2: lag [select] | spacer | lum | pts
-      const r2 = row(4);
-
-      const lumEl = document.createElement('span');
-      lumEl.style.cssText = `color:${ch.color};font-size:12px;font-weight:bold;width:22px;text-align:right;flex-shrink:0`;
-      lumEl.textContent = '--'; ch.lumEl = lumEl;
-
-      const ptsEl = document.createElement('span');
-      ptsEl.style.cssText = 'color:#fff;font-size:8px;width:26px;text-align:right;flex-shrink:0;white-space:nowrap';
-      ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
-
-      const spacer = document.createElement('span');
-      spacer.style.cssText = 'flex:1';
-
-      if (i !== 0) {
-        const lagSel = mkLagSelect(ch);
-        r2.append(sp('lag','font-size:8px;color:#fff;flex-shrink:0'), lagSel, spacer, lumEl, ptsEl);
-      } else {
-        r2.append(spacer, lumEl, ptsEl);
-      }
-
-      chWrap.append(r1, r2);
-      secDet.appendChild(chWrap);
-    });
+    }
+    renderChannelRows();
     panel.appendChild(secDet);
 
     /* ── Seção: Resultados ── */
@@ -439,8 +557,6 @@
 
     document.body.appendChild(panel);
     ML._ui = { btnRec, btnAnalyze, statusEl, doStop };
-
-    requestAnimationFrame(() => showTips(panel));
 
     ML.panel.refreshOffsets = function(offsets) {
       ML.CHANNELS.forEach((ch, i) => {
