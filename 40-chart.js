@@ -1,6 +1,6 @@
 (function () {
   const ML = window.MedLat;
-  let MAX_PEAKS = 15;
+  let MAX_PEAKS = 10;
   const SNAP_RADIUS = 3;
 
   function loadChartJs() {
@@ -37,9 +37,9 @@
           ctx.moveTo(xPx, yAxis.top);
           ctx.lineTo(xPx, yAxis.bottom);
           if (snapDist === 0) {
-            ctx.strokeStyle = '#ffffff88';
-            ctx.lineWidth   = 2;
-            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = '#ffffffcc';
+            ctx.lineWidth   = 3;
+            ctx.setLineDash([5, 3]);
           } else if (Math.abs(snapDist) === 1) {
             ctx.strokeStyle = '#88888888';
             ctx.lineWidth   = 1.5;
@@ -130,8 +130,8 @@
       : { left: window.innerWidth - 248, top: 8, width: 228, height: 0 };
 
     const sidePanelW = (mpRect.width || 228) + 16;
-    const INIT_W = Math.max(400, window.innerWidth - sidePanelW - 8);
-    const INIT_H = Math.max(300, window.innerHeight - 16);
+    const INIT_W = Math.max(320, Math.min(window.innerWidth - sidePanelW - 8, window.innerWidth * 0.72));
+    const INIT_H = Math.max(260, Math.min(window.innerHeight - 16, window.innerHeight * 0.92));
     const initLeft = 4;
     const initTop  = 8;
 
@@ -186,7 +186,7 @@
       'border-radius:3px;padding:1px 4px;cursor:pointer;font:bold 8px monospace',
       'flex-shrink:0;outline:none;height:18px',
     ].join(';');
-    [15, 20, 25, 30].forEach(n => {
+    [5, 10, 15, 20, 25, 30].forEach(n => {
       const opt = document.createElement('option');
       opt.value = n;
       opt.textContent = n + ' picos';
@@ -355,7 +355,7 @@
 
     const manualHint = document.createElement('div');
     manualHint.style.cssText = 'color:#ffd700;font-size:8px;text-align:center;opacity:.8';
-    manualHint.textContent = 'Gr\u00e1ficos j\u00e1 alinhados pelo Auto  |  arraste para ajuste fino';
+    manualHint.textContent = '\u25b6 Auto aplicado \u2014 use as r\u00e9guas para ajuste fino at\u00e9 os picos se alinharem';
     manualBar.appendChild(manualHint);
 
     const btnResetAll = document.createElement('button');
@@ -572,7 +572,7 @@
         if (idx === 0) refAnnotations = peaks; else markSnapPeaks(peaks, refAnnotations);
 
         const row = document.createElement('div');
-        row.style.cssText = `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0;padding:2px 3px;border-radius:4px;background:${ch.color}0d;border-left:2px solid ${ch.color};overflow:hidden`;
+        row.style.cssText = `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0;padding:2px 3px;border-radius:4px;background:${ch.color}0d;box-shadow:inset 0 0 0 1px ${ch.color}22;overflow:hidden`;
         const lbl = document.createElement('div');
         lbl.style.cssText = `color:${ch.color};font-weight:bold;font-size:8px;width:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
         lbl.textContent = (idx === 0 ? '\u2605 ' : '') + ch.label;
@@ -633,7 +633,7 @@
       if (manualMode) {
         const hint = document.createElement('div');
         hint.style.cssText = 'position:absolute;top:2px;left:50%;transform:translateX(-50%);color:#ffd70088;font-size:7px;pointer-events:none;z-index:2;white-space:nowrap';
-        hint.textContent = 'Auto alinhado \u2014 arraste para ajuste fino';
+        hint.textContent = '\u25b6 Auto aplicado \u2014 ajuste fino pelas r\u00e9guas';
         wrap.appendChild(hint);
       }
       const cvs = document.createElement('canvas');
@@ -686,13 +686,13 @@
     requestAnimationFrame(() => rebuildCharts());
   }
 
-  // Cards sem indicador de confiança — exibe apenas label + latência calculada
   function mkCardCompact(label, prefix, color, autoTxt, autoColor) {
     const card = document.createElement('div');
     card.style.cssText = [
       'display:inline-flex;align-items:center;gap:5px;flex-shrink:0',
-      `border:1px solid ${color}44;border-left:3px solid ${color}`,
+      `border:1px solid ${color}44`,
       `background:${color}0d;border-radius:4px;padding:3px 7px 3px 5px`,
+      `box-shadow:inset 0 0 0 1px ${color}18`,
       'white-space:nowrap;overflow:hidden',
     ].join(';');
     const nameEl = document.createElement('span');
@@ -710,5 +710,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: confiança removida dos cards; snap com centro branco e ±1 cinza.');
+  console.log('[MedLat] 40-chart atualizado: painel responsivo, default 10 picos, alinhamento visual reforçado.');
 })();
