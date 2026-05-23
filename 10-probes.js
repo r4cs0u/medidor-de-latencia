@@ -292,11 +292,11 @@
   // Posições iniciais calibradas manualmente via ferramenta de posicionamento.
   // Valores são o CENTRO de cada probe como fração da viewport.
   // A probe é posicionada subtraindo metade do tamanho (238px) do centro.
-  // ch0 Referência : fracX=0.555 fracY=0.327
-  // ch1 Tela 2     : fracX=0.308 fracY=0.327
-  // ch2 Tela 3     : fracX=0.432 fracY=0.327
-  // ch3 Tela 4     : fracX=0.681 fracY=0.327
-  // ch4 Tela 5     : fracX=0.804 fracY=0.327
+  // ch0 Referência : fracX=0.555 fracY=0.317
+  // ch1 Tela 2     : fracX=0.308 fracY=0.317
+  // ch2 Tela 3     : fracX=0.432 fracY=0.317
+  // ch3 Tela 4     : fracX=0.679 fracY=0.317
+  // ch4 Tela 5     : fracX=0.802 fracY=0.317
   const INIT_CENTER = [
     [0.555, 0.317],  // ch0 Referência
     [0.308, 0.317],  // ch1 Tela 2
