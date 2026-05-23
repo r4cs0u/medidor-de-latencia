@@ -1,6 +1,9 @@
 (function () {
   const ML = window.MedLat;
 
+  // Força px global inicial em 236
+  ML.state.probeW = 236;
+
   function playDone() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -320,11 +323,18 @@
     /* ── Seção: Telas & Grid ── */
     const secTG = sec('Telas & Grid');
 
+    // PX Global fixo em 236, aplicado a TODOS os canais (incluindo ajustados individualmente)
     const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 48);
     function applyGlobalPx(v) {
       const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
-      ML.state.probeW = c; pxInp.value = c;
-      ML.CHANNELS.forEach(ch => { if (ch.probeW == null) { if (ch._szInp) ch._szInp.value = c; if (ch.active && ch.resize) ch.resize(); } });
+      ML.state.probeW = c;
+      pxInp.value = c;
+      // Aplica a todos os canais, inclusive os com ajuste individual (reseta probeW individual)
+      ML.CHANNELS.forEach(ch => {
+        ch.probeW = c;
+        if (ch._szInp) ch._szInp.value = c;
+        if (ch.active && ch.resize) ch.resize();
+      });
     }
     const btnPxM = mkBtn('\u2212', '#1e2a3a', 'padding:2px 5px');
     const btnPxP = mkBtn('+', '#1e2a3a', 'padding:2px 5px');
@@ -379,7 +389,7 @@
       lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis`;
       lblInp.addEventListener('change', () => { ch.label = lblInp.value.replace(/^\u2605\s*/, ''); if (ch.probeLabel) ch.probeLabel.textContent = ch.label; });
 
-      const szInp = mkNum(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 38);
+      const szInp = mkNum(ML.state.probeW, 16, 500, 2, 38);
       ch._szInp = szInp;
       function applyChanPx(v) { const c = Math.max(16, Math.min(500, Math.round(v/2)*2)); ch.probeW = c; szInp.value = c; if (ch.active && ch.resize) ch.resize(); }
       const szM = mkBtn('\u2212', '#1e2a3a', 'padding:1px 3px;font-size:8px');
@@ -443,6 +453,7 @@
       tdName.textContent = (i===0?'\u2605 ':'') + ch.label;
       ch._tdName = tdName;
       const tdOff = document.createElement('td');
+      // Sem coluna de confiança — apenas o offset
       tdOff.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:10px;white-space:nowrap';
       tdOff.textContent  = i===0 ? '0.000s' : '--';
       tdOff.style.color  = i===0 ? '#44ff88' : '#fff';
@@ -521,6 +532,7 @@
               ch.offsetEl.textContent = r.error ? 'ERRO' : '--';
               ch.offsetEl.style.color = r.error ? '#ff4444' : '#fff';
             } else {
+              // Exibe apenas o offset, sem informação de confiança
               const s = r.offsetMs / 1000;
               ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
               ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
@@ -602,7 +614,7 @@
       }
     }, 1000);
 
-    console.log('[MedLat] 50-panel carregado.');
+    console.log('[MedLat] 50-panel carregado. PX Global fixo 236, confiança removida.');
   }
 
   ML.panel = { init };

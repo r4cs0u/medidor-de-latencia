@@ -286,22 +286,34 @@
     }
   }, true);
 
-  const vw = window.innerWidth, vh = window.innerHeight;
-  const n  = ML.CHANNELS.length;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
 
-  // Posições iniciais distribuídas dinamicamente pela largura da tela
-  const startPos = ML.CHANNELS.map((_, i) => [
-    Math.round(vw * (0.10 + i * (0.80 / Math.max(n - 1, 1)))),
-    Math.round(vh * 0.15),
-  ]);
+  // Posições iniciais baseadas no layout do multiviewer da imagem de referência.
+  // Coordenadas expressas como fração da viewport para se adaptarem a qualquer resolução.
+  // Referência: área de vídeo ocupa ~25%-88% horizontal e ~14%-87% vertical.
+  // ch0 Referência: célula 2 linha 1  (~37%, 24%)
+  // ch1 Tela 2    : célula 1 linha 1  (~26%, 24%)
+  // ch2 Tela 3    : célula 3 linha 1  (~52%, 24%)
+  // ch3 Tela 4    : célula 3 linha 2  (~63%, 40%)
+  // ch4 Tela 5    : célula 5 linha 1  (~76%, 24%)
+  const INIT_POS = [
+    [0.37, 0.24],  // ch0 Referência
+    [0.26, 0.24],  // ch1 Tela 2
+    [0.52, 0.24],  // ch2 Tela 3
+    [0.63, 0.40],  // ch3 Tela 4
+    [0.76, 0.24],  // ch4 Tela 5
+  ];
 
   ML.CHANNELS.forEach((ch, i) => {
     makeOff(ch);
-    mkProbe(ch, startPos[i][0], startPos[i][1]);
+    const x = Math.round(vw * INIT_POS[i][0]);
+    const y = Math.round(vh * INIT_POS[i][1]);
+    mkProbe(ch, x, y);
   });
 
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  console.log('[MedLat] 10-probes carregado. ' + n + ' probes, startPos dinamico.');
+  console.log('[MedLat] 10-probes carregado. Posições iniciais baseadas no layout do multiviewer.');
 })();
