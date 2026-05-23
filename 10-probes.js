@@ -45,7 +45,6 @@
     let px;
     try { px = ch.ctx.getImageData(0, 0, pw, ph).data; } catch (e) { return -1; }
 
-    // Máscara central 80%: amostra [10%..90%] em X e Y, stride 1px
     const xMin = Math.floor(pw * 0.10);
     const xMax = Math.floor(pw * 0.90);
     const yMin = Math.floor(ph * 0.10);
@@ -69,7 +68,8 @@
   }
 
   const EDGE_THRESH = 8;
-  const PROBE_GAP   = 4; // margem mínima entre bordas de probes (colisão)
+  // PROBE_GAP = 0: bordas se sobrepõem (sem margem entre probes)
+  const PROBE_GAP   = 0;
 
   function edgeSnap(ch, x, y) {
     const pw = probeW(ch), ph = probeH(ch);
@@ -107,14 +107,14 @@
       const oT = parseInt(od.style.top)  || 0;
       const oR = oL + ow, oB = oT + oh;
       const bL = x, bR = x + pw, bT = y, bB = y + ph;
-      // +PROBE_GAP na verificação de overlap garante margem mínima de 4px
-      if (bR + PROBE_GAP <= oL || bL >= oR + PROBE_GAP || bB + PROBE_GAP <= oT || bT >= oB + PROBE_GAP) return;
+      // PROBE_GAP=0: colisão apenas quando há sobreposição real (bordas podem se tocar)
+      if (bR <= oL || bL >= oR || bB <= oT || bT >= oB) return;
       const overlapL = bR - oL, overlapR = oR - bL;
       const overlapT = bB - oT, overlapB = oB - bT;
       const minH = Math.min(overlapL, overlapR);
       const minV = Math.min(overlapT, overlapB);
-      if (minH <= minV) { x = overlapL <= overlapR ? oL - pw - PROBE_GAP : oR + PROBE_GAP; }
-      else              { y = overlapT <= overlapB ? oT - ph - PROBE_GAP : oB + PROBE_GAP; }
+      if (minH <= minV) { x = overlapL <= overlapR ? oL - pw : oR; }
+      else              { y = overlapT <= overlapB ? oT - ph : oB; }
     });
     return { x: Math.max(0, x), y: Math.max(0, y) };
   }
@@ -131,21 +131,28 @@
     }, 180);
   }
 
+  // Estado padrão (sem foco): borda tracejada
+  // Estado focado: borda sólida brilhante
+  function applyDefaultStyle(ch) {
+    if (!ch.probe) return;
+    ch.probe.style.outline       = 'none';
+    ch.probe.style.outlineOffset = '0px';
+    ch.probe.style.border        = `1px dashed ${ch.color}99`;
+    ch.probe.style.opacity       = '1';
+  }
+
+  function applyFocusStyle(ch) {
+    if (!ch.probe) return;
+    ch.probe.style.border        = `1px solid ${ch.color}`;
+    ch.probe.style.outline       = `2px solid ${ch.color}cc`;
+    ch.probe.style.outlineOffset = '1px';
+    ch.probe.style.opacity       = '0.95';
+  }
+
   function setFocus(ch) {
-    if (focusedProbe && focusedProbe !== ch) {
-      const prev = focusedProbe;
-      if (prev.probe) {
-        prev.probe.style.outline = `1px solid ${prev.color}40`;
-        prev.probe.style.outlineOffset = '0px';
-        prev.probe.style.opacity = '1';
-      }
-    }
+    if (focusedProbe && focusedProbe !== ch) applyDefaultStyle(focusedProbe);
     focusedProbe = ch;
-    if (ch && ch.probe) {
-      ch.probe.style.outline = `2px solid ${ch.color}`;
-      ch.probe.style.outlineOffset = '2px';
-      ch.probe.style.opacity = '0.95';
-    }
+    if (ch) applyFocusStyle(ch);
   }
 
   function mkProbe(ch, x, y) {
@@ -155,15 +162,15 @@
     d.style.cssText = [
       `position:fixed;left:${x}px;top:${y}px`,
       `width:${pw}px;height:${ph}px`,
-      `border:1px solid ${ch.color}`,
-      `outline:1px solid ${ch.color}40`,
+      // borda padrão tracejada
+      `border:1px dashed ${ch.color}99`,
       `background:${ch.color}10`,
       `box-shadow:0 0 6px ${ch.color}88`,
       'cursor:move',
       'z-index:99997',
       'box-sizing:border-box',
       'pointer-events:auto',
-      'transition:opacity .2s,outline .15s,box-shadow .15s',
+      'transition:opacity .2s,border .15s,outline .15s,box-shadow .15s',
     ].join(';');
 
     const hLine = document.createElement('div');
@@ -171,7 +178,6 @@
     const vLine = document.createElement('div');
     vLine.style.cssText = `position:absolute;left:50%;top:0;bottom:0;width:1px;background:${ch.color};opacity:.5;pointer-events:none`;
 
-    // Indicador visual da máscara central 80% [10%..90%]
     const mask = document.createElement('div');
     mask.style.cssText = [
       'position:absolute',
@@ -193,7 +199,6 @@
       const npw = probeW(ch), nph = probeH(ch);
       d.style.width  = npw + 'px';
       d.style.height = nph + 'px';
-      // Atualiza máscara visual
       mask.style.left = '10%'; mask.style.top = '10%';
       mask.style.width = '80%'; mask.style.height = '80%';
       makeOff(ch);
@@ -266,11 +271,7 @@
   window.addEventListener('mousedown', e => {
     const clickedProbe = ML.CHANNELS.some(ch => ch.probe && ch.probe.contains(e.target));
     if (!clickedProbe && focusedProbe) {
-      if (focusedProbe.probe) {
-        focusedProbe.probe.style.outline = `1px solid ${focusedProbe.color}40`;
-        focusedProbe.probe.style.outlineOffset = '0px';
-        focusedProbe.probe.style.opacity = '1';
-      }
+      applyDefaultStyle(focusedProbe);
       focusedProbe = null;
     }
   }, true);
@@ -291,5 +292,5 @@
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  console.log('[MedLat] 10-probes: máscara 80% [10%..90%], stride 1px, gap colisão=' + PROBE_GAP + 'px.');
+  console.log('[MedLat] 10-probes: borda tracejada padrão, colisão bordas sobrepostas (PROBE_GAP=0).');
 })();
