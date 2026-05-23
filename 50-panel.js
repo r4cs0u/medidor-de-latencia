@@ -91,16 +91,11 @@
       const vw      = window.innerWidth;
       const vh      = window.innerHeight;
       const margin  = 6;
-
-      // Prefere abaixo do painel; se não couber, aparece acima
       let top  = pr.bottom + margin;
       if (top + tipH > vh - margin) top = Math.max(margin, pr.top - tipH - margin);
-
-      // Alinha à esquerda do painel, clampado para não sair da tela
       let left = pr.left;
       if (left + tipW > vw - margin) left = vw - tipW - margin;
       if (left < margin) left = margin;
-
       tip.style.top  = top  + 'px';
       tip.style.left = left + 'px';
     }
@@ -186,6 +181,8 @@
       return inp;
     }
 
+    // — seletor de preset de lag
+    // labels atualizados: 'Até 5s' e 'Maior que 5s'
     function mkLagSelect(ch) {
       const sel = document.createElement('select');
       sel.style.cssText = [
@@ -195,8 +192,8 @@
       ].join(';');
       const opts = [
         { value: 'auto',     label: 'Auto' },
-        { value: 'rapido',   label: '⚡ Rápido' },
-        { value: 'internet', label: '🌐 Internet' },
+        { value: 'rapido',   label: 'Até 5s' },
+        { value: 'internet', label: 'Maior que 5s' },
       ];
       opts.forEach(o => {
         const opt = document.createElement('option');
@@ -220,7 +217,6 @@
     /* ── Seção: Telas & Grid ── */
     const secTG = sec('Telas & Grid');
 
-    // PX Global
     const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 48);
     function applyGlobalPx(v) {
       const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
@@ -237,7 +233,6 @@
     rowPx.append(sp('PX Global', 'flex-shrink:0'), btnPxM, pxInp, btnPxP);
     secTG.appendChild(rowPx);
 
-    // Snap + Col na mesma linha
     const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0;margin-top:4px');
     function updateSnapBtn() { btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF'; btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e'; btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#888'; }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
@@ -255,12 +250,13 @@
     const secDet = sec('Probes');
     ML.CHANNELS.forEach((ch, i) => {
       const chWrap = document.createElement('div');
+      // borda tracejada no card de probe (espelha estilo da probe na tela)
       chWrap.style.cssText = [
         'display:flex;flex-direction:column;gap:2px',
         'padding:3px 4px;border-radius:4px;margin-bottom:3px;overflow:hidden',
-        `border:1px solid ${ch.color}44`,
+        `border:1px dashed ${ch.color}55`,
         `background:${ch.color}0d`,
-        `border-left:3px solid ${ch.color}`,
+        `border-left:2px dashed ${ch.color}99`,
         `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
       ].join(';');
       ch._panelRow = chWrap;
@@ -269,14 +265,19 @@
       const r1 = row(4);
       const tog = document.createElement('button');
       tog.style.cssText = `width:9px;height:9px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
-      tog.onclick = () => { ch.active = !ch.active; tog.style.background = ch.active ? ch.color : 'transparent'; chWrap.style.opacity = ch.active ? 1 : .4; ch.probe.style.display = ch.active ? 'block' : 'none'; if (!ch.active) ch.prevLum = null; };
+      tog.onclick = () => {
+        ch.active = !ch.active;
+        tog.style.background = ch.active ? ch.color : 'transparent';
+        chWrap.style.opacity = ch.active ? 1 : .4;
+        ch.probe.style.display = ch.active ? 'block' : 'none';
+        if (!ch.active) ch.prevLum = null;
+      };
 
       const lblInp = document.createElement('input');
       lblInp.value = i === 0 ? '\u2605 ' + ch.label : ch.label;
       lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 10px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis`;
       lblInp.addEventListener('change', () => { ch.label = lblInp.value.replace(/^\u2605\s*/, ''); if (ch.probeLabel) ch.probeLabel.textContent = ch.label; });
 
-      // px inline (sem label, compacto)
       const szInp = mkNum(ch.probeW != null ? ch.probeW : ML.state.probeW, 16, 500, 2, 38);
       ch._szInp = szInp;
       function applyChanPx(v) { const c = Math.max(16, Math.min(500, Math.round(v/2)*2)); ch.probeW = c; szInp.value = c; if (ch.active && ch.resize) ch.resize(); }
@@ -293,7 +294,7 @@
 
       r1.append(tog, lblInp, sp('px','font-size:8px;color:#555;flex-shrink:0'), szM, szInp, szP);
 
-      // Linha 2: lag [select] | lum | pts   (Referência: só lum | pts)
+      // Linha 2: lag [select] | spacer | lum | pts
       const r2 = row(4);
 
       const lumEl = document.createElement('span');
@@ -304,16 +305,13 @@
       ptsEl.style.cssText = 'color:#888;font-size:8px;width:26px;text-align:right;flex-shrink:0;white-space:nowrap';
       ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
 
+      const spacer = document.createElement('span');
+      spacer.style.cssText = 'flex:1';
+
       if (i !== 0) {
         const lagSel = mkLagSelect(ch);
-        r2.append(sp('lag','font-size:8px;color:#aaa;flex-shrink:0'), lagSel);
-        // spacer
-        const spacer = document.createElement('span');
-        spacer.style.cssText = 'flex:1';
-        r2.append(spacer, lumEl, ptsEl);
+        r2.append(sp('lag','font-size:8px;color:#aaa;flex-shrink:0'), lagSel, spacer, lumEl, ptsEl);
       } else {
-        const spacer = document.createElement('span');
-        spacer.style.cssText = 'flex:1';
         r2.append(spacer, lumEl, ptsEl);
       }
 
