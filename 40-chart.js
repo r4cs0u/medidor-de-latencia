@@ -166,7 +166,7 @@
       return ML.INTERVAL_MS;
     }
 
-    // fineShiftSamples: amostras deslocadas APENAS pelo slider manual (parte do 0, sem base automática)
+    // fineShiftSamples: deslocamento APENAS do slider manual (parte do 0, sem base automatica)
     const fineShiftSamples = {};
     const autoOffsetMs     = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; autoOffsetMs[ch.id] = 0; });
@@ -190,41 +190,41 @@
       results.forEach(r => {
         if (r.isReference || !r.channel) return;
         const ch = r.channel;
-        let offTxt='--', offColor='#445', confTxt='--', confColor='#445';
+        let autoTxt='--', autoColor='#445', confTxt='--', confColor='#445';
         if (!r.error && !r.skipped) {
-          const s = r.offsetMs / 1000;
-          offTxt   = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
-          offColor = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#ff8844';
-          const pct = r.confidence != null ? Math.round(r.confidence * 100) : null;
+          const s    = r.offsetMs / 1000;
+          autoTxt    = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
+          autoColor  = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#ff8844';
+          const pct  = r.confidence != null ? Math.round(r.confidence * 100) : null;
           if (pct != null) { confTxt = pct + '%'; confColor = pct>60?'#44ff88':pct>30?'#ffd700':'#ff4444'; }
-        } else { offTxt = r.error ? 'ERR' : '--'; offColor = r.error ? '#ff4444' : '#445'; }
-        const card = mkCard(ch.label, '', ch.color, offTxt, confTxt, offColor, confColor);
-        cardRefs[ch.id] = { offEl: card.children[1], autoMs: r.offsetMs || 0, ch };
+        } else { autoTxt = r.error ? 'ERR' : '--'; autoColor = r.error ? '#ff4444' : '#445'; }
+
+        const card = mkCard(ch.label, '', ch.color, autoTxt, confTxt, autoColor, confColor);
+        // guardar refs para atualizar a linha Manual depois
+        const manualEl = card._manualEl;
+        cardRefs[ch.id] = { autoMs: r.offsetMs || 0, ch, manualEl };
         grid.appendChild(card);
       });
       body.appendChild(grid);
     }
     buildCards();
 
-    // Atualiza o card: mostra "Auto: +Xs → Ajustado: +Ys" quando há ajuste manual, ou só o auto
-    function updateCardOffset(chId, manualDeltaMs) {
+    // Atualiza a linha "Manual" do card com o delta do slider (NAO soma com auto)
+    function updateCardOffset(chId, fineDeltaMs) {
       const ref = cardRefs[chId];
-      if (!ref) return;
-      const autoMs  = ref.autoMs;
-      const autoS   = autoMs / 1000;
-      const adjMs   = autoMs + manualDeltaMs;
-      const adjS    = adjMs / 1000;
-      const hasDiff = Math.abs(manualDeltaMs) > 1;
-      const autoColor = Math.abs(autoS)<0.1?'#44ff88':Math.abs(autoS)<1?'#ffd700':'#ff8844';
-      const adjColor  = Math.abs(adjS)<0.1?'#44ff88':Math.abs(adjS)<1?'#ffd700':'#ff8844';
-      if (hasDiff) {
-        ref.offEl.innerHTML =
-          `<span style="color:#888;text-decoration:line-through;font-size:8px">${(autoS>=0?'+':'')}${autoS.toFixed(3)}s</span>` +
-          `<span style="color:${adjColor};font-size:10px"> \u2192 ${(adjS>=0?'+':'')}${adjS.toFixed(3)}s</span>`;
+      if (!ref || !ref.manualEl) return;
+      const el = ref.manualEl;
+      if (Math.abs(fineDeltaMs) < 2) {
+        // sem ajuste: esconde linha manual
+        el.style.display = 'none';
+        el.innerHTML = '';
       } else {
-        ref.offEl.innerHTML = '';
-        ref.offEl.textContent = (autoS>=0?'+':'') + autoS.toFixed(3) + 's';
-        ref.offEl.style.color = autoColor;
+        const s         = fineDeltaMs / 1000;
+        const manColor  = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#00d4ff';
+        el.style.display = 'flex';
+        el.innerHTML =
+          `<span style="color:#556;font-size:7px;margin-right:2px">Manual</span>` +
+          `<span style="color:${manColor};font-weight:bold;font-size:10px">${(s>=0?'+':'')}${s.toFixed(3)}s</span>`;
       }
     }
 
@@ -257,7 +257,7 @@
 
     const manualHint = document.createElement('div');
     manualHint.style.cssText = 'color:#ffd700;font-size:8px;text-align:center;opacity:.8';
-    manualHint.textContent = '0s = gráficos na posição original  |  arraste para deslocar';
+    manualHint.textContent = '0s = gr\u00e1ficos na posi\u00e7\u00e3o original  |  arraste para deslocar';
     manualBar.appendChild(manualHint);
 
     const btnResetAll = document.createElement('button');
@@ -298,7 +298,7 @@
       const valLbl = document.createElement('span');
       valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
 
-      // refreshLabel: exibe só o delta manual (parte do 0, sem somar autoOffset)
+      // refreshLabel: exibe so o delta do slider (sem somar autoOffset)
       function refreshLabel() {
         const fine        = parseInt(slider.value);
         const fineDeltaMs = fine * iv;
@@ -347,9 +347,8 @@
         const iv          = realIvMs(ch);
         const fine        = fineShiftSamples[ch.id] || 0;
         const fineDeltaMs = fine * iv;
-        // offset final = auto + ajuste manual
-        const totalMs = autoOffsetMs[ch.id] + fineDeltaMs;
-        ML.manualOffsets[ch.id] = totalMs;
+        // offset confirmado = auto + ajuste manual do slider
+        ML.manualOffsets[ch.id] = autoOffsetMs[ch.id] + fineDeltaMs;
         updateCardOffset(ch.id, fineDeltaMs);
       });
       if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
@@ -369,7 +368,7 @@
     };
     btnMode.onclick = () => { chartMode = chartMode === 'parallel' ? 'overlay' : 'parallel'; updateModeBtn(); rebuildCharts(); };
 
-    /* área dos gráficos */
+    /* area dos graficos */
     const chartsArea = document.createElement('div');
     chartsArea.style.cssText = 'flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;overflow:hidden';
     body.appendChild(chartsArea);
@@ -409,8 +408,7 @@
       return out;
     }
 
-    // getTotalShift: no modo manual, aplica APENAS o slider (fineShiftSamples), sem base automática
-    // Gráficos partem da posição original (sem shift), slider = 0 = sem deslocamento
+    // getTotalShift: no modo manual, aplica APENAS o slider (sem base automatica)
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
       if (!manualMode) return 0;
@@ -485,7 +483,7 @@
       if (manualMode) {
         const hint = document.createElement('div');
         hint.style.cssText = 'position:absolute;top:2px;left:50%;transform:translateX(-50%);color:#ffd70088;font-size:7px;pointer-events:none;z-index:2;white-space:nowrap';
-        hint.textContent = '0s = posição original  |  arraste o slider para deslocar';
+        hint.textContent = '0s = posi\u00e7\u00e3o original  |  arraste o slider para deslocar';
         wrap.appendChild(hint);
       }
       const cvs = document.createElement('canvas');
@@ -535,26 +533,43 @@
     requestAnimationFrame(() => rebuildCharts());
   }
 
-  function mkCard(label, prefix, color, offTxt, confTxt, offColor, confColor) {
+  // mkCard: inclui linha extra _manualEl (oculta por padrao) para exibir ajuste manual
+  function mkCard(label, prefix, color, autoTxt, confTxt, autoColor, confColor) {
     const card = document.createElement('div');
     card.style.cssText = [
       'display:flex;flex-direction:column;align-items:center;gap:1px',
       `border:1px solid ${color}44;border-top:2px solid ${color}`,
       `background:${color}0d;border-radius:4px;padding:3px 4px`,
     ].join(';');
+
     const nameEl = document.createElement('div');
     nameEl.style.cssText = `color:${color};font-weight:bold;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%`;
     nameEl.textContent = (prefix ? prefix + ' ' : '') + label;
-    const offEl = document.createElement('div');
-    offEl.style.cssText = `color:${offColor||'#44ff88'};font-weight:bold;font-size:10px;line-height:1.2;white-space:nowrap;text-align:center`;
-    offEl.textContent = offTxt;
+
+    // linha "Auto"
+    const autoRow = document.createElement('div');
+    autoRow.style.cssText = 'display:flex;align-items:baseline;gap:3px';
+    const autoLbl = document.createElement('span');
+    autoLbl.style.cssText = 'color:#556;font-size:7px';
+    autoLbl.textContent = prefix ? '' : 'Auto';
+    const autoVal = document.createElement('span');
+    autoVal.style.cssText = `color:${autoColor||'#44ff88'};font-weight:bold;font-size:10px;line-height:1.2;white-space:nowrap`;
+    autoVal.textContent = autoTxt;
+    autoRow.append(autoLbl, autoVal);
+
+    // linha "Manual" — oculta ate o slider ser mexido
+    const manualRow = document.createElement('div');
+    manualRow.style.cssText = 'display:none;align-items:baseline;gap:3px';
+
     const confEl = document.createElement('div');
     confEl.style.cssText = `color:${confColor||'#44ff88'};font-size:7px;white-space:nowrap`;
     confEl.textContent = confTxt;
-    card.append(nameEl, offEl, confEl);
+
+    card.append(nameEl, autoRow, manualRow, confEl);
+    card._manualEl = manualRow;
     return card;
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart: manual parte do 0, sem baseShift automatico.');
+  console.log('[MedLat] 40-chart: card Auto/Manual separados, manual = so delta slider.');
 })();
