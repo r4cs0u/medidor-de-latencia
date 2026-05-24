@@ -217,121 +217,6 @@
     return (s > 0 ? '+' : '') + s.toFixed(3) + 's';
   }
 
-  /* ── Detecta se um elemento tem cor vermelha dominante ── */
-  function isRedText(el) {
-    if (!el) return false;
-    try {
-      const color = window.getComputedStyle(el).color;
-      // Parseia rgb(r,g,b) ou rgba(r,g,b,a)
-      const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-      if (!m) return false;
-      const r = parseInt(m[1]);
-      const g = parseInt(m[2]);
-      const b = parseInt(m[3]);
-      // Vermelho dominante: R alto, G e B baixos relativamente
-      return r >= 180 && g < 100 && b < 100;
-    } catch(e) { return false; }
-  }
-
-  /* ── Overlay de pesquisa restrito ao tamanho da probe ── */
-  function showSearchOverlay(ch) {
-    document.querySelectorAll('.ml-search-overlay').forEach(e => e.remove());
-    const d = ch.probe;
-    if (!d) return;
-    const rect      = d.getBoundingClientRect();
-    const probeL    = rect.left;
-    const probeW    = rect.width;
-    const cy        = rect.top + rect.height / 2;
-    const vh        = window.innerHeight;
-    const halfSearch = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) / 2);
-
-    const topAbove = Math.max(0, cy - halfSearch);
-    const htAbove  = rect.top - topAbove;
-    const topBelow = rect.bottom;
-    const htBelow  = Math.min(vh, cy + halfSearch) - topBelow;
-
-    [
-      { top: topAbove, height: htAbove, label: '\u25b2 pesquisa' },
-      { top: topBelow, height: htBelow, label: '\u25bc pesquisa' },
-    ].forEach(({ top, height, label }) => {
-      if (height <= 0) return;
-      const ov = document.createElement('div');
-      ov.className = 'ml-search-overlay';
-      ov.style.cssText = [
-        'position:fixed',
-        `left:${probeL}px`,
-        `width:${probeW}px`,
-        `top:${top}px`,
-        `height:${height}px`,
-        'background:rgba(255,215,0,0.10)',
-        'border-left:1px dashed #ffd70077',
-        'border-right:1px dashed #ffd70077',
-        'border-top:1px dashed #ffd70077',
-        'border-bottom:1px dashed #ffd70077',
-        'pointer-events:none;z-index:99996',
-        'display:flex;align-items:center;justify-content:center',
-        'transition:opacity .5s',
-      ].join(';');
-      const tag = document.createElement('span');
-      tag.textContent = label;
-      tag.style.cssText = 'font:bold 9px monospace;color:#ffd700aa;letter-spacing:.1em;pointer-events:none';
-      ov.appendChild(tag);
-      document.body.appendChild(ov);
-      setTimeout(() => {
-        ov.style.opacity = '0';
-        setTimeout(() => ov.remove(), 500);
-      }, 1500);
-    });
-  }
-
-  /* ── autoDetectDeduction: busca apenas texto vermelho na área da probe ──
-     Critérios:
-       1. Elemento pai com cor vermelha dominante (R≥180, G<100, B<100)
-       2. Valor absoluto entre 0 e 60s (descarta leituras absurdas)
-       3. Geometricamente mais próximo do centro vertical da probe
-  */
-  function autoDetectDeduction(ch) {
-    if (!ch.probe) return null;
-    const d = ch.probe;
-    const cy = d.offsetTop + d.offsetHeight / 2;
-    const RADIUS_Y = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) / 2);
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        const p = node.parentElement;
-        if (!p || p.closest('[id^="ml-"]')) return NodeFilter.FILTER_REJECT;
-        // só aceita nós cujo elemento pai seja texto vermelho
-        if (!isRedText(p)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    });
-    const RE = /([+\-\u2212]?\d+[.,]\d+s?|[+\-\u2212]\d+s?)/g;
-    let best = null, bestDist = Infinity;
-    while (walker.nextNode()) {
-      const node = walker.currentNode;
-      const text = node.textContent;
-      let m;
-      RE.lastIndex = 0;
-      while ((m = RE.exec(text)) !== null) {
-        try {
-          const range = document.createRange();
-          range.setStart(node, m.index);
-          range.setEnd(node, m.index + m[0].length);
-          const rect = range.getBoundingClientRect();
-          if (!rect.width) continue;
-          const ry = rect.top + rect.height / 2;
-          const dy = Math.abs(ry - cy);
-          if (dy > RADIUS_Y) continue;
-          // valida o valor numérico antes de aceitar
-          const parsed = parseDeductionS(m[0]);
-          if (parsed === null) continue;
-          if (Math.abs(parsed) > 60) continue; // descarta valores absurdos
-          if (dy < bestDist) { bestDist = dy; best = m[0]; }
-        } catch(e) {}
-      }
-    }
-    return best;
-  }
-
   function copyResults(btn) {
     const lines = ML.CHANNELS
       .filter(ch => ch.active)
@@ -763,31 +648,11 @@
       });
       r2.append(sp('px', 'font-size:7px;color:#aaa;flex-shrink:0'), szInp);
 
-      /* linha 3: dedução */
+      /* linha 3: dedução (somente manual) */
       const r3ded = row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
       const dedInp = mkDeductionInput(ch);
-      const btnAuto = document.createElement('button');
-      btnAuto.innerHTML = '\ud83d\udd0d';
-      btnAuto.title = 'Detectar dedu\u00e7\u00e3o automaticamente';
-      btnAuto.style.cssText = 'background:#1e2a3a;border:1px solid #ff9d0044;color:#ff9d00;border-radius:3px;padding:0 3px;cursor:pointer;font-size:9px;line-height:15px;flex-shrink:0';
-      btnAuto.onclick = () => {
-        showSearchOverlay(ch);
-        const found = autoDetectDeduction(ch);
-        if (found) {
-          const v = parseDeductionS(found);
-          if (v !== null) {
-            ch.deduction = v;
-            dedInp.value = formatDeduction(v);
-            dedInp.style.color = '#ff9d00';
-            refreshRealColumn();
-          }
-        } else {
-          btnAuto.style.color = '#ff4444';
-          setTimeout(() => btnAuto.style.color = '#ff9d00', 800);
-        }
-      };
-      r3ded.append(sp('ded', 'font-size:7px;color:#ff9d00;flex-shrink:0'), dedInp, btnAuto);
+      r3ded.append(sp('ded', 'font-size:7px;color:#ff9d00;flex-shrink:0'), dedInp);
 
       /* linha 4: lag (só canais não-ref) */
       const rows = [r1, r2, r3ded];
@@ -804,27 +669,6 @@
     });
 
     secDet.appendChild(probeGrid);
-
-    // autoDetect ao soltar o mouse após arrastar uma probe (com feedback visual)
-    window.addEventListener('mouseup', () => {
-      ML.CHANNELS.forEach(ch => {
-        if (!ch.active || !ch._dedInp) return;
-        if (!ch._wasDragged) return;
-        ch._wasDragged = false;
-        if (ch._dedInp.value.trim() !== '') return;
-        showSearchOverlay(ch);
-        const found = autoDetectDeduction(ch);
-        if (!found) return;
-        const v = parseDeductionS(found);
-        if (v !== null) {
-          ch.deduction = v;
-          ch._dedInp.value = formatDeduction(v);
-          ch._dedInp.style.color = '#ff9d00';
-          refreshRealColumn();
-        }
-      });
-    });
-
     panel.appendChild(secDet);
 
     /* ── Seção: Análise ── */
