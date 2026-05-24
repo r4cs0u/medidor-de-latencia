@@ -160,16 +160,16 @@
       { section: '\u2699\ufe0f  PREPARA\u00c7\u00c3O', color: '#ffd700', items: [
         '1. Ative as telas desejadas (\u25cf)',
         '2. Ajuste o tamanho via PX Global ou por tela',
-        '3. Posicione cada tela sobre o v\u00eddeo (arrastar ou setas)',
-        '4. Preencha a Dedu\u00e7\u00e3o caso o multiviewer exiba offset',
-        '5. Selecione o lag estimado: "\u22645s" ou "\u226430s"',
+        '3. Posicione cada probe sobre a imagem do v\u00eddeo (arrastar ou setas)',
+        '4. Dedu\u00e7\u00e3o offset já exibido no multiviewer (em vermelho), adicione o valor em segundos',
+        '5. Lag estimado: Range da diferença entre os sinais',
       ]},
       { section: '\u23fa  GRAVA\u00c7\u00c3O', color: '#44ff88', items: [
         '6. Clique em \u25cf GRAVAR \u2014 a an\u00e1lise inicia sozinha ao terminar',
       ]},
       { section: '\ud83d\udcca  AN\u00c1LISE', color: '#ce93d8', items: [
-        '7. A lat\u00eancia estimada aparece por tela automaticamente',
-        '8. Coluna Real = Resultado + Dedu\u00e7\u00e3o canal \u2212 Dedu\u00e7\u00e3o ref.',
+        '7. Resultado = A lat\u00eancia estimada aparece por tela automaticamente',
+        '8. Real = Resultado + Dedu\u00e7\u00e3o canal \u2212 Dedu\u00e7\u00e3o ref. (desconta o atraso já conhecido do multiviewer)',
         '9. Para ajuste fino: clique em Manual e mova as r\u00e9guas',
         '10. Clique em \u2714 Confirmar para exportar e copiar os resultados',
       ]},
