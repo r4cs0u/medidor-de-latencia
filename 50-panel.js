@@ -327,34 +327,46 @@
     syncPulse();
     const pulseTimer = setInterval(syncPulse, 500);
 
-    /* arrastar widget */
+    /* arrastar widget — listeners nomeados para remoção correta */
     let wdrag = false, wx = 0, wy = 0;
-    widget.addEventListener('mousedown', e => {
-      wdrag = false;
-      wx = e.clientX - widget.offsetLeft;
-      wy = e.clientY - widget.offsetTop;
-      widget._moved = false;
-      e.preventDefault();
-    });
-    const onWMove = e => {
-      if (Math.hypot(e.clientX - (wx + widget.offsetLeft), e.clientY - (wy + widget.offsetTop)) > 3) {
-        wdrag = true; widget._moved = true;
-      }
+
+    function onWMove(e) {
       if (!wdrag) return;
       widget.style.right = 'auto';
       widget.style.left = Math.max(0, e.clientX - wx) + 'px';
       widget.style.top  = Math.max(0, e.clientY - wy) + 'px';
-    };
-    const onWUp = () => {
-      if (!widget._moved) {
+    }
+
+    function onWUp() {
+      if (!wdrag) {
+        /* foi um clique: restaurar painel */
         clearInterval(pulseTimer);
+        window.removeEventListener('mousemove', onWMove);
+        window.removeEventListener('mouseup', onWUp);
         widget.remove();
         panel.style.display = 'block';
       }
       wdrag = false;
-    };
-    window.addEventListener('mousemove', onWMove);
-    window.addEventListener('mouseup', onWUp);
+    }
+
+    widget.addEventListener('mousedown', e => {
+      e.stopPropagation();   /* impede que pdrag do painel capture o evento */
+      e.preventDefault();
+      wdrag = false;
+      wx = e.clientX - widget.offsetLeft;
+      wy = e.clientY - widget.offsetTop;
+
+      function onMoveOnce(ev) {
+        if (Math.hypot(ev.clientX - (wx + widget.offsetLeft), ev.clientY - (wy + widget.offsetTop)) > 4) {
+          wdrag = true;
+        }
+      }
+      window.addEventListener('mousemove', onMoveOnce, { once: false });
+      /* guarda ref para remover junto */
+      widget._onMoveOnce = onMoveOnce;
+      window.addEventListener('mousemove', onWMove);
+      window.addEventListener('mouseup', onWUp, { once: true });
+    });
 
     document.body.appendChild(widget);
   }
@@ -417,9 +429,15 @@
     hdr.append(ttl, btnTips, btnGuide, btnMin, btnX);
     panel.appendChild(hdr);
 
-    /* Drag */
+    /* Drag do painel — só ativa se o alvo for o header ou o título */
     let pdrag = false, pox = 0, poy = 0;
-    hdr.addEventListener('mousedown', e => { if (e.target !== hdr && e.target !== ttl) return; pdrag = true; panel.style.right = 'auto'; pox = e.clientX - panel.offsetLeft; poy = e.clientY - panel.offsetTop; });
+    hdr.addEventListener('mousedown', e => {
+      if (e.target !== hdr && e.target !== ttl) return;
+      pdrag = true;
+      panel.style.right = 'auto';
+      pox = e.clientX - panel.offsetLeft;
+      poy = e.clientY - panel.offsetTop;
+    });
     window.addEventListener('mousemove', e => { if (!pdrag) return; panel.style.left = Math.max(0, e.clientX - pox) + 'px'; panel.style.top = Math.max(0, e.clientY - poy) + 'px'; });
     window.addEventListener('mouseup', () => pdrag = false);
 
@@ -502,7 +520,7 @@
       inp.title = 'Offset fixo exibido pelo multiviewer neste canal';
       inp.style.cssText = [
         'background:#111827;border:1px solid #2a3a5088;color:#ff9d00',
-        'font:bold 8px monospace;flex:1;min-width:0;border-radius:3px',
+        'font:bold 8px monospace;width:100%;box-sizing:border-box;border-radius:3px',
         'padding:1px 3px;text-align:center;outline:none',
       ].join(';');
       inp.addEventListener('focus', () => inp.style.borderColor = '#ff9d0088');
@@ -571,6 +589,7 @@
       ch.deduction = ch.deduction || 0;
 
       const card = document.createElement('div');
+      /* box-sizing:border-box garante que padding/border não estourem a coluna do grid */
       card.style.cssText = [
         'display:flex;flex-direction:column;gap:2px',
         'padding:3px 4px;border-radius:4px',
@@ -578,12 +597,13 @@
         `background:${ch.color}0d`,
         `border-top:2px solid ${ch.color}99`,
         `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
+        'box-sizing:border-box;min-width:0;overflow:hidden;width:100%',
       ].join(';');
       ch._panelRow = card;
 
       /* linha 1: toggle + label + lum */
       const r1 = row(3);
-      r1.style.overflow = 'hidden';
+      r1.style.cssText += ';overflow:hidden;min-width:0';
       const tog = document.createElement('button');
       tog.title = 'Ativar ou desativar esta tela';
       tog.style.cssText = `width:8px;height:8px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
@@ -616,13 +636,12 @@
 
       r1.append(tog, lblInp, lumEl, ptsEl);
 
-      /* linha 2: px */
+      /* linha 2: px — input com width fixo, sem flex:1 para não estourar card */
       const r2 = row(2);
-      r2.style.overflow = 'hidden';
+      r2.style.cssText += ';overflow:hidden;min-width:0';
       const szInp = mkNum(ML.state.probeW, 16, 500, 2, 34);
       szInp.title = 'Tamanho desta probe em pixels';
-      szInp.style.flex = '1';
-      szInp.style.minWidth = '0';
+      /* NÃO usar flex:1 — mantém width:34px definido em mkNum */
       ch._szInp = szInp;
       function applyChanPx(v) { const c = Math.max(16, Math.min(500, Math.round(v/2)*2)); ch.probeW = c; szInp.value = c; if (ch.active && ch.resize) ch.resize(); }
       const szM = mkBtn('\u2212', '#1e2a3a', 'padding:1px 3px;font-size:8px;flex-shrink:0');
@@ -639,7 +658,7 @@
 
       /* linha 3: dedução */
       const r3ded = row(2);
-      r3ded.style.overflow = 'hidden';
+      r3ded.style.cssText += ';overflow:hidden;min-width:0';
       const dedInp = mkDeductionInput(ch);
       const btnAuto = document.createElement('button');
       btnAuto.innerHTML = '\ud83d\udd0d';
@@ -666,7 +685,7 @@
       const rows = [r1, r2, r3ded];
       if (i !== 0) {
         const r4lag = row(2);
-        r4lag.style.overflow = 'hidden';
+        r4lag.style.cssText += ';overflow:hidden;min-width:0';
         const lagSel = mkLagSelect(ch);
         r4lag.append(sp('lag','font-size:7px;color:#aaa;flex-shrink:0'), lagSel);
         rows.push(r4lag);
