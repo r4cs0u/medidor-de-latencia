@@ -188,6 +188,53 @@
     return (s > 0 ? '+' : '') + s.toFixed(3) + 's';
   }
 
+  /* ── Overlay de visualização da área de pesquisa ── */
+  function showSearchOverlay(ch) {
+    const old = document.getElementById('ml-search-overlay');
+    if (old) old.remove();
+    const d = ch.probe;
+    if (!d) return;
+    const vh = window.innerHeight;
+    const halfVh = Math.round(vh / 2);
+    const cy = d.offsetTop + d.offsetHeight / 2;
+
+    // Faixa ACIMA da probe
+    const topAbove = Math.max(0, cy - halfVh);
+    const htAbove  = cy - topAbove;
+
+    // Faixa ABAIXO da probe
+    const topBelow = cy + d.offsetHeight / 2;
+    const htBelow  = Math.min(vh, cy + halfVh) - topBelow;
+
+    [
+      { top: topAbove, height: htAbove,  label: '▲ pesquisa' },
+      { top: topBelow, height: htBelow,  label: '▼ pesquisa' },
+    ].forEach(({ top, height, label }) => {
+      if (height <= 0) return;
+      const ov = document.createElement('div');
+      ov.className = 'ml-search-overlay';
+      ov.style.cssText = [
+        'position:fixed;left:0;right:0',
+        `top:${top}px;height:${height}px`,
+        'background:rgba(255,215,0,0.07)',
+        'border-top:1px dashed #ffd70077',
+        'border-bottom:1px dashed #ffd70077',
+        'pointer-events:none;z-index:99996',
+        'display:flex;align-items:center;justify-content:center',
+        'transition:opacity .5s',
+      ].join(';');
+      const tag = document.createElement('span');
+      tag.textContent = label;
+      tag.style.cssText = 'font:bold 9px monospace;color:#ffd700aa;letter-spacing:.1em;pointer-events:none';
+      ov.appendChild(tag);
+      document.body.appendChild(ov);
+      setTimeout(() => {
+        ov.style.opacity = '0';
+        setTimeout(() => ov.remove(), 500);
+      }, 1500);
+    });
+  }
+
   /* ── Auto-detect de dedução ── */
   function autoDetectDeduction(ch) {
     if (!ch.probe) return null;
@@ -195,8 +242,8 @@
     const cx = d.offsetLeft + d.offsetWidth  / 2;
     const cy = d.offsetTop  + d.offsetHeight / 2;
 
-    const RADIUS_X = 300;
-    const RADIUS_Y = 500;
+    // Busca apenas vertical: metade da viewport acima e abaixo
+    const RADIUS_Y = Math.round(window.innerHeight / 2);
 
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
@@ -206,7 +253,8 @@
       }
     });
 
-    const RE = /([\u2212+-]?\d+[.,]\d+\s*s|[\u2212+-]\d+\s*s)/gi;
+    // Sinal obrigatório no início, "s" obrigatório no final
+    const RE = /([+\-\u2212]\d+[.,]\d+s|[+\-\u2212]\d+s)/g;
     let best = null, bestDist = Infinity;
 
     while (walker.nextNode()) {
@@ -221,13 +269,11 @@
           range.setEnd(node, m.index + m[0].length);
           const rect = range.getBoundingClientRect();
           if (!rect.width) continue;
-          const rx = rect.left + rect.width  / 2;
-          const ry = rect.top  + rect.height / 2;
-          const dx = Math.abs(rx - cx);
+          const ry = rect.top + rect.height / 2;
           const dy = Math.abs(ry - cy);
-          if (dx > RADIUS_X || dy > RADIUS_Y) continue;
-          const dist = Math.hypot(dx, dy);
-          if (dist < bestDist) { bestDist = dist; best = m[0]; }
+          // Apenas restrição vertical — sem restrição horizontal
+          if (dy > RADIUS_Y) continue;
+          if (dy < bestDist) { bestDist = dy; best = m[0]; }
         } catch(e) {}
       }
     }
@@ -420,7 +466,7 @@
     btnX.textContent = '\u2715';
     btnX.title = 'Fechar o medidor';
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
-    btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove()); };
+    btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"], .ml-search-overlay').forEach(e => e.remove()); };
 
     btnTips.onclick  = () => toggleTips(panel);
     btnGuide.onclick = () => toggleGuide(panel);
@@ -665,6 +711,7 @@
       btnAuto.title = 'Detectar dedu\u00e7\u00e3o automaticamente';
       btnAuto.style.cssText = 'background:#1e2a3a;border:1px solid #ff9d0044;color:#ff9d00;border-radius:3px;padding:0 3px;cursor:pointer;font-size:9px;line-height:15px;flex-shrink:0';
       btnAuto.onclick = () => {
+        showSearchOverlay(ch);
         const found = autoDetectDeduction(ch);
         if (found) {
           const v = parseDeductionS(found);
@@ -809,40 +856,35 @@
     const tbl = document.createElement('table');
     tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
     const thead = document.createElement('thead');
-    const thr = document.createElement('tr');
-    [
-      { label: 'Tela',  align: 'left'  },
-      { label: 'Res.',  align: 'right' },
-      { label: 'Real',  align: 'right' },
-    ].forEach(({ label, align }) => {
+    const trH = document.createElement('tr');
+    ['Tela','Resultado','Real'].forEach((h, hi) => {
       const th = document.createElement('th');
-      th.textContent = label;
-      th.style.cssText = `color:#aaa;font-weight:bold;font-size:7px;letter-spacing:.08em;text-transform:uppercase;padding:1px 3px;text-align:${align};border-bottom:1px solid #1a1a30`;
-      thr.appendChild(th);
+      th.textContent = h;
+      th.style.cssText = `color:#aaa;font-weight:bold;padding:1px ${hi===0?'2px':'4px'};text-align:${hi===0?'left':'center'};border-bottom:1px solid #2a2a4a`;
+      trH.appendChild(th);
     });
-    thead.appendChild(thr);
+    thead.appendChild(trH);
     tbl.appendChild(thead);
 
     const tbody = document.createElement('tbody');
     ML.CHANNELS.forEach((ch, i) => {
       const tr = document.createElement('tr');
-      tr.style.cssText = `border-bottom:1px solid ${ch.color}22`;
+      tr.style.cssText = `border-bottom:1px solid #1a1a2a;opacity:${ch.active?1:.4};transition:opacity .2s`;
+      ch._panelTr = tr;
 
       const tdName = document.createElement('td');
-      tdName.style.cssText = `color:${ch.color};font-weight:bold;padding:2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55px;font-size:8px`;
-      tdName.textContent = (i===0?'\u2605 Ref.':ch.label);
+      tdName.textContent = (i === 0 ? '\u2605 ' : '') + ch.label;
+      tdName.style.cssText = `color:${ch.color};padding:2px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px`;
       ch._tdName = tdName;
 
       const tdOff = document.createElement('td');
-      tdOff.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:9px;white-space:nowrap';
-      tdOff.textContent  = i===0 ? '0.000s' : '--';
-      tdOff.style.color  = i===0 ? '#44ff88' : '#fff';
+      tdOff.textContent = i === 0 ? '0.000s' : '--';
+      tdOff.style.cssText = `color:${i===0?'#44ff88':'#fff'};padding:2px 4px;text-align:center;font-weight:bold`;
       ch.offsetEl = tdOff;
 
       const tdReal = document.createElement('td');
-      tdReal.style.cssText = 'text-align:right;padding:2px 3px;font-weight:bold;font-size:9px;white-space:nowrap;color:#fff';
-      tdReal.textContent = i===0 ? '0.000s' : '--';
-      tdReal.style.color = i===0 ? '#44ff88' : '#fff';
+      tdReal.textContent = i === 0 ? '0.000s' : '--';
+      tdReal.style.cssText = `color:${i===0?'#44ff88':'#fff'};padding:2px 4px;text-align:center;font-weight:bold`;
       ch.realEl = tdReal;
 
       tr.append(tdName, tdOff, tdReal);
@@ -852,64 +894,54 @@
     secRes.appendChild(tbl);
     panel.appendChild(secRes);
 
-    /* ── Status ── */
+    /* ── Seção: Status ── */
+    const secSt = document.createElement('div');
+    secSt.style.cssText = 'padding:3px 8px';
     const statusEl = document.createElement('div');
-    statusEl.style.cssText = [
-      'font-size:9px;color:#fff;padding:3px 8px 4px',
-      'border-top:1px solid #1a1a30;text-align:center;font-style:italic',
-      'background:#0e0e1a;border-radius:0 0 6px 6px',
-      'overflow:hidden;white-space:nowrap;text-overflow:ellipsis',
-    ].join(';');
-    statusEl.textContent = 'Posicione os probes e clique \u25cf GRAVAR';
-    panel.appendChild(statusEl);
+    statusEl.style.cssText = 'font-size:8px;color:#aaa;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    statusEl.textContent = 'Pronto';
+    secSt.appendChild(statusEl);
+    panel.appendChild(secSt);
 
+    /* ── Posicionar painel ── */
     document.body.appendChild(panel);
-    ML._ui = { btnRec, btnAnalyze, statusEl, doStop };
+    panel.style.right = '8px';
+    panel.style.top   = '8px';
 
-    ML.panel.refreshOffsets = function(offsets) {
-      ML.CHANNELS.forEach((ch, i) => {
-        if (i === 0 || !offsets[ch.id]) return;
-        if (!ch.offsetEl) return;
-        const s = offsets[ch.id] / 1000;
-        ch.offsetEl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
-        ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
-      });
-      refreshRealColumn();
-    };
-
-    const STABLE_TICKS = 3;
+    /* ── Atualizar lum no painel ── */
     setInterval(() => {
-      const activeChannels = ML.CHANNELS.filter(c => c.active);
-      let allOk = activeChannels.length > 0;
-      activeChannels.forEach(ch => {
-        const pts = ch.buffer.length;
-        if (ch.ptsEl) {
-          if (ch._stableCnt >= STABLE_TICKS) {
-            ch.ptsEl.textContent = '\u2713OK';
-            ch.ptsEl.style.color = '#44ff88';
-          } else {
-            ch.ptsEl.textContent = pts + 'pt';
-            ch.ptsEl.style.color = '#fff';
-          }
-        }
-        if (!ML.state.recording) { ch._prevPts = pts; ch._stableCnt = 0; return; }
-        if (pts === 0) { allOk = false; return; }
-        if (pts === ch._prevPts) {
-          ch._stableCnt = (ch._stableCnt || 0) + 1;
-        } else {
-          ch._stableCnt = 0;
-          ch._prevPts   = pts;
-        }
-        if (ch._stableCnt < STABLE_TICKS) allOk = false;
+      ML.CHANNELS.forEach(ch => {
+        if (!ch.active || !ch.lumEl) return;
+        const y = ML.getLum ? ML.getLum(ch) : null;
+        if (y === null)      { ch.lumEl.textContent = '--';  ch.lumEl.style.color = ch.color; }
+        else if (y === -1)   { ch.lumEl.textContent = '\ud83d\udd12'; ch.lumEl.style.color = '#ff4444'; }
+        else                 { ch.lumEl.textContent = Math.round(y); ch.lumEl.style.color = ch.color; }
       });
-      if (ML.state.recording && allOk && activeChannels.length > 0) {
-        console.log('[MedLat] Buffer estabilizado. Auto-stop.');
-        doStop();
-      }
-    }, 1000);
+    }, 200);
 
-    console.log(`[MedLat] 50-panel carregado. PX Global: ${ML.state.probeW}px. Painel: ${panelW}px.`);
+    /* ── Timer de gravação ── */
+    const MAX_REC_MS = ML.state.maxRecMs || 120000;
+    setInterval(() => {
+      if (!ML.state.recording) return;
+      ML.CHANNELS.forEach((ch, i) => {
+        if (!ch.active || !ch.ptsEl) return;
+        const pts = ch.buffer ? ch.buffer.length : 0;
+        ch.ptsEl.textContent = pts + 'pt';
+        const stable = pts === (ch._prevPts || 0);
+        ch._stableCnt = stable ? (ch._stableCnt || 0) + 1 : 0;
+        ch._prevPts = pts;
+        ch.ptsEl.style.color = ch._stableCnt > 3 ? '#ff8844' : '#44ff88';
+      });
+      const elapsed = Date.now() - (ML.state.recStartTime || Date.now());
+      if (elapsed >= MAX_REC_MS) doStop();
+    }, 1000);
   }
 
-  ML.panel = { init };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  console.log('[MedLat] 50-panel carregado.');
 })();
