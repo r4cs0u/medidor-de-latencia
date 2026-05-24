@@ -21,9 +21,7 @@
     return candidates.slice(0, n).map(({ xIndex, color }) => ({ xIndex, color }));
   }
 
-  // Plugin de picos: só desenha linhas dos picos reais.
-  // snapDist === 0 = alinhado com referência → branco tracejado grosso
-  // caso contrário → cor do canal, tracejado fino
+  // Plugin de picos restaurado: snapDist marca proximidade com referência
   function makePeakPlugin(peakAnnotations) {
     return {
       id: 'peakLines',
@@ -41,15 +39,21 @@
           ctx.moveTo(xPx, yAxis.top);
           ctx.lineTo(xPx, yAxis.bottom);
           if (snapDist === 0) {
-            // alinhado: branco, tracejado grosso
             ctx.strokeStyle = '#ffffffcc';
             ctx.lineWidth   = 3;
             ctx.setLineDash([5, 3]);
+          } else if (Math.abs(snapDist) === 1) {
+            ctx.strokeStyle = '#88888888';
+            ctx.lineWidth   = 1.5;
+            ctx.setLineDash([]);
+          } else if (snapDist != null && Math.abs(snapDist) <= SNAP_RADIUS) {
+            ctx.strokeStyle = '#55555544';
+            ctx.lineWidth   = 1;
+            ctx.setLineDash([]);
           } else {
-            // pico normal: cor do canal, tracejado fino
-            ctx.strokeStyle = color + '99';
-            ctx.lineWidth   = 1.2;
-            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = color + '40';
+            ctx.lineWidth   = 1;
+            ctx.setLineDash([]);
           }
           ctx.stroke();
           ctx.setLineDash([]);
@@ -191,7 +195,6 @@
       }
     });
 
-    // fineShift acumulado — NÃO reseta após Confirmar, só com Reset explícito
     const fineShiftSamples = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
 
@@ -338,19 +341,19 @@
       const btnReset = document.createElement('button');
       btnReset.textContent = '\u21ba';
       btnReset.title = 'Reset ' + ch.label;
-      btnReset.style.cssText = `background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px`;
+      btnReset.style.cssText = 'background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px;width:18px;text-align:center';
 
-      // Botão magnético por régua
-      // Ativo: 🧲  |  Inativo: 🧲 com X (usando texto composto legível)
+      // Botão snap: tamanho fixo para não variar ao redimensionar o gráfico
+      // Ícone: 🧲 ativo | — desativado (comportamento original, mas com largura fixa)
       const btnSnap = document.createElement('button');
       btnSnap.title = 'Snap magnético';
-      btnSnap.style.cssText = `background:#1a1a2e;border:1px solid #ffd70066;color:#ffd700;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px`;
+      // width e text-align fixos para estabilidade visual
+      btnSnap.style.cssText = 'background:#1a1a2e;border:1px solid #ffd70066;color:#ffd700;border-radius:3px;padding:0;cursor:pointer;font:bold 10px monospace;flex-shrink:0;line-height:14px;width:20px;height:16px;text-align:center;overflow:hidden';
       function updateSnapBtn() {
-        // Ativo: ímã cheio | Inativo: ímã barrado (🚫 + 🧲 como texto composto)
-        btnSnap.textContent = snapEnabled ? '\uD83E\uDDF2' : '\uD83E\uDDF2\u20E0';
-        btnSnap.style.opacity     = snapEnabled ? '1'        : '0.55';
-        btnSnap.style.borderColor = snapEnabled ? '#ffd700aa' : '#ffd70044';
-        btnSnap.style.color       = snapEnabled ? '#ffd700'   : '#888';
+        btnSnap.textContent = snapEnabled ? '\uD83E\uDDF2' : '\u2014';
+        btnSnap.style.opacity     = snapEnabled ? '1'        : '0.5';
+        btnSnap.style.borderColor = snapEnabled ? '#ffd700aa' : '#ffd70033';
+        btnSnap.style.color       = snapEnabled ? '#ffd700'   : '#666';
       }
       updateSnapBtn();
       btnSnap.onclick = () => { snapEnabled = !snapEnabled; updateSnapBtn(); };
@@ -430,16 +433,20 @@
         const totalMs = (autoOffsetMs[ch.id] || 0) + fine * iv;
         ML.manualOffsets[ch.id] = totalMs;
 
-        // Absorve o fine no autoOffset, mas MANTÉM o slider na mesma posição visual
-        // O próximo ajuste parte do novo autoOffset; slider já representa o ajuste acumulado
+        // Absorve o fine no autoOffset para que próximos ajustes partam do valor confirmado
         autoOffsetMs[ch.id] = totalMs;
-        // fineShift fica em 0 relativo ao novo base, e o slider também vai a 0
-        // MAS: queremos que o valor exibido não mude — refreshLabel(0) com novo autoOffset = mesmo totalMs
+        // fineShift volta a 0 internamente (base foi atualizada)
         fineShiftSamples[ch.id] = 0;
+
+        // Régua mantém a posição visual: o slider fica no mesmo valor numérico (fine),
+        // mas como autoOffset já absorveu esse fine, o slider agora representa
+        // deslocamento adicional a partir do novo base — visualmente é a mesma posição.
+        // Não mexemos em slider.value: ele permanece onde está.
+        // refreshLabel com sliderVal=fine reflete totalMs correto
         if (sliderRefs[ch.id]) {
-          // slider vai a 0 — mas o label agora reflete o totalMs via autoOffset atualizado
-          sliderRefs[ch.id].slider.value = 0;
-          sliderRefs[ch.id].refreshLabel(0);
+          sliderRefs[ch.id].refreshLabel(fine);
+          // Após absorver, para evitar deriva dupla, sincroniza fine interno com o slider
+          fineShiftSamples[ch.id] = fine;
         }
 
         updateCardResult(ch.id, totalMs);
