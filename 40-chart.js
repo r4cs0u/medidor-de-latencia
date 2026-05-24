@@ -181,29 +181,27 @@
       if (ch.buffer.length > maxLen) maxLen = ch.buffer.length;
     });
 
-    // ── Offset automático calculado: NUNCA muda após init ──────────────
-    // originalAutoMs = valor do cálculo automático, imutável (usado pelo reset)
-    // fineShiftSamples = deslocamento adicional pela régua (0 = posição central)
-    // total = originalAutoMs + fineShiftSamples * iv
+    // ── Offset automático: NUNCA alterado após init ───────────────────────
+    // originalAutoMs[id] = resultado do cálculo automático (imutável)
+    // fineShiftSamples[id] = deslocamento fino pela régua (0 = centro)
+    // total = originalAutoMs[id] + fineShiftSamples[id] * iv
+    //
+    // Confirmar NÃO muda originalAutoMs nem fineShiftSamples:
+    // só salva o total em ML.manualOffsets e atualiza a tabela do painel.
+    // Reset sempre volta fine=0, independente de quantas confirmações foram feitas.
     const originalAutoMs = {};
     ML.CHANNELS.forEach(ch => { originalAutoMs[ch.id] = 0; });
     results.forEach(r => {
       if (r.isReference || !r.channel || r.error || r.skipped || r.offsetMs == null) return;
       originalAutoMs[r.channel.id] = r.offsetMs;
     });
-    // Se já havia ajuste manual confirmado anteriormente, preserva
-    ML.CHANNELS.forEach(ch => {
-      if (ML.manualOffsets && typeof ML.manualOffsets[ch.id] === 'number') {
-        originalAutoMs[ch.id] = ML.manualOffsets[ch.id];
-      }
-    });
 
-    // fineShift em amostras — slider.value === fineShiftSamples
-    // centro da régua (value=0) = resultado automático
+    // fineShift em amostras (slider.value = fineShiftSamples)
     const fineShiftSamples = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
 
-    // ── Escala Y fixa por canal: calculada dos dados brutos uma única vez ─
+    // ── Escala Y fixa: calculada dos dados BRUTOS uma única vez ──────────
+    // Nunca recalculada após movimentos de régua.
     const fixedYScale = {};
     ML.CHANNELS.forEach(ch => {
       if (!ch.buffer || !ch.buffer.length) { fixedYScale[ch.id] = { min: 0, max: 255 }; return; }
@@ -217,7 +215,7 @@
         max: Math.min(255, Math.ceil(lMax  + rng * 0.10)),
       };
     });
-    // Escala global (overlay) também calculada uma vez
+    // Escala global fixa (modo overlay)
     let fixedGlobalYMin = Infinity, fixedGlobalYMax = -Infinity;
     activeChannels.forEach(ch => {
       fixedGlobalYMin = Math.min(fixedGlobalYMin, fixedYScale[ch.id].min);
@@ -307,11 +305,12 @@
 
     const manualHint = document.createElement('div');
     manualHint.style.cssText = 'color:#ffd700;font-size:8px;text-align:center;opacity:.8';
-    manualHint.textContent = '\u25c0 Esquerda = mais atraso  |  Direita = menos atraso \u25b6';
+    manualHint.textContent = '\u25c4 M\u00e9todo: dir = mais atraso / offset maior | esq = menos atraso / offset menor \u25ba';
     manualBar.appendChild(manualHint);
 
     const btnResetAll = document.createElement('button');
     btnResetAll.textContent = '\u21ba Reset tudo';
+    btnResetAll.title = 'Reseta todas as r\u00e9guas para o valor calculado automaticamente';
     btnResetAll.style.cssText = [
       'background:#2a1a1a;border:1px solid #ff884455;color:#ff8844',
       'border-radius:3px;padding:2px 8px;cursor:pointer;font:bold 8px monospace;width:100%',
@@ -359,18 +358,18 @@
       slider.min   = -range;
       slider.max   =  range;
       slider.step  = 1;
-      // Centro da régua (0) = valor calculado automaticamente
+      // value=0 → totalMs = originalAutoMs (centro = valor automático)
       slider.value = 0;
       slider.className = 'ml-slider';
       slider.style.cssText = `flex:1;accent-color:${ch.color}`;
 
       const btnReset = document.createElement('button');
       btnReset.textContent = '\u21ba';
-      btnReset.title = 'Reset ' + ch.label + ' para valor automático';
+      btnReset.title = 'Reset ' + ch.label + ' — volta para valor calculado automaticamente';
       btnReset.style.cssText = 'background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px;width:18px;text-align:center';
 
       const btnSnap = document.createElement('button');
-      btnSnap.title = 'Snap magnético';
+      btnSnap.title = 'Snap magn\u00e9tico aos picos da refer\u00eancia';
       btnSnap.style.cssText = 'background:#1a1a2e;border:1px solid #ffd70066;color:#ffd700;border-radius:3px;padding:0;cursor:pointer;font:bold 10px monospace;flex-shrink:0;line-height:14px;width:20px;height:16px;text-align:center;overflow:hidden';
       function updateSnapBtn() {
         btnSnap.textContent = snapEnabled ? '\uD83E\uDDF2' : '\u2014';
@@ -384,8 +383,10 @@
       const valLbl = document.createElement('span');
       valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
 
-      // totalMs = originalAutoMs + fine * iv
-      // slider.value=0 → totalMs = originalAutoMs (= resultado automático)
+      // Valor exibido na régua = total = auto + fine*iv
+      // slider.value=0 → exibe originalAutoMs (resultado automático)
+      // Mover para direita: fine>0 → total maior → gráfico move para esquerda
+      // Mover para esquerda: fine<0 → total menor → gráfico move para direita
       function refreshLabel(fineVal) {
         const totalMs = (originalAutoMs[ch.id] || 0) + fineVal * iv;
         const s       = totalMs / 1000;
@@ -395,8 +396,9 @@
       }
       refreshLabel(0);
 
-      // Reset: volta slider para 0 (= valor automático original)
-      // Funciona antes e depois de qualquer confirmação
+      // Reset: fineShiftSamples volta a 0 → slider no centro → totalMs = originalAutoMs
+      // Funciona a qualquer momento, mesmo após múltiplas confirmações,
+      // pois originalAutoMs NUNCA é modificado.
       function doReset() {
         fineShiftSamples[ch.id] = 0;
         slider.value = 0;
@@ -441,6 +443,8 @@
       manualBar.appendChild(row);
     });
 
+    // Reset tudo: reseta cada régua individualmente via doReset()
+    // Funciona antes e depois de qualquer confirmação
     btnResetAll.onclick = () => { Object.values(sliderRefs).forEach(r => r.doReset()); };
     manualBar.appendChild(btnResetAll);
 
@@ -456,22 +460,24 @@
       activeChannels.forEach((ch, idx) => {
         if (idx === 0) return;
         const iv      = ui.realIvMs(ch);
+        // fineShiftSamples e originalAutoMs NUNCA mudam:
+        // total = auto + fine*iv, calculado de novo a cada confirmação
         const fine    = fineShiftSamples[ch.id] || 0;
         const totalMs = (originalAutoMs[ch.id] || 0) + fine * iv;
         ML.manualOffsets[ch.id] = totalMs;
 
-        // Atualiza card do gráfico
+        // Atualiza card da janela de gráficos com valor confirmado
         updateCardResult(ch.id, totalMs);
         hideCardManual(ch.id);
 
-        // Atualiza label da régua para refletir totalMs confirmado
+        // Atualiza label da régua (sem mexer em slider.value)
         if (sliderRefs[ch.id]) sliderRefs[ch.id].refreshLabel(fine);
-        // NÃO mexemos em slider.value nem em fineShiftSamples:
-        // régua fica na mesma posição visual, reset continua funcionando
       });
 
-      // Propaga para tabela do painel principal
-      if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
+      // ── Propaga para a tabela do painel principal ──────────────────────
+      if (ML.panel && ML.panel.refreshOffsets) {
+        ML.panel.refreshOffsets(ML.manualOffsets);
+      }
 
       rebuildCharts();
       btnConfirm.textContent = '\u2714 Salvo!';
@@ -522,12 +528,14 @@
       return Math.max(5, Math.floor((chartsArea.offsetWidth || 400) / 60));
     }
 
+    // shift>0: canal atrasado → move dados para esquerda (alinha com referência)
+    // shift<0: canal adiantado → move dados para direita
+    // Régua direita → fine>0 → totalShift maior → gráfico vai para esquerda
+    // Régua esquerda → fine<0 → totalShift menor → gráfico vai para direita
     function shiftSeries(data, shift) {
       if (!shift) return data;
       const n   = data.length;
       const out = new Array(n).fill(null);
-      // shift>0: canal está atrasado em relação à ref → move dados para a esquerda
-      // (gráfico fica à esquerda = mais cedo no tempo)
       if (shift > 0) {
         for (let i = 0; i < n - shift; i++) out[i] = data[i + shift];
       } else {
@@ -537,9 +545,6 @@
       return out;
     }
 
-    // getTotalShift: auto (em amostras) + fine (régua)
-    // Mover régua para direita (fine>0) = offset maior = canal mais atrasado
-    // = gráfico se move para a esquerda (shiftSeries move dados)
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
       const iv          = ui.realIvMs(ch);
@@ -576,7 +581,7 @@
         const rawLums = ch.buffer.map(p => p.lum).slice(0, maxLen);
         const shift   = getTotalShift(ch, idx);
         const lums    = shiftSeries(rawLums, shift);
-        // Usa escala Y fixa (calculada dos dados brutos)
+        // Escala Y fixa — calculada dos dados brutos, nunca recalculada
         const { min: yMin, max: yMax } = fixedYScale[ch.id] || { min: 0, max: 255 };
         const peaks = getPeakAnnotations(ch, lums);
         if (idx === 0) refAnnotations = peaks; else markSnapPeaks(peaks, refAnnotations);
@@ -681,7 +686,7 @@
               ticks: { color: '#556', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks },
               grid: { color: '#16162a' },
             },
-            // Usa escala global fixa
+            // Escala global fixa — nunca recalculada
             y: {
               min: fixedGlobalYMin, max: fixedGlobalYMax,
               ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 5 },
@@ -702,4 +707,27 @@
     const card = document.createElement('div');
     card.style.cssText = [
       'display:inline-flex;align-items:center;gap:5px;flex-shrink:0',
-      `border:1px 
+      `border:1px solid ${color}55;border-top:2px solid ${color}99`,
+      `background:${color}0d;border-radius:4px;padding:3px 6px`,
+    ].join(';');
+    if (prefix) {
+      const sp = document.createElement('span');
+      sp.textContent = prefix; sp.style.cssText = `color:${color};font-size:9px;flex-shrink:0`;
+      card.appendChild(sp);
+    }
+    const nm = document.createElement('span');
+    nm.textContent = label;
+    nm.style.cssText = `color:${color};font-weight:bold;font-size:8px;white-space:nowrap;max-width:56px;overflow:hidden;text-overflow:ellipsis`;
+    const vl = document.createElement('span');
+    vl.textContent = autoTxt; vl.style.cssText = `color:${autoColor};font-weight:bold;font-size:9px;white-space:nowrap`;
+    card._valEl = vl;
+    const manualEl = document.createElement('span');
+    manualEl.style.display = 'none';
+    card._manualEl = manualEl;
+    card.append(nm, vl, manualEl);
+    return card;
+  }
+
+  ML.chart = { show: showChart };
+  console.log('[MedLat] 40-chart carregado.');
+})();
