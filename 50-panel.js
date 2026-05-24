@@ -109,12 +109,12 @@
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
     panel.style.cssText = [
-      'position:fixed;top:8px;right:8px;z-index:99999',
+      'position:fixed;top:4px;right:4px;z-index:99999',
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#fff',
       `user-select:none;width:${panelW}px`,
-      'display:flex;flex-direction:column;height:calc(100vh - 16px);overflow:hidden',
+      'display:flex;flex-direction:column;max-height:calc(100vh - 8px);overflow:hidden',
     ].join(';');
 
     // Header
@@ -174,14 +174,14 @@
         if (ch.active && ch.resize) ch.resize();
       });
     }
-    const btnPxM = ui.mkBtn('\u2212', '#1e2a3a', 'padding:2px 5px');
-    const btnPxP = ui.mkBtn('+',     '#1e2a3a', 'padding:2px 5px');
+    const btnPxM = ui.mkBtn('\u2212', '#1e2a3a', 'padding:1px 4px;font-size:8px;line-height:1.2');
+    const btnPxP = ui.mkBtn('+',     '#1e2a3a', 'padding:1px 4px;font-size:8px;line-height:1.2');
     btnPxM.onclick = () => applyGlobalPx(ML.state.probeW - 2);
     btnPxP.onclick = () => applyGlobalPx(ML.state.probeW + 2);
     pxInp.addEventListener('change', () => applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW));
     pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
 
-    const btnSnap = ui.mkBtn('', '#0d4f3c', 'flex:1;min-width:0');
+    const btnSnap = ui.mkBtn('', '#0d4f3c', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1.2');
     btnSnap.title = 'Ativa grade magnética para alinhar probes';
     function updateSnapBtn() {
       btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF';
@@ -190,7 +190,7 @@
     }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
 
-    const btnCol = ui.mkBtn('', '#2a1a0d', 'flex:1;min-width:0');
+    const btnCol = ui.mkBtn('', '#2a1a0d', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1.2');
     btnCol.title = 'Evita sobreposição entre probes';
     function updateColBtn() {
       btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF';
@@ -447,15 +447,15 @@
       ch._panelTr = tr;
       const tdName = document.createElement('td');
       tdName.textContent = (i === 0 ? '\u2605 ' : '') + (i === 0 ? 'Referência' : ch.label);
-      tdName.style.cssText = `color:${ch.color};padding:2px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px`;
+      tdName.style.cssText = `color:${ch.color};padding:1px 2px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px`;
       ch._tdName = tdName;
       const tdOff = document.createElement('td');
       tdOff.textContent = i === 0 ? '0.000s' : '--';
-      tdOff.style.cssText = `color:${i === 0 ? '#44ff88' : '#fff'};padding:2px 4px;text-align:center;font-weight:bold`;
+      tdOff.style.cssText = `color:${i === 0 ? '#44ff88' : '#fff'};padding:1px 4px;text-align:center;font-weight:bold`;
       ch.offsetEl = tdOff;
       const tdReal = document.createElement('td');
       tdReal.textContent = i === 0 ? '0.000s' : '--';
-      tdReal.style.cssText = `color:${i === 0 ? '#44ff88' : '#fff'};padding:2px 4px;text-align:center;font-weight:bold`;
+      tdReal.style.cssText = `color:${i === 0 ? '#44ff88' : '#fff'};padding:1px 4px;text-align:center;font-weight:bold`;
       ch.realEl = tdReal;
       tr.append(tdName, tdOff, tdReal);
       tbody.appendChild(tr);
@@ -475,8 +475,8 @@
 
     panel.appendChild(scrollBody);
     document.body.appendChild(panel);
-    panel.style.right = '8px';
-    panel.style.top   = '8px';
+    panel.style.right = '4px';
+    panel.style.top   = '4px';
 
     ui.minimizePanel(panel);
 
