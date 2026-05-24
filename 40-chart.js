@@ -21,6 +21,9 @@
     return candidates.slice(0, n).map(({ xIndex, color }) => ({ xIndex, color }));
   }
 
+  // Plugin de picos: só desenha linhas dos picos reais.
+  // snapDist === 0 = alinhado com referência → branco tracejado grosso
+  // caso contrário → cor do canal, tracejado fino
   function makePeakPlugin(peakAnnotations) {
     return {
       id: 'peakLines',
@@ -38,21 +41,15 @@
           ctx.moveTo(xPx, yAxis.top);
           ctx.lineTo(xPx, yAxis.bottom);
           if (snapDist === 0) {
+            // alinhado: branco, tracejado grosso
             ctx.strokeStyle = '#ffffffcc';
             ctx.lineWidth   = 3;
             ctx.setLineDash([5, 3]);
-          } else if (Math.abs(snapDist) === 1) {
-            ctx.strokeStyle = '#88888888';
-            ctx.lineWidth   = 1.5;
-            ctx.setLineDash([]);
-          } else if (snapDist != null && Math.abs(snapDist) <= SNAP_RADIUS) {
-            ctx.strokeStyle = '#55555544';
-            ctx.lineWidth   = 1;
-            ctx.setLineDash([]);
           } else {
-            ctx.strokeStyle = color + '40';
-            ctx.lineWidth   = 1;
-            ctx.setLineDash([]);
+            // pico normal: cor do canal, tracejado fino
+            ctx.strokeStyle = color + '99';
+            ctx.lineWidth   = 1.2;
+            ctx.setLineDash([4, 4]);
           }
           ctx.stroke();
           ctx.setLineDash([]);
@@ -74,7 +71,6 @@
       ? mainPanel.getBoundingClientRect()
       : { left: window.innerWidth - 248, top: 8, width: 228, height: 0 };
 
-    // Janela ocupa toda a área à esquerda do painel principal
     const GAP = 6;
     const initLeft = GAP;
     const initTop  = GAP;
@@ -195,10 +191,10 @@
       }
     });
 
+    // fineShift acumulado — NÃO reseta após Confirmar, só com Reset explícito
     const fineShiftSamples = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
 
-    // cardRefs armazena também valEl para atualização direta
     const cardRefs = {};
 
     function buildCards() {
@@ -233,7 +229,6 @@
     }
     buildCards();
 
-    // Atualiza o valor principal do card (resultado) imediatamente
     function updateCardResult(chId, totalMs) {
       const ref = cardRefs[chId];
       if (!ref || !ref.valEl) return;
@@ -297,10 +292,8 @@
     const sliderRefs = {};
     const peaksByChannel = {};
 
-    // snap global toggle (começa ativado)
     let snapEnabled = true;
 
-    // Retorna índices dos picos da referência para snap
     function getRefPeakIndices() {
       const refCh = activeChannels[0];
       if (!ML.correlator) return [];
@@ -348,13 +341,16 @@
       btnReset.style.cssText = `background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px`;
 
       // Botão magnético por régua
+      // Ativo: 🧲  |  Inativo: 🧲 com X (usando texto composto legível)
       const btnSnap = document.createElement('button');
       btnSnap.title = 'Snap magnético';
       btnSnap.style.cssText = `background:#1a1a2e;border:1px solid #ffd70066;color:#ffd700;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px`;
       function updateSnapBtn() {
-        btnSnap.textContent = snapEnabled ? '\uD83E\uDDF2' : '\u2014';
-        btnSnap.style.opacity = snapEnabled ? '1' : '0.4';
-        btnSnap.style.borderColor = snapEnabled ? '#ffd700aa' : '#ffd70033';
+        // Ativo: ímã cheio | Inativo: ímã barrado (🚫 + 🧲 como texto composto)
+        btnSnap.textContent = snapEnabled ? '\uD83E\uDDF2' : '\uD83E\uDDF2\u20E0';
+        btnSnap.style.opacity     = snapEnabled ? '1'        : '0.55';
+        btnSnap.style.borderColor = snapEnabled ? '#ffd700aa' : '#ffd70044';
+        btnSnap.style.color       = snapEnabled ? '#ffd700'   : '#888';
       }
       updateSnapBtn();
       btnSnap.onclick = () => { snapEnabled = !snapEnabled; updateSnapBtn(); };
@@ -383,12 +379,10 @@
       slider.addEventListener('input', () => {
         let sliderVal = parseInt(slider.value);
 
-        // Snap magnético: detecta pico de referência próximo e atrai
         if (snapEnabled && ML.correlator) {
           const refPeaks = getRefPeakIndices();
           const chPeaks  = getPeakIndices(ch);
           const autoSamp = Math.round((autoOffsetMs[ch.id] || 0) / iv);
-          // Para cada pico do canal, calcula posição deslocada e verifica proximidade com pico ref
           let bestSnap = null, bestDist = Infinity;
           chPeaks.forEach(cp => {
             const shiftedPos = cp - autoSamp - sliderVal;
@@ -431,26 +425,26 @@
       ML.manualOffsets = ML.manualOffsets || {};
       activeChannels.forEach((ch, idx) => {
         if (idx === 0) return;
-        const iv   = ui.realIvMs(ch);
-        const fine = fineShiftSamples[ch.id] || 0;
+        const iv      = ui.realIvMs(ch);
+        const fine    = fineShiftSamples[ch.id] || 0;
         const totalMs = (autoOffsetMs[ch.id] || 0) + fine * iv;
         ML.manualOffsets[ch.id] = totalMs;
+
+        // Absorve o fine no autoOffset, mas MANTÉM o slider na mesma posição visual
+        // O próximo ajuste parte do novo autoOffset; slider já representa o ajuste acumulado
         autoOffsetMs[ch.id] = totalMs;
-        // Não reseta o slider para zero — mantém posição visual pós-ajuste
-        // O fineShift passa a ser 0 relativo ao novo autoOffset, slider fica no mesmo valor
+        // fineShift fica em 0 relativo ao novo base, e o slider também vai a 0
+        // MAS: queremos que o valor exibido não mude — refreshLabel(0) com novo autoOffset = mesmo totalMs
         fineShiftSamples[ch.id] = 0;
         if (sliderRefs[ch.id]) {
-          // Mantém valor visual do slider mas zera o fine interno
-          // (próximo ajuste parte do novo base)
+          // slider vai a 0 — mas o label agora reflete o totalMs via autoOffset atualizado
           sliderRefs[ch.id].slider.value = 0;
-          // Atualiza label do slider para refletir novo base (fine=0 sobre novo auto)
           sliderRefs[ch.id].refreshLabel(0);
         }
-        // Atualiza resultado no card imediatamente
+
         updateCardResult(ch.id, totalMs);
         hideCardManual(ch.id);
       });
-      // Invalida cache de picos da referência para recalcular com novo offset
       delete peaksByChannel['__ref__'];
       if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
       rebuildCharts();
