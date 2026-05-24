@@ -1,14 +1,15 @@
 (function () {
   const ML = window.MedLat;
+  const ui = ML.ui;
 
-  // TARGET_PTS global: usa o maior target entre todos os canais ativos
+  // ── Lógica de gravação ────────────────────────────────────────────────
+
   function getTargetPts(ch) {
     return (ch.lagPreset === 'rapido')
       ? Math.ceil(20000 / ML.INTERVAL_MS)
       : Math.ceil(120000 / ML.INTERVAL_MS);
   }
 
-  // Retorna o maior target entre os canais ativos (conclusão única)
   function getGlobalTarget() {
     const active = ML.CHANNELS.filter(ch => ch.active);
     if (!active.length) return Math.ceil(120000 / ML.INTERVAL_MS);
@@ -32,6 +33,8 @@
     } catch(e) {}
   }
 
+  // ── CSS específico do painel ──────────────────────────────────────────
+
   (function injectStyles() {
     if (document.getElementById('ml-styles')) return;
     const s = document.createElement('style');
@@ -49,76 +52,7 @@
     document.head.appendChild(s);
   })();
 
-  /* ── Utilitário: mantém elemento dentro da viewport ── */
-  function clampPos(left, top, elW, elH) {
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    return {
-      left: Math.max(0, Math.min(left, vw - elW)),
-      top:  Math.max(0, Math.min(top,  vh - elH)),
-    };
-  }
-
-  function makeDraggableWindow(id, titleText, titleColor, width) {
-    const win = document.createElement('div');
-    win.id = id;
-    win.style.cssText = [
-      'position:fixed;z-index:99998',
-      'background:#12121fee;border:1px solid #2a2a4a',
-      'border-radius:6px;box-shadow:0 4px 24px #000c',
-      'font-family:monospace;font-size:10px;color:#ccc',
-      `width:${width}px;overflow:hidden`,
-    ].join(';');
-    const hdr = document.createElement('div');
-    hdr.style.cssText = [
-      'display:flex;align-items:center;padding:4px 8px;cursor:move',
-      'background:#1a1a2e;border-bottom:1px solid #1e1e3a',
-      'border-radius:6px 6px 0 0;user-select:none',
-    ].join(';');
-    const htitle = document.createElement('span');
-    htitle.textContent = titleText;
-    htitle.style.cssText = `color:${titleColor};font-weight:bold;font-size:9px;letter-spacing:.06em;flex:1`;
-    const btnClose = document.createElement('button');
-    btnClose.textContent = '\u2715';
-    btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 5px;cursor:pointer;font-size:10px;line-height:16px;flex-shrink:0';
-    btnClose.onclick = () => win.remove();
-    hdr.append(htitle, btnClose);
-    win.appendChild(hdr);
-    let drag = false, ox = 0, oy = 0;
-    hdr.addEventListener('mousedown', e => {
-      drag = true;
-      ox = e.clientX - win.offsetLeft;
-      oy = e.clientY - win.offsetTop;
-      e.preventDefault();
-    });
-    window.addEventListener('mousemove', e => {
-      if (!drag) return;
-      const pos = clampPos(e.clientX - ox, e.clientY - oy, win.offsetWidth, win.offsetHeight);
-      win.style.left = pos.left + 'px';
-      win.style.top  = pos.top  + 'px';
-    });
-    window.addEventListener('mouseup', () => drag = false);
-    return { win, hdr };
-  }
-
-  function positionNearPanel(el, anchorPanel) {
-    document.body.appendChild(el);
-    requestAnimationFrame(() => {
-      const pr  = anchorPanel.getBoundingClientRect();
-      const elW = el.offsetWidth;
-      const elH = el.offsetHeight;
-      const vw  = window.innerWidth;
-      const vh  = window.innerHeight;
-      const mg  = 6;
-      let top  = pr.top;
-      let left = pr.left - elW - mg;
-      if (left < mg) left = pr.right + mg;
-      if (left + elW > vw - mg) left = mg;
-      if (top + elH > vh - mg) top = Math.max(mg, vh - elH - mg);
-      el.style.top  = top  + 'px';
-      el.style.left = left + 'px';
-    });
-  }
+  // ── Janelas auxiliares ────────────────────────────────────────────────
 
   function toggleTips(anchorPanel) {
     const existing = document.getElementById('ml-tips');
@@ -129,9 +63,8 @@
       ['\u23f1\ufe0f', 'N\u00e3o interrompa \u2014 aguarde o sinal sonoro (~2 min)'],
       ['\ud83d\udda5\ufe0f', 'Evite processos pesados durante a grava\u00e7\u00e3o'],
     ];
-    const vw = window.innerWidth;
-    const auxW = Math.round(Math.max(190, Math.min(260, vw * 0.12)));
-    const { win } = makeDraggableWindow('ml-tips', '\ud83d\udca1 Boas Pr\u00e1ticas', '#ffd700', auxW);
+    const auxW = Math.round(Math.max(190, Math.min(260, window.innerWidth * 0.12)));
+    const { win } = ui.makeDraggableWindow('ml-tips', '\ud83d\udca1 Boas Pr\u00e1ticas', '#ffd700', auxW);
     const body = document.createElement('div');
     body.style.cssText = 'padding:6px 8px;display:flex;flex-direction:column;gap:5px';
     TIPS.forEach(([icon, text]) => {
@@ -147,29 +80,28 @@
       body.appendChild(r);
     });
     win.appendChild(body);
-    positionNearPanel(win, anchorPanel);
+    ui.positionNearPanel(win, anchorPanel);
   }
 
   function toggleGuide(anchorPanel) {
     const existing = document.getElementById('ml-guide');
     if (existing) { existing.remove(); return; }
-    const vw = window.innerWidth;
-    const auxW = Math.round(Math.max(200, Math.min(270, vw * 0.13)));
-    const { win } = makeDraggableWindow('ml-guide', '\ud83d\udccb Como Usar', '#00d4ff', auxW);
+    const auxW = Math.round(Math.max(200, Math.min(270, window.innerWidth * 0.13)));
+    const { win } = ui.makeDraggableWindow('ml-guide', '\ud83d\udccb Como Usar', '#00d4ff', auxW);
     const STEPS = [
       { section: '\u2699\ufe0f  PREPARA\u00c7\u00c3O', color: '#ffd700', items: [
         '1. Ative as telas desejadas (\u25cf)',
         '2. Ajuste o tamanho via PX Global ou por tela',
         '3. Posicione cada probe sobre a imagem do v\u00eddeo (arrastar ou setas)',
-        '4. Dedu\u00e7\u00e3o offset já exibido no multiviewer (em vermelho), adicione o valor em segundos',
-        '5. Lag estimado: Range da diferença entre os sinais',
+        '4. Dedu\u00e7\u00e3o offset j\u00e1 exibido no multiviewer (em vermelho), adicione o valor em segundos',
+        '5. Lag estimado: Range da diferen\u00e7a entre os sinais',
       ]},
       { section: '\u23fa  GRAVA\u00c7\u00c3O', color: '#44ff88', items: [
         '6. Clique em \u25cf GRAVAR \u2014 a an\u00e1lise inicia sozinha ao terminar',
       ]},
       { section: '\ud83d\udcca  AN\u00c1LISE', color: '#ce93d8', items: [
         '7. Resultado = A lat\u00eancia estimada aparece por tela automaticamente',
-        '8. Real = Resultado + Dedu\u00e7\u00e3o canal \u2212 Dedu\u00e7\u00e3o ref. (desconta o atraso já conhecido do multiviewer)',
+        '8. Real = Resultado + Dedu\u00e7\u00e3o canal \u2212 Dedu\u00e7\u00e3o ref. (desconta o atraso j\u00e1 conhecido do multiviewer)',
         '9. Para ajuste fino: clique em Manual e mova as r\u00e9guas',
         '10. Clique em \u2714 Confirmar para exportar e copiar os resultados',
       ]},
@@ -189,12 +121,13 @@
       });
     });
     win.appendChild(body);
-    positionNearPanel(win, anchorPanel);
+    ui.positionNearPanel(win, anchorPanel);
   }
+
+  // ── Lógica de dedução ─────────────────────────────────────────────────
 
   // Aceita: "3", "-3", "+3", "3.5", "3,5", "-1.2s", "+0.5s", etc.
   // Sem sinal explícito → negativo por padrão
-  // Sem ponto/vírgula → inteiro (sem casas decimais implícitas)
   function parseDeductionS(str) {
     if (!str) return null;
     const norm = str.trim()
@@ -217,6 +150,8 @@
     return (s > 0 ? '+' : '') + s.toFixed(3) + 's';
   }
 
+  // ── Resultados ────────────────────────────────────────────────────────
+
   function copyResults(btn) {
     const lines = ML.CHANNELS
       .filter(ch => ch.active)
@@ -231,13 +166,10 @@
     try {
       navigator.clipboard.writeText(text).then(() => {
         btn.innerHTML = '\u2714';
-        btn.style.background = '#0d4f3c';
-        btn.style.color = '#44ff88';
+        btn.style.background = '#0d4f3c'; btn.style.color = '#44ff88';
         setTimeout(() => { btn.innerHTML = orig; btn.style.background = 'transparent'; btn.style.color = '#00d4ff'; }, 1500);
       }).catch(() => fallbackCopy(text, btn, orig));
-    } catch(e) {
-      fallbackCopy(text, btn, orig);
-    }
+    } catch(e) { fallbackCopy(text, btn, orig); }
   }
 
   function fallbackCopy(text, btn, orig) {
@@ -249,8 +181,7 @@
     try { document.execCommand('copy'); } catch(e) {}
     ta.remove();
     btn.innerHTML = '\u2714';
-    btn.style.background = '#0d4f3c';
-    btn.style.color = '#44ff88';
+    btn.style.background = '#0d4f3c'; btn.style.color = '#44ff88';
     setTimeout(() => { btn.innerHTML = orig; btn.style.background = 'transparent'; btn.style.color = '#00d4ff'; }, 1500);
   }
 
@@ -258,25 +189,19 @@
     const refDed = ML.CHANNELS[0].deduction || 0;
     ML.CHANNELS.forEach((ch, i) => {
       if (!ch.realEl) return;
-      if (i === 0) {
-        ch.realEl.textContent = '0.000s';
-        ch.realEl.style.color = '#44ff88';
-        return;
-      }
+      if (i === 0) { ch.realEl.textContent = '0.000s'; ch.realEl.style.color = '#44ff88'; return; }
       if (!ch.offsetEl || ch.offsetEl.textContent === '--' || ch.offsetEl.textContent === 'ERRO') {
-        ch.realEl.textContent = '--';
-        ch.realEl.style.color = '#fff';
-        return;
+        ch.realEl.textContent = '--'; ch.realEl.style.color = '#fff'; return;
       }
-      const raw = ch.offsetEl.textContent.replace('s', '').replace(',', '.');
-      const offsetS = parseFloat(raw);
+      const offsetS = parseFloat(ch.offsetEl.textContent.replace('s', '').replace(',', '.'));
       if (isNaN(offsetS)) { ch.realEl.textContent = '--'; ch.realEl.style.color = '#fff'; return; }
-      const ded = ch.deduction || 0;
-      const realS = offsetS + ded - refDed;
+      const realS = offsetS + (ch.deduction || 0) - refDed;
       ch.realEl.textContent = (realS > 0 ? '+' : '') + realS.toFixed(3) + 's';
       ch.realEl.style.color = Math.abs(realS) < 0.1 ? '#44ff88' : Math.abs(realS) < 1 ? '#ffd700' : '#ff8844';
     });
   }
+
+  // ── Widget minimizado ─────────────────────────────────────────────────
 
   function minimizePanel(panel) {
     panel.style.display = 'none';
@@ -307,7 +232,7 @@
     function onWMove(e) {
       if (!wdrag) return;
       widget.style.right = 'auto';
-      const pos = clampPos(e.clientX - wx, e.clientY - wy, widget.offsetWidth, widget.offsetHeight);
+      const pos = ui.clampPos(e.clientX - wx, e.clientY - wy, widget.offsetWidth, widget.offsetHeight);
       widget.style.left = pos.left + 'px';
       widget.style.top  = pos.top  + 'px';
     }
@@ -322,15 +247,12 @@
       wdrag = false;
     }
     widget.addEventListener('mousedown', e => {
-      e.stopPropagation();
-      e.preventDefault();
+      e.stopPropagation(); e.preventDefault();
       wdrag = false;
       wx = e.clientX - widget.offsetLeft;
       wy = e.clientY - widget.offsetTop;
       function onMoveOnce(ev) {
-        if (Math.hypot(ev.clientX - (wx + widget.offsetLeft), ev.clientY - (wy + widget.offsetTop)) > 4) {
-          wdrag = true;
-        }
+        if (Math.hypot(ev.clientX - (wx + widget.offsetLeft), ev.clientY - (wy + widget.offsetTop)) > 4) wdrag = true;
       }
       window.addEventListener('mousemove', onMoveOnce, { once: false });
       widget._onMoveOnce = onMoveOnce;
@@ -340,14 +262,71 @@
     document.body.appendChild(widget);
   }
 
+  // ── Inputs de canal ───────────────────────────────────────────────────
+
+  function mkLagSelect(ch) {
+    const sel = document.createElement('select');
+    sel.title = 'Faixa de atraso esperada em rela\u00e7\u00e3o \u00e0 refer\u00eancia';
+    sel.style.cssText = [
+      'background:#111827;border:1px solid #2a3a50;color:#fff',
+      'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
+      'cursor:pointer;outline:none;width:100%',
+    ].join(';');
+    [{ value: 'auto', label: 'Auto' }, { value: 'rapido', label: '\u22645s' }, { value: 'internet', label: '\u226430s' }]
+      .forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.value; opt.textContent = o.label;
+        if ((ch.lagPreset || 'auto') === o.value) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    function updateSelStyle() {
+      sel.style.borderColor = sel.value === 'auto' ? '#2a3a50' : '#ffd70088';
+      sel.style.color       = sel.value === 'auto' ? '#fff'    : '#ffd700';
+    }
+    sel.addEventListener('change', () => { ch.lagPreset = sel.value; updateSelStyle(); });
+    updateSelStyle();
+    return sel;
+  }
+
+  function mkDeductionInput(ch) {
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.placeholder = '0.000s';
+    inp.value = ch.deduction ? formatDeduction(ch.deduction) : '';
+    inp.title = 'Offset fixo do multiviewer. Ex: 3 \u2192 -3.000s  +1.5 \u2192 +1.500s';
+    inp.style.cssText = [
+      'background:#111827;border:1px solid #2a3a5088;color:#ff9d00',
+      'font:bold 8px monospace;width:100%;box-sizing:border-box;border-radius:3px',
+      'padding:1px 3px;text-align:center;outline:none',
+    ].join(';');
+    inp.addEventListener('focus', () => inp.style.borderColor = '#ff9d0088');
+    inp.addEventListener('blur',  () => {
+      inp.style.borderColor = '#2a3a5088';
+      const raw = inp.value.trim();
+      if (raw === '' || raw === '0' || raw === '0.000s') {
+        ch.deduction = 0; inp.value = ''; inp.style.color = '#fff';
+      } else {
+        const v = parseDeductionS(raw);
+        if (v !== null) {
+          ch.deduction = v;
+          inp.value = formatDeduction(v);
+          inp.style.color = v !== 0 ? '#ff9d00' : '#fff';
+        }
+      }
+      refreshRealColumn();
+    });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+    ch._dedInp = inp;
+    return inp;
+  }
+
+  // ── init ──────────────────────────────────────────────────────────────
+
   function init() {
     ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-guide', 'ml-widget'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.remove();
+      const el = document.getElementById(id); if (el) el.remove();
     });
 
-    const vw = window.innerWidth;
-    const panelW = Math.round(Math.max(286, Math.min(390, vw * 0.18)));
+    const panelW = Math.round(Math.max(286, Math.min(390, window.innerWidth * 0.18)));
 
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
@@ -357,213 +336,99 @@
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#fff',
       `user-select:none;width:${panelW}px`,
-      'display:flex;flex-direction:column',
-      'max-height:95vh;overflow:hidden',
+      'display:flex;flex-direction:column;max-height:95vh;overflow:hidden',
     ].join(';');
 
+    // Header
     const hdr = document.createElement('div');
     hdr.style.cssText = [
       'display:flex;align-items:center;gap:4px;overflow:hidden',
       'padding:4px 8px;cursor:move',
       'border-bottom:1px solid #1e1e3a',
-      'background:#1a1a2e;border-radius:6px 6px 0 0',
-      'flex-shrink:0',
+      'background:#1a1a2e;border-radius:6px 6px 0 0;flex-shrink:0',
     ].join(';');
-
     const ttl = document.createElement('span');
     ttl.textContent = '\u{1F550} ANALISADOR DE LAT\u00CANCIA';
     ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
-
-    function mkIconBtn(icon, title, color) {
-      const b = document.createElement('button');
-      b.innerHTML = icon;
-      b.title = title;
-      b.style.cssText = `background:transparent;border:1px solid ${color}44;color:${color};border-radius:3px;padding:0 5px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0;font-weight:bold`;
-      b.addEventListener('mouseenter', () => b.style.background = color + '22');
-      b.addEventListener('mouseleave', () => b.style.background = 'transparent');
-      return b;
-    }
-
-    const btnTips  = mkIconBtn('\ud83d\udca1', 'Dicas para uma medi\u00e7\u00e3o precisa', '#ffd700');
-    const btnGuide = mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
-    const btnMin   = mkIconBtn('\u2212', 'Minimizar para widget', '#aaaaaa');
+    const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medi\u00e7\u00e3o precisa', '#ffd700');
+    const btnGuide = ui.mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
+    const btnMin   = ui.mkIconBtn('\u2212', 'Minimizar para widget', '#aaaaaa');
     const btnX     = document.createElement('button');
-    btnX.textContent = '\u2715';
-    btnX.title = 'Fechar o medidor';
+    btnX.textContent = '\u2715'; btnX.title = 'Fechar o medidor';
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"], .ml-search-overlay').forEach(e => e.remove()); };
-
     btnTips.onclick  = () => toggleTips(panel);
     btnGuide.onclick = () => toggleGuide(panel);
     btnMin.onclick   = () => minimizePanel(panel);
-
     hdr.append(ttl, btnTips, btnGuide, btnMin, btnX);
     panel.appendChild(hdr);
 
+    // Drag do painel principal
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => {
       if (e.target !== hdr && e.target !== ttl) return;
-      pdrag = true;
-      panel.style.right = 'auto';
+      pdrag = true; panel.style.right = 'auto';
       pox = e.clientX - panel.offsetLeft;
       poy = e.clientY - panel.offsetTop;
     });
     window.addEventListener('mousemove', e => {
       if (!pdrag) return;
-      const pos = clampPos(e.clientX - pox, e.clientY - poy, panel.offsetWidth, panel.offsetHeight);
+      const pos = ui.clampPos(e.clientX - pox, e.clientY - poy, panel.offsetWidth, panel.offsetHeight);
       panel.style.left = pos.left + 'px';
       panel.style.top  = pos.top  + 'px';
     });
     window.addEventListener('mouseup', () => pdrag = false);
 
-    function sec(label, extraContent) {
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'padding:4px 8px;border-bottom:1px solid #1a1a30;flex-shrink:0';
-      const lh = document.createElement('div');
-      lh.style.cssText = 'display:flex;align-items:center;justify-content:space-between;font-size:7px;color:#fff;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #1a1a30;padding-bottom:2px;margin-bottom:4px';
-      const lhText = document.createElement('span');
-      lhText.textContent = label;
-      lh.appendChild(lhText);
-      if (extraContent) lh.appendChild(extraContent);
-      wrap.appendChild(lh);
-      return wrap;
-    }
-    function row(gap) {
-      const d = document.createElement('div');
-      d.style.cssText = `display:flex;align-items:center;gap:${gap||4}px;overflow:hidden`;
-      return d;
-    }
-    function sp(txt, extra) {
-      const s = document.createElement('span');
-      s.textContent = txt;
-      s.style.cssText = 'font-size:9px;color:#fff;white-space:nowrap;' + (extra || '');
-      return s;
-    }
-    function mkBtn(txt, bg, extra) {
-      const b = document.createElement('button');
-      b.textContent = txt;
-      b.style.cssText = `background:${bg};border:1px solid ${bg}55;color:#fff;border-radius:3px;padding:2px 4px;cursor:pointer;font-size:9px;font-family:monospace;font-weight:bold;white-space:nowrap;${extra||''}`;
-      return b;
-    }
-    function mkNum(val, min, max, step, w) {
-      const inp = document.createElement('input');
-      inp.type = 'number'; inp.min = min; inp.max = max; inp.step = step; inp.value = val;
-      inp.style.cssText = `background:#111827;border:1px solid #2a3a50;color:#00d4ff;font:bold 10px monospace;width:${w}px;border-radius:3px;padding:1px 3px;text-align:center;outline:none;-moz-appearance:textfield`;
-      inp.addEventListener('focus', () => inp.style.borderColor = '#00d4ff88');
-      inp.addEventListener('blur',  () => inp.style.borderColor = '#2a3a50');
-      return inp;
-    }
-
-    function mkLagSelect(ch) {
-      const sel = document.createElement('select');
-      sel.title = 'Faixa de atraso esperada em rela\u00e7\u00e3o \u00e0 refer\u00eancia';
-      sel.style.cssText = [
-        'background:#111827;border:1px solid #2a3a50;color:#fff',
-        'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
-        'cursor:pointer;outline:none;width:100%',
-      ].join(';');
-      const opts = [
-        { value: 'auto',     label: 'Auto' },
-        { value: 'rapido',   label: '\u22645s' },
-        { value: 'internet', label: '\u226430s' },
-      ];
-      opts.forEach(o => {
-        const opt = document.createElement('option');
-        opt.value = o.value;
-        opt.textContent = o.label;
-        if ((ch.lagPreset || 'auto') === o.value) opt.selected = true;
-        sel.appendChild(opt);
-      });
-      function updateSelStyle() {
-        sel.style.borderColor = sel.value === 'auto' ? '#2a3a50' : '#ffd70088';
-        sel.style.color       = sel.value === 'auto' ? '#fff'    : '#ffd700';
-      }
-      sel.addEventListener('change', () => {
-        ch.lagPreset = sel.value;
-        updateSelStyle();
-      });
-      updateSelStyle();
-      return sel;
-    }
-
-    function mkDeductionInput(ch) {
-      const inp = document.createElement('input');
-      inp.type = 'text';
-      inp.placeholder = '0.000s';
-      inp.value = ch.deduction ? formatDeduction(ch.deduction) : '';
-      inp.title = 'Offset fixo do multiviewer. Ex: 3 → -3.000s  +1.5 → +1.500s';
-      inp.style.cssText = [
-        'background:#111827;border:1px solid #2a3a5088;color:#ff9d00',
-        'font:bold 8px monospace;width:100%;box-sizing:border-box;border-radius:3px',
-        'padding:1px 3px;text-align:center;outline:none',
-      ].join(';');
-      inp.addEventListener('focus', () => inp.style.borderColor = '#ff9d0088');
-      inp.addEventListener('blur',  () => {
-        inp.style.borderColor = '#2a3a5088';
-        const raw = inp.value.trim();
-        if (raw === '' || raw === '0' || raw === '0.000s') {
-          ch.deduction = 0;
-          inp.value = '';
-          inp.style.color = '#fff';
-        } else {
-          const v = parseDeductionS(raw);
-          if (v !== null) {
-            ch.deduction = v;
-            inp.value = formatDeduction(v);
-            inp.style.color = v !== 0 ? '#ff9d00' : '#fff';
-          }
-        }
-        refreshRealColumn();
-      });
-      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
-      ch._dedInp = inp;
-      return inp;
-    }
-
     /* ── Seção: Posicionamento ── */
-    const secTG = sec('Posicionamento');
-    const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 44);
+    const secTG = ui.sec('Posicionamento');
+    const pxInp = ui.mkNum(ML.state.probeW, 16, 500, 2, 44);
     pxInp.title = 'Tamanho das probes em pixels';
     function applyGlobalPx(v) {
       const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
-      ML.state.probeW = c;
-      pxInp.value = c;
+      ML.state.probeW = c; pxInp.value = c;
       ML.CHANNELS.forEach(ch => {
         ch.probeW = c;
         if (ch._szInp) ch._szInp.value = c;
         if (ch.active && ch.resize) ch.resize();
       });
     }
-    const btnPxM = mkBtn('\u2212', '#1e2a3a', 'padding:2px 5px');
-    const btnPxP = mkBtn('+', '#1e2a3a', 'padding:2px 5px');
+    const btnPxM = ui.mkBtn('\u2212', '#1e2a3a', 'padding:2px 5px');
+    const btnPxP = ui.mkBtn('+',     '#1e2a3a', 'padding:2px 5px');
     btnPxM.onclick = () => applyGlobalPx(ML.state.probeW - 2);
     btnPxP.onclick = () => applyGlobalPx(ML.state.probeW + 2);
     pxInp.addEventListener('change', () => applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW));
     pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
 
-    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0');
+    const btnSnap = ui.mkBtn('', '#0d4f3c', 'flex:1;min-width:0');
     btnSnap.title = 'Ativa grade magn\u00e9tica para alinhar probes';
-    function updateSnapBtn() { btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF'; btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e'; btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#fff'; }
+    function updateSnapBtn() {
+      btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF';
+      btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e';
+      btnSnap.style.color      = ML.state.snapGrid ? '#44ff88' : '#fff';
+    }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
 
-    const btnCol = mkBtn('', '#2a1a0d', 'flex:1;min-width:0');
+    const btnCol = ui.mkBtn('', '#2a1a0d', 'flex:1;min-width:0');
     btnCol.title = 'Evita sobreposi\u00e7\u00e3o entre probes';
-    function updateColBtn() { btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF'; btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e'; btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#fff'; }
+    function updateColBtn() {
+      btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF';
+      btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e';
+      btnCol.style.color      = ML.state.noOverlap ? '#ff8844' : '#fff';
+    }
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
 
-    const rowPos = row(4);
-    rowPos.append(sp('PX', 'flex-shrink:0;font-size:8px'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
+    const rowPos = ui.row(4);
+    rowPos.append(ui.sp('PX', 'flex-shrink:0;font-size:8px'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
     secTG.appendChild(rowPos);
     panel.appendChild(secTG);
 
-    /* ── Seção: Telas (grid 3×N) ── */
-    const secDet = sec('Telas');
+    /* ── Seção: Telas ── */
+    const secDet = ui.sec('Telas');
     const probeGrid = document.createElement('div');
     probeGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px';
 
     ML.CHANNELS.forEach((ch, i) => {
       ch.deduction = ch.deduction || 0;
-
       const card = document.createElement('div');
       card.style.cssText = [
         'display:flex;flex-direction:column;gap:2px',
@@ -576,8 +441,7 @@
       ].join(';');
       ch._panelRow = card;
 
-      /* linha 1: toggle + label + lum */
-      const r1 = row(3);
+      const r1 = ui.row(3);
       r1.style.cssText += ';overflow:hidden;min-width:0';
       const tog = document.createElement('button');
       tog.title = 'Ativar ou desativar esta tela';
@@ -587,11 +451,7 @@
         tog.style.background = ch.active ? ch.color : 'transparent';
         card.style.opacity = ch.active ? 1 : .4;
         ch.probe.style.display = ch.active ? 'block' : 'none';
-        if (!ch.active) {
-          ch.prevLum = null;
-        } else {
-          if (ch.resize) ch.resize();
-        }
+        if (!ch.active) { ch.prevLum = null; } else { if (ch.resize) ch.resize(); }
       };
 
       const lblInp = document.createElement('input');
@@ -615,29 +475,24 @@
 
       r1.append(tog, lblInp, lumEl, ptsEl);
 
-      /* linha 2: px individual */
-      const r2 = row(2);
+      const r2 = ui.row(2);
       r2.style.cssText += ';overflow:hidden;min-width:0';
       const szInp = document.createElement('input');
-      szInp.type = 'number';
-      szInp.min = 16; szInp.max = 500; szInp.step = 2;
+      szInp.type = 'number'; szInp.min = 16; szInp.max = 500; szInp.step = 2;
       szInp.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
       szInp.className = 'ml-sz-inp';
       szInp.title = 'Tamanho desta probe em pixels (use as setas \u2191\u2193)';
       szInp.style.cssText = [
         'background:#111827;border:1px solid #2a3a50;color:#00d4ff',
         'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
-        'text-align:left;outline:none',
-        'box-sizing:border-box;height:20px',
-        'flex:1;min-width:52px',
+        'text-align:left;outline:none;box-sizing:border-box;height:20px;flex:1;min-width:52px',
       ].join(';');
       szInp.addEventListener('focus', () => szInp.style.borderColor = '#00d4ff88');
       szInp.addEventListener('blur',  () => szInp.style.borderColor = '#2a3a50');
       ch._szInp = szInp;
       function applyChanPx(v) {
         const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
-        ch.probeW = c;
-        szInp.value = c;
+        ch.probeW = c; szInp.value = c;
         if (ch.active && ch.resize) ch.resize();
       }
       szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
@@ -646,24 +501,19 @@
         if (e.key === 'ArrowUp')   { e.preventDefault(); applyChanPx((parseInt(szInp.value) || 16) + 2); }
         if (e.key === 'ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value) || 16) - 2); }
       });
-      r2.append(sp('px', 'font-size:7px;color:#aaa;flex-shrink:0'), szInp);
+      r2.append(ui.sp('px', 'font-size:7px;color:#aaa;flex-shrink:0'), szInp);
 
-      /* linha 3: dedução (somente manual) */
-      const r3ded = row(2);
+      const r3ded = ui.row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
-      const dedInp = mkDeductionInput(ch);
-      r3ded.append(sp('ded', 'font-size:7px;color:#ff9d00;flex-shrink:0'), dedInp);
+      r3ded.append(ui.sp('ded', 'font-size:7px;color:#ff9d00;flex-shrink:0'), mkDeductionInput(ch));
 
-      /* linha 4: lag (só canais não-ref) */
       const rows = [r1, r2, r3ded];
       if (i !== 0) {
-        const r4lag = row(2);
+        const r4lag = ui.row(2);
         r4lag.style.cssText += ';overflow:hidden;min-width:0';
-        const lagSel = mkLagSelect(ch);
-        r4lag.append(sp('lag', 'font-size:7px;color:#aaa;flex-shrink:0'), lagSel);
+        r4lag.append(ui.sp('lag', 'font-size:7px;color:#aaa;flex-shrink:0'), mkLagSelect(ch));
         rows.push(r4lag);
       }
-
       rows.forEach(r => card.appendChild(r));
       probeGrid.appendChild(card);
     });
@@ -672,29 +522,18 @@
     panel.appendChild(secDet);
 
     /* ── Seção: Análise ── */
-    const secAn = sec('An\u00e1lise');
-
-    const btnRec     = mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
-    const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
+    const secAn = ui.sec('An\u00e1lise');
+    const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
+    const btnAnalyze = ui.mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
     btnRec.title     = 'Inicia a captura de lumin\u00e2ncia';
     btnAnalyze.title = 'Calcula a lat\u00eancia com base nos dados gravados';
 
-    /* Barra de progresso */
     const progWrap = document.createElement('div');
-    progWrap.style.cssText = [
-      'display:none;flex-direction:column;gap:1px',
-      'padding:2px 0',
-    ].join(';');
+    progWrap.style.cssText = 'display:none;flex-direction:column;gap:1px;padding:2px 0';
     const progBarOuter = document.createElement('div');
-    progBarOuter.style.cssText = [
-      'width:100%;height:5px;background:#1e2a3a',
-      'border-radius:3px;overflow:hidden',
-    ].join(';');
+    progBarOuter.style.cssText = 'width:100%;height:5px;background:#1e2a3a;border-radius:3px;overflow:hidden';
     const progBarInner = document.createElement('div');
-    progBarInner.style.cssText = [
-      'height:100%;width:0%;background:#44ff88',
-      'border-radius:3px;transition:width .5s linear',
-    ].join(';');
+    progBarInner.style.cssText = 'height:100%;width:0%;background:#44ff88;border-radius:3px;transition:width .5s linear';
     progBarOuter.appendChild(progBarInner);
     const progLabel = document.createElement('div');
     progLabel.style.cssText = 'font-size:8px;color:#44ff88;text-align:center;letter-spacing:.05em';
@@ -722,22 +561,17 @@
         btnRec.style.background = '#7f0000'; btnRec.style.borderColor = '#c6282888'; btnRec.style.boxShadow = '0 0 8px #c6282855';
         statusEl.textContent = 'Gravando...'; statusEl.style.color = '#44ff88';
         progWrap.style.display = 'flex';
-        progBarInner.style.width = '0%';
-        progLabel.textContent = '0%';
-        progLabel.style.color = '#44ff88';
+        progBarInner.style.width = '0%'; progLabel.textContent = '0%'; progLabel.style.color = '#44ff88';
         btnAnalyze.disabled = true;
         ML.CHANNELS.forEach((ch, i) => {
-          ch._prevPts   = 0;
-          ch._stableCnt = 0;
+          ch._prevPts = 0; ch._stableCnt = 0;
           if (ch.ptsEl) { ch.ptsEl.textContent = '0pt'; ch.ptsEl.style.color = '#fff'; }
           if (i !== 0) {
             if (ch.offsetEl) { ch.offsetEl.textContent = '--'; ch.offsetEl.style.color = '#fff'; }
             if (ch.realEl)   { ch.realEl.textContent   = '--'; ch.realEl.style.color   = '#fff'; }
           }
         });
-      } else {
-        doStop();
-      }
+      } else { doStop(); }
     };
 
     btnAnalyze.onclick = () => {
@@ -774,7 +608,7 @@
     });
     btnAnalyze.disabled = true;
 
-    const rowBtns = row(4); rowBtns.style.marginBottom = '2px';
+    const rowBtns = ui.row(4); rowBtns.style.marginBottom = '2px';
     rowBtns.append(btnRec, btnAnalyze);
     secAn.appendChild(rowBtns);
     secAn.appendChild(progWrap);
@@ -789,23 +623,22 @@
     btnCopyInline.addEventListener('mouseleave', () => btnCopyInline.style.background = 'transparent');
     btnCopyInline.onclick = () => copyResults(btnCopyInline);
 
-    const secRes = sec('Resultados', btnCopyInline);
+    const secRes = ui.sec('Resultados', btnCopyInline);
     const tbl = document.createElement('table');
     tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
     const thead = document.createElement('thead');
     const trH = document.createElement('tr');
-    ['Tela','Resultado','Real'].forEach((h, hi) => {
+    ['Tela', 'Resultado', 'Real'].forEach((h, hi) => {
       const th = document.createElement('th');
       th.textContent = h;
-      th.style.cssText = `color:#aaa;font-weight:bold;padding:1px ${hi===0?'2px':'4px'};text-align:${hi===0?'left':'center'};border-bottom:1px solid #2a2a4a`;
+      th.style.cssText = `color:#aaa;font-weight:bold;padding:1px ${hi === 0 ? '2px' : '4px'};text-align:${hi === 0 ? 'left' : 'center'};border-bottom:1px solid #2a2a4a`;
       trH.appendChild(th);
     });
-    thead.appendChild(trH);
-    tbl.appendChild(thead);
+    thead.appendChild(trH); tbl.appendChild(thead);
     const tbody = document.createElement('tbody');
     ML.CHANNELS.forEach((ch, i) => {
       const tr = document.createElement('tr');
-      tr.style.cssText = `border-bottom:1px solid #1a1a2a;opacity:${ch.active?1:.4};transition:opacity .2s`;
+      tr.style.cssText = `border-bottom:1px solid #1a1a2a;opacity:${ch.active ? 1 : .4};transition:opacity .2s`;
       ch._panelTr = tr;
       const tdName = document.createElement('td');
       tdName.textContent = (i === 0 ? '\u2605 ' : '') + ch.label;
@@ -813,11 +646,11 @@
       ch._tdName = tdName;
       const tdOff = document.createElement('td');
       tdOff.textContent = i === 0 ? '0.000s' : '--';
-      tdOff.style.cssText = `color:${i===0?'#44ff88':'#fff'};padding:2px 4px;text-align:center;font-weight:bold`;
+      tdOff.style.cssText = `color:${i === 0 ? '#44ff88' : '#fff'};padding:2px 4px;text-align:center;font-weight:bold`;
       ch.offsetEl = tdOff;
       const tdReal = document.createElement('td');
       tdReal.textContent = i === 0 ? '0.000s' : '--';
-      tdReal.style.cssText = `color:${i===0?'#44ff88':'#fff'};padding:2px 4px;text-align:center;font-weight:bold`;
+      tdReal.style.cssText = `color:${i === 0 ? '#44ff88' : '#fff'};padding:2px 4px;text-align:center;font-weight:bold`;
       ch.realEl = tdReal;
       tr.append(tdName, tdOff, tdReal);
       tbody.appendChild(tr);
@@ -839,10 +672,9 @@
     panel.style.right = '8px';
     panel.style.top   = '8px';
 
-    // Inicia sempre minimizado
     minimizePanel(panel);
 
-    /* ── Atualizar lum no painel ── */
+    /* ── Timers ── */
     setInterval(() => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch.lumEl) return;
@@ -853,32 +685,21 @@
       });
     }, 200);
 
-    /* ── Timer de gravação: conclusão única pelo maior target ── */
     setInterval(() => {
       if (!ML.state.recording) return;
-
       const activeChs = ML.CHANNELS.filter(ch => ch.active);
       if (!activeChs.length) return;
-
       const globalTarget = getGlobalTarget();
-
-      const allDone = activeChs.every(ch => (ch.buffer ? ch.buffer.length : 0) >= globalTarget);
-      if (allDone) { doStop(); return; }
-
+      if (activeChs.every(ch => (ch.buffer ? ch.buffer.length : 0) >= globalTarget)) { doStop(); return; }
       let minPts = Infinity;
-      activeChs.forEach(ch => {
-        const pts = ch.buffer ? ch.buffer.length : 0;
-        if (pts < minPts) minPts = pts;
-      });
+      activeChs.forEach(ch => { const pts = ch.buffer ? ch.buffer.length : 0; if (pts < minPts) minPts = pts; });
       const pct = Math.min(100, Math.round((minPts / globalTarget) * 100));
-
       progBarInner.style.width = pct + '%';
       progLabel.textContent    = pct + '%';
       if (pct >= 80) {
         progBarInner.style.background = pct >= 95 ? '#ffd700' : '#44ff88';
         progLabel.style.color         = pct >= 95 ? '#ffd700' : '#44ff88';
       }
-
       activeChs.forEach(ch => {
         if (!ch.ptsEl) return;
         const pts = ch.buffer ? ch.buffer.length : 0;
