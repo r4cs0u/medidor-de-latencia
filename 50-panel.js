@@ -1,8 +1,12 @@
 (function () {
   const ML = window.MedLat;
 
-  // Pontos necessários para 2 minutos de gravação
-  const TARGET_PTS = Math.ceil(120000 / ML.INTERVAL_MS);
+  // TARGET_PTS por canal: 'rapido' = 20s, demais = 2 min
+  function getTargetPts(ch) {
+    return (ch.lagPreset === 'rapido')
+      ? Math.ceil(20000 / ML.INTERVAL_MS)
+      : Math.ceil(120000 / ML.INTERVAL_MS);
+  }
 
   function playDone() {
     try {
@@ -34,6 +38,9 @@
       #ml-widget:hover { transform: scale(1.1); }
       input[type=number].ml-sz-inp::-webkit-inner-spin-button,
       input[type=number].ml-sz-inp::-webkit-outer-spin-button { opacity:1; cursor:pointer; }
+      #ml-panel { scrollbar-width: thin; scrollbar-color: #2a2a4a transparent; }
+      #ml-panel::-webkit-scrollbar { width: 4px; }
+      #ml-panel::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 2px; }
     `;
     document.head.appendChild(s);
   })();
@@ -131,10 +138,10 @@
         '2. Ajuste o tamanho via PX Global ou por tela',
         '3. Posicione cada tela sobre o v\u00eddeo (arrastar ou setas)',
         '4. Preencha a Dedu\u00e7\u00e3o caso o multiviewer exiba offset',
-        '5. Selecione o lag estimado: "At\u00e9 5s" ou "Maior que 5s"',
+        '5. Selecione o lag estimado: "\u22645s" ou "\u226430s"',
       ]},
       { section: '\u23fa  GRAVA\u00c7\u00c3O', color: '#44ff88', items: [
-        '6. Clique em \u25cf GRAVAR \u2014 a an\u00e1lise inicia sozinha ao terminar (~2 min)',
+        '6. Clique em \u25cf GRAVAR \u2014 a an\u00e1lise inicia sozinha ao terminar',
       ]},
       { section: '\ud83d\udcca  AN\u00c1LISE', color: '#ce93d8', items: [
         '7. A lat\u00eancia estimada aparece por tela automaticamente',
@@ -161,15 +168,26 @@
     positionNearPanel(win, anchorPanel);
   }
 
+  // Aceita: "3", "-3", "+3", "3.5", "3,5", "-1.2s", "+0.5s", etc.
+  // Sem sinal explícito → negativo por padrão
+  // Sem ponto/vírgula → inteiro (sem casas decimais implícitas)
   function parseDeductionS(str) {
     if (!str) return null;
     const norm = str.trim()
       .replace(/\u2212/g, '-')
       .replace(/,/g, '.')
+      .replace(/s$/i, '')
       .replace(/\s/g, '');
-    const m = norm.match(/^([+-]?\d+(?:\.\d+)?)s$/i);
+    if (norm === '' || norm === '0') return 0;
+    // aceita: +3.5, -3.5, 3.5, +3, -3, 3
+    const m = norm.match(/^([+-])?(\d+(?:\.\d+)?)$/);
     if (!m) return null;
-    return parseFloat(m[1]);
+    const sign = m[1];
+    const abs  = parseFloat(m[2]);
+    if (isNaN(abs)) return null;
+    // sem sinal → negativo por padrão
+    if (!sign) return -abs;
+    return sign === '+' ? abs : -abs;
   }
 
   function formatDeduction(s) {
@@ -187,7 +205,6 @@
     const probeW    = rect.width;
     const cy        = rect.top + rect.height / 2;
     const vh        = window.innerHeight;
-    // Metade do tamanho da probe em pixels
     const halfSearch = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) / 2);
 
     const topAbove = Math.max(0, cy - halfSearch);
@@ -403,7 +420,9 @@
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#fff',
-      `user-select:none;width:${panelW}px;overflow:hidden`,
+      `user-select:none;width:${panelW}px`,
+      'display:flex;flex-direction:column',
+      'max-height:95vh;overflow-y:auto;overflow-x:hidden',
     ].join(';');
 
     const hdr = document.createElement('div');
@@ -412,6 +431,7 @@
       'padding:4px 8px;cursor:move',
       'border-bottom:1px solid #1e1e3a',
       'background:#1a1a2e;border-radius:6px 6px 0 0',
+      'position:sticky;top:0;z-index:1',
     ].join(';');
 
     const ttl = document.createElement('span');
@@ -503,8 +523,8 @@
       ].join(';');
       const opts = [
         { value: 'auto',     label: 'Auto' },
-        { value: 'rapido',   label: 'At\u00e9 5s' },
-        { value: 'internet', label: '> 5s' },
+        { value: 'rapido',   label: '\u22645s' },
+        { value: 'internet', label: '\u226430s' },
       ];
       opts.forEach(o => {
         const opt = document.createElement('option');
@@ -513,15 +533,15 @@
         if ((ch.lagPreset || 'auto') === o.value) opt.selected = true;
         sel.appendChild(opt);
       });
-      sel.addEventListener('change', () => {
-        ch.lagPreset = sel.value;
+      function updateSelStyle() {
         sel.style.borderColor = sel.value === 'auto' ? '#2a3a50' : '#ffd70088';
         sel.style.color       = sel.value === 'auto' ? '#fff'    : '#ffd700';
-      });
-      if ((ch.lagPreset || 'auto') !== 'auto') {
-        sel.style.borderColor = '#ffd70088';
-        sel.style.color       = '#ffd700';
       }
+      sel.addEventListener('change', () => {
+        ch.lagPreset = sel.value;
+        updateSelStyle();
+      });
+      updateSelStyle();
       return sel;
     }
 
@@ -530,7 +550,7 @@
       inp.type = 'text';
       inp.placeholder = '0.000s';
       inp.value = ch.deduction ? formatDeduction(ch.deduction) : '';
-      inp.title = 'Offset fixo exibido pelo multiviewer neste canal';
+      inp.title = 'Offset fixo do multiviewer. Ex: 3 → -3.000s  +1.5 → +1.500s';
       inp.style.cssText = [
         'background:#111827;border:1px solid #2a3a5088;color:#ff9d00',
         'font:bold 8px monospace;width:100%;box-sizing:border-box;border-radius:3px',
@@ -539,15 +559,19 @@
       inp.addEventListener('focus', () => inp.style.borderColor = '#ff9d0088');
       inp.addEventListener('blur',  () => {
         inp.style.borderColor = '#2a3a5088';
-        const v = parseDeductionS(inp.value);
-        if (v !== null) {
-          ch.deduction = v;
-          inp.value = formatDeduction(v);
-          inp.style.color = v !== 0 ? '#ff9d00' : '#fff';
-        } else if (inp.value.trim() === '' || inp.value === '0' || inp.value === '0.000s') {
+        const raw = inp.value.trim();
+        if (raw === '' || raw === '0' || raw === '0.000s') {
           ch.deduction = 0;
           inp.value = '';
           inp.style.color = '#fff';
+        } else {
+          const v = parseDeductionS(raw);
+          if (v !== null) {
+            ch.deduction = v;
+            inp.value = formatDeduction(v);
+            inp.style.color = v !== 0 ? '#ff9d00' : '#fff';
+          }
+          // se inválido, mantém o texto como está
         }
         refreshRealColumn();
       });
@@ -626,7 +650,6 @@
         if (!ch.active) {
           ch.prevLum = null;
         } else {
-          // Aplica probeW atual ao ativar (pode ter sido alterado enquanto inativo)
           if (ch.resize) ch.resize();
         }
       };
@@ -652,7 +675,7 @@
 
       r1.append(tog, lblInp, lumEl, ptsEl);
 
-      /* linha 2: px individual — input expandido com setas nativas */
+      /* linha 2: px individual — input mais largo para caber setas nativas */
       const r2 = row(2);
       r2.style.cssText += ';overflow:hidden;min-width:0';
       const szInp = document.createElement('input');
@@ -660,12 +683,12 @@
       szInp.min = 16; szInp.max = 500; szInp.step = 2;
       szInp.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
       szInp.className = 'ml-sz-inp';
-      szInp.title = 'Tamanho desta probe em pixels (use as setas ↑↓)';
+      szInp.title = 'Tamanho desta probe em pixels (use as setas \u2191\u2193)';
       szInp.style.cssText = [
         'background:#111827;border:1px solid #2a3a50;color:#00d4ff',
-        'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
+        'font:bold 9px monospace;border-radius:3px;padding:1px 3px',
         'text-align:left;outline:none;flex:1;min-width:0;width:0',
-        'box-sizing:border-box',
+        'box-sizing:border-box;height:18px',
       ].join(';');
       szInp.addEventListener('focus', () => szInp.style.borderColor = '#00d4ff88');
       szInp.addEventListener('blur',  () => szInp.style.borderColor = '#2a3a50');
@@ -749,7 +772,7 @@
 
     const btnRec     = mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
-    btnRec.title     = 'Inicia a captura de lumin\u00e2ncia (~2 min)';
+    btnRec.title     = 'Inicia a captura de lumin\u00e2ncia';
     btnAnalyze.title = 'Calcula a lat\u00eancia com base nos dados gravados';
 
     /* Barra de progresso */
@@ -923,18 +946,32 @@
       });
     }, 200);
 
-    /* ── Timer de gravação: conclui por pontos ── */
+    /* ── Timer de gravação: target pts dinâmico por canal ── */
     setInterval(() => {
       if (!ML.state.recording) return;
 
       const activeChs = ML.CHANNELS.filter(ch => ch.active);
       if (!activeChs.length) return;
 
-      // Ponto mais lento entre os canais ativos
-      const minPts = Math.min(...activeChs.map(ch => ch.buffer ? ch.buffer.length : 0));
-      const pct    = Math.min(100, Math.round(minPts / TARGET_PTS * 100));
+      // Calcula target atual de cada canal com base no lagPreset vigente
+      // e verifica conclusão antecipada (ex: mudou de auto→rapido com pts já suficientes)
+      let allDone = true;
+      activeChs.forEach(ch => {
+        const target = getTargetPts(ch);
+        const pts    = ch.buffer ? ch.buffer.length : 0;
+        if (pts < target) allDone = false;
+      });
+      if (allDone) { doStop(); return; }
 
-      // Atualiza barra de progresso
+      // Progresso: canal mais lento em relação ao seu próprio target
+      let minRatio = 1;
+      activeChs.forEach(ch => {
+        const target = getTargetPts(ch);
+        const pts    = ch.buffer ? ch.buffer.length : 0;
+        minRatio = Math.min(minRatio, pts / target);
+      });
+      const pct = Math.min(100, Math.round(minRatio * 100));
+
       progBarInner.style.width = pct + '%';
       progLabel.textContent    = pct + '%';
       if (pct >= 80) {
@@ -952,10 +989,6 @@
         ch._prevPts = pts;
         ch.ptsEl.style.color = ch._stableCnt > 3 ? '#ff8844' : '#44ff88';
       });
-
-      // Conclui quando todos os canais ativos atingirem TARGET_PTS
-      const allDone = activeChs.every(ch => (ch.buffer ? ch.buffer.length : 0) >= TARGET_PTS);
-      if (allDone) doStop();
     }, 1000);
   }
 
