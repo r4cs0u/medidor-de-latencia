@@ -1,8 +1,8 @@
 (function () {
   const ML = window.MedLat;
   const ui = ML.ui;
-  const MAX_PEAKS = 30;
-  const SNAP_RADIUS = 15; // raio de atração em amostras (~500ms @33fps)
+  const MAX_PEAKS = 15;
+  const SNAP_RADIUS = 15;
 
   function loadChartJs() {
     return new Promise((resolve) => {
@@ -21,7 +21,6 @@
     return candidates.slice(0, n).map(({ xIndex, color }) => ({ xIndex, color }));
   }
 
-  // Plugin de picos restaurado: snapDist marca proximidade com referência
   function makePeakPlugin(peakAnnotations) {
     return {
       id: 'peakLines',
@@ -182,21 +181,49 @@
       if (ch.buffer.length > maxLen) maxLen = ch.buffer.length;
     });
 
-    const autoOffsetMs = {};
-    ML.CHANNELS.forEach(ch => {
-      autoOffsetMs[ch.id] = (ML.manualOffsets && typeof ML.manualOffsets[ch.id] === 'number')
-        ? ML.manualOffsets[ch.id]
-        : 0;
-    });
+    // ── Offset automático calculado: NUNCA muda após init ──────────────
+    // originalAutoMs = valor do cálculo automático, imutável (usado pelo reset)
+    // fineShiftSamples = deslocamento adicional pela régua (0 = posição central)
+    // total = originalAutoMs + fineShiftSamples * iv
+    const originalAutoMs = {};
+    ML.CHANNELS.forEach(ch => { originalAutoMs[ch.id] = 0; });
     results.forEach(r => {
       if (r.isReference || !r.channel || r.error || r.skipped || r.offsetMs == null) return;
-      if (!(ML.manualOffsets && typeof ML.manualOffsets[r.channel.id] === 'number')) {
-        autoOffsetMs[r.channel.id] = r.offsetMs;
+      originalAutoMs[r.channel.id] = r.offsetMs;
+    });
+    // Se já havia ajuste manual confirmado anteriormente, preserva
+    ML.CHANNELS.forEach(ch => {
+      if (ML.manualOffsets && typeof ML.manualOffsets[ch.id] === 'number') {
+        originalAutoMs[ch.id] = ML.manualOffsets[ch.id];
       }
     });
 
+    // fineShift em amostras — slider.value === fineShiftSamples
+    // centro da régua (value=0) = resultado automático
     const fineShiftSamples = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
+
+    // ── Escala Y fixa por canal: calculada dos dados brutos uma única vez ─
+    const fixedYScale = {};
+    ML.CHANNELS.forEach(ch => {
+      if (!ch.buffer || !ch.buffer.length) { fixedYScale[ch.id] = { min: 0, max: 255 }; return; }
+      const lums = ch.buffer.map(p => p.lum).filter(v => v != null);
+      if (!lums.length) { fixedYScale[ch.id] = { min: 0, max: 255 }; return; }
+      const lMin = Math.min(...lums);
+      const lMax = Math.max(...lums);
+      const rng  = Math.max(1, lMax - lMin);
+      fixedYScale[ch.id] = {
+        min: Math.max(0,   Math.floor(lMin - rng * 0.10)),
+        max: Math.min(255, Math.ceil(lMax  + rng * 0.10)),
+      };
+    });
+    // Escala global (overlay) também calculada uma vez
+    let fixedGlobalYMin = Infinity, fixedGlobalYMax = -Infinity;
+    activeChannels.forEach(ch => {
+      fixedGlobalYMin = Math.min(fixedGlobalYMin, fixedYScale[ch.id].min);
+      fixedGlobalYMax = Math.max(fixedGlobalYMax, fixedYScale[ch.id].max);
+    });
+    if (!isFinite(fixedGlobalYMin)) { fixedGlobalYMin = 0; fixedGlobalYMax = 255; }
 
     const cardRefs = {};
 
@@ -215,17 +242,15 @@
         const ch = r.channel;
         let autoTxt = '--', autoColor = '#445';
         if (!r.error && !r.skipped) {
-          const baseMs = autoOffsetMs[ch.id] || 0;
-          const s      = baseMs / 1000;
-          autoTxt      = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
-          autoColor    = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+          const s = originalAutoMs[ch.id] / 1000;
+          autoTxt   = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
+          autoColor = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
         } else {
           autoTxt   = r.error ? 'ERR' : '--';
           autoColor = r.error ? '#ff4444' : '#445';
         }
-
         const card = mkCardCompact(ch.label, '', ch.color, autoTxt, autoColor);
-        cardRefs[ch.id] = { autoMs: autoOffsetMs[ch.id] || 0, ch, manualEl: card._manualEl, valEl: card._valEl };
+        cardRefs[ch.id] = { ch, manualEl: card._manualEl, valEl: card._valEl };
         bar.appendChild(card);
       });
       body.appendChild(bar);
@@ -282,7 +307,7 @@
 
     const manualHint = document.createElement('div');
     manualHint.style.cssText = 'color:#ffd700;font-size:8px;text-align:center;opacity:.8';
-    manualHint.textContent = '\u25b6 Auto aplicado \u2014 use as r\u00e9guas para ajuste fino at\u00e9 os picos se alinharem';
+    manualHint.textContent = '\u25c0 Esquerda = mais atraso  |  Direita = menos atraso \u25b6';
     manualBar.appendChild(manualHint);
 
     const btnResetAll = document.createElement('button');
@@ -298,9 +323,9 @@
     let snapEnabled = true;
 
     function getRefPeakIndices() {
+      if (peaksByChannel['__ref__']) return peaksByChannel['__ref__'];
       const refCh = activeChannels[0];
       if (!ML.correlator) return [];
-      if (peaksByChannel['__ref__']) return peaksByChannel['__ref__'];
       const lums = refCh.buffer.map(p => p.lum);
       const diff = ML.correlator.diffSeries(lums);
       peaksByChannel['__ref__'] = topPeaks(diff, refCh.color, MAX_PEAKS).map(p => p.xIndex);
@@ -334,20 +359,18 @@
       slider.min   = -range;
       slider.max   =  range;
       slider.step  = 1;
+      // Centro da régua (0) = valor calculado automaticamente
       slider.value = 0;
       slider.className = 'ml-slider';
       slider.style.cssText = `flex:1;accent-color:${ch.color}`;
 
       const btnReset = document.createElement('button');
       btnReset.textContent = '\u21ba';
-      btnReset.title = 'Reset ' + ch.label;
+      btnReset.title = 'Reset ' + ch.label + ' para valor automático';
       btnReset.style.cssText = 'background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px;width:18px;text-align:center';
 
-      // Botão snap: tamanho fixo para não variar ao redimensionar o gráfico
-      // Ícone: 🧲 ativo | — desativado (comportamento original, mas com largura fixa)
       const btnSnap = document.createElement('button');
       btnSnap.title = 'Snap magnético';
-      // width e text-align fixos para estabilidade visual
       btnSnap.style.cssText = 'background:#1a1a2e;border:1px solid #ffd70066;color:#ffd700;border-radius:3px;padding:0;cursor:pointer;font:bold 10px monospace;flex-shrink:0;line-height:14px;width:20px;height:16px;text-align:center;overflow:hidden';
       function updateSnapBtn() {
         btnSnap.textContent = snapEnabled ? '\uD83E\uDDF2' : '\u2014';
@@ -361,18 +384,22 @@
       const valLbl = document.createElement('span');
       valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
 
-      function refreshLabel(sliderVal) {
-        const totalMs = (autoOffsetMs[ch.id] || 0) + sliderVal * iv;
+      // totalMs = originalAutoMs + fine * iv
+      // slider.value=0 → totalMs = originalAutoMs (= resultado automático)
+      function refreshLabel(fineVal) {
+        const totalMs = (originalAutoMs[ch.id] || 0) + fineVal * iv;
         const s       = totalMs / 1000;
         valLbl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
-        valLbl.style.color = sliderVal === 0 ? '#aaa' : (totalMs >= 0 ? '#ffd700' : '#00d4ff');
+        valLbl.style.color = fineVal === 0 ? '#44ff88' : (totalMs >= 0 ? '#ffd700' : '#00d4ff');
         return { totalMs };
       }
       refreshLabel(0);
 
+      // Reset: volta slider para 0 (= valor automático original)
+      // Funciona antes e depois de qualquer confirmação
       function doReset() {
-        slider.value = 0;
         fineShiftSamples[ch.id] = 0;
+        slider.value = 0;
         refreshLabel(0);
         hideCardManual(ch.id);
         rebuildCharts();
@@ -385,7 +412,7 @@
         if (snapEnabled && ML.correlator) {
           const refPeaks = getRefPeakIndices();
           const chPeaks  = getPeakIndices(ch);
-          const autoSamp = Math.round((autoOffsetMs[ch.id] || 0) / iv);
+          const autoSamp = Math.round((originalAutoMs[ch.id] || 0) / iv);
           let bestSnap = null, bestDist = Infinity;
           chPeaks.forEach(cp => {
             const shiftedPos = cp - autoSamp - sliderVal;
@@ -430,30 +457,22 @@
         if (idx === 0) return;
         const iv      = ui.realIvMs(ch);
         const fine    = fineShiftSamples[ch.id] || 0;
-        const totalMs = (autoOffsetMs[ch.id] || 0) + fine * iv;
+        const totalMs = (originalAutoMs[ch.id] || 0) + fine * iv;
         ML.manualOffsets[ch.id] = totalMs;
 
-        // Absorve o fine no autoOffset para que próximos ajustes partam do valor confirmado
-        autoOffsetMs[ch.id] = totalMs;
-        // fineShift volta a 0 internamente (base foi atualizada)
-        fineShiftSamples[ch.id] = 0;
-
-        // Régua mantém a posição visual: o slider fica no mesmo valor numérico (fine),
-        // mas como autoOffset já absorveu esse fine, o slider agora representa
-        // deslocamento adicional a partir do novo base — visualmente é a mesma posição.
-        // Não mexemos em slider.value: ele permanece onde está.
-        // refreshLabel com sliderVal=fine reflete totalMs correto
-        if (sliderRefs[ch.id]) {
-          sliderRefs[ch.id].refreshLabel(fine);
-          // Após absorver, para evitar deriva dupla, sincroniza fine interno com o slider
-          fineShiftSamples[ch.id] = fine;
-        }
-
+        // Atualiza card do gráfico
         updateCardResult(ch.id, totalMs);
         hideCardManual(ch.id);
+
+        // Atualiza label da régua para refletir totalMs confirmado
+        if (sliderRefs[ch.id]) sliderRefs[ch.id].refreshLabel(fine);
+        // NÃO mexemos em slider.value nem em fineShiftSamples:
+        // régua fica na mesma posição visual, reset continua funcionando
       });
-      delete peaksByChannel['__ref__'];
+
+      // Propaga para tabela do painel principal
       if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
+
       rebuildCharts();
       btnConfirm.textContent = '\u2714 Salvo!';
       setTimeout(() => { btnConfirm.textContent = '\u2714 Confirmar ajuste'; }, 1500);
@@ -507,6 +526,8 @@
       if (!shift) return data;
       const n   = data.length;
       const out = new Array(n).fill(null);
+      // shift>0: canal está atrasado em relação à ref → move dados para a esquerda
+      // (gráfico fica à esquerda = mais cedo no tempo)
       if (shift > 0) {
         for (let i = 0; i < n - shift; i++) out[i] = data[i + shift];
       } else {
@@ -516,10 +537,13 @@
       return out;
     }
 
+    // getTotalShift: auto (em amostras) + fine (régua)
+    // Mover régua para direita (fine>0) = offset maior = canal mais atrasado
+    // = gráfico se move para a esquerda (shiftSeries move dados)
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
       const iv          = ui.realIvMs(ch);
-      const autoSamples = Math.round((autoOffsetMs[ch.id] || 0) / iv);
+      const autoSamples = Math.round((originalAutoMs[ch.id] || 0) / iv);
       if (!manualMode) return autoSamples;
       return autoSamples + (fineShiftSamples[ch.id] || 0);
     }
@@ -552,10 +576,8 @@
         const rawLums = ch.buffer.map(p => p.lum).slice(0, maxLen);
         const shift   = getTotalShift(ch, idx);
         const lums    = shiftSeries(rawLums, shift);
-        const validLums = lums.filter(v => v !== null);
-        const lMin = validLums.length ? Math.min(...validLums) : 0;
-        const lMax = validLums.length ? Math.max(...validLums) : 255;
-        const rng  = Math.max(1, lMax - lMin);
+        // Usa escala Y fixa (calculada dos dados brutos)
+        const { min: yMin, max: yMax } = fixedYScale[ch.id] || { min: 0, max: 255 };
         const peaks = getPeakAnnotations(ch, lums);
         if (idx === 0) refAnnotations = peaks; else markSnapPeaks(peaks, refAnnotations);
 
@@ -581,8 +603,11 @@
                 ticks: { color: '#556', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks },
                 grid: { color: '#16162a' },
               },
-              y: { ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 3 }, grid: { color: '#16162a' },
-                   min: Math.max(0, Math.floor(lMin - rng * .10)), max: Math.min(255, Math.ceil(lMax + rng * .10)) },
+              y: {
+                min: yMin, max: yMax,
+                ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 3 },
+                grid: { color: '#16162a' },
+              },
             },
           },
           plugins: peaks.length ? [makePeakPlugin(peaks)] : [],
@@ -592,21 +617,15 @@
     }
 
     function buildOverlay(channels) {
-      let globalMin = Infinity, globalMax = -Infinity;
+      const ticks = xMaxTicks();
+      let refAnnotations = [];
       const allLumsShifted = channels.map((ch, idx) => {
         const raw   = ch.buffer.map(p => p.lum).slice(0, maxLen);
         const shift = getTotalShift(ch, idx);
         const lums  = shiftSeries(raw, shift);
-        lums.forEach(v => { if (v !== null) { if (v < globalMin) globalMin = v; if (v > globalMax) globalMax = v; } });
         return { ch, lums, idx };
       });
-      if (!isFinite(globalMin)) { globalMin = 0; globalMax = 255; }
-      const rng  = Math.max(1, globalMax - globalMin);
-      const yMin = Math.max(0,   Math.floor(globalMin - rng * 0.10));
-      const yMax = Math.min(255, Math.ceil(globalMax  + rng * 0.10));
-      const ticks = xMaxTicks();
 
-      let refAnnotations = [];
       const allPeaks = showPeaks && ML.correlator
         ? allLumsShifted.flatMap(({ ch, lums, idx }) => {
             const peaks = getPeakAnnotations(ch, lums);
@@ -662,7 +681,12 @@
               ticks: { color: '#556', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks },
               grid: { color: '#16162a' },
             },
-            y: { min: yMin, max: yMax, ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 5 }, grid: { color: '#16162a' } },
+            // Usa escala global fixa
+            y: {
+              min: fixedGlobalYMin, max: fixedGlobalYMax,
+              ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 5 },
+              grid: { color: '#16162a' },
+            },
           },
         },
         plugins: allPeaks.length ? [makePeakPlugin(allPeaks)] : [],
@@ -678,26 +702,4 @@
     const card = document.createElement('div');
     card.style.cssText = [
       'display:inline-flex;align-items:center;gap:5px;flex-shrink:0',
-      `border:1px solid ${color}44`,
-      `background:${color}0d;border-radius:4px;padding:3px 7px 3px 5px`,
-      `box-shadow:inset 0 0 0 1px ${color}18`,
-      'white-space:nowrap;overflow:hidden',
-    ].join(';');
-    const nameEl = document.createElement('span');
-    nameEl.style.cssText = `color:${color};font-weight:bold;font-size:9px`;
-    nameEl.textContent = (prefix ? prefix + ' ' : '') + label;
-    const valEl = document.createElement('span');
-    valEl.style.cssText = `color:${autoColor||'#44ff88'};font-weight:bold;font-size:11px`;
-    valEl.textContent = autoTxt;
-    const manualEl = document.createElement('span');
-    manualEl.style.cssText = 'font-size:9px;display:none';
-    manualEl.textContent = '';
-    card.append(nameEl, valEl, manualEl);
-    card._manualEl = manualEl;
-    card._valEl    = valEl;
-    return card;
-  }
-
-  ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart carregado.');
-})();
+      `border:1px 
