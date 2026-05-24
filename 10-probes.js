@@ -65,8 +65,6 @@
 
   const EDGE_THRESH = 8;
 
-  // edgeSnap: atrai a probe ativa para bordas/centros de outras probes.
-  // Só chamado quando ML.state.snapGrid === true e durante arrasto com mouse (nunca setas).
   function edgeSnap(ch, x, y) {
     const pw = probeW(ch), ph = probeH(ch);
     const bL = x, bR = x + pw, bT = y, bB = y + ph;
@@ -92,8 +90,6 @@
     return { x: snapX !== null ? snapX : x, y: snapY !== null ? snapY : y };
   }
 
-  // resolveCollision: impede sobreposição movendo SOMENTE a probe ativa.
-  // Não empurra outras probes. Respeita ML.state.noOverlap.
   function resolveCollision(ch, x, y) {
     if (!ML.state.noOverlap) return { x: Math.max(0, x), y: Math.max(0, y) };
     const pw = probeW(ch), ph = probeH(ch);
@@ -209,7 +205,6 @@
     let drag = false, ox = 0, oy = 0;
     d.addEventListener('mousedown', e => {
       drag = true;
-      ch._wasDragged = false;
       ox = e.clientX - d.offsetLeft;
       oy = e.clientY - d.offsetTop;
       setFocus(ch);
@@ -218,16 +213,13 @@
     });
     window.addEventListener('mousemove', e => {
       if (!drag) return;
-      ch._wasDragged = true;
       let rx = Math.max(0, e.clientX - ox);
       let ry = Math.max(0, e.clientY - oy);
       rx = snapGrid(rx); ry = snapGrid(ry);
-      // edgeSnap: só ativa com snapGrid ligado (nunca nas setas)
       if (ML.state.snapGrid) {
         const snapped = edgeSnap(ch, rx, ry);
         rx = snapped.x; ry = snapped.y;
       }
-      // resolveCollision: move só a probe ativa, sem empurrar outras
       const final = resolveCollision(ch, rx, ry);
       d.style.left = final.x + 'px';
       d.style.top  = final.y + 'px';
@@ -256,7 +248,6 @@
     if (e.key === 'ArrowRight') left += step;
     if (e.key === 'ArrowUp')    top  = Math.max(0, top - step);
     if (e.key === 'ArrowDown')  top  += step;
-    // setas: sem snap, colisão normal (sem push)
     const final = resolveCollision(focusedProbe, left, top);
     d.style.left = final.x + 'px';
     d.style.top  = final.y + 'px';
