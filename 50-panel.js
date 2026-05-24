@@ -188,22 +188,25 @@
     return (s > 0 ? '+' : '') + s.toFixed(3) + 's';
   }
 
-  /* ── Overlay de visualização da área de pesquisa ── */
+  /* ── Overlay de visualização da área de busca (restrito à probe) ── */
   function showSearchOverlay(ch) {
-    const old = document.getElementById('ml-search-overlay');
-    if (old) old.remove();
+    document.querySelectorAll('.ml-search-overlay').forEach(e => e.remove());
     const d = ch.probe;
     if (!d) return;
-    const vh = window.innerHeight;
+
+    const rect   = d.getBoundingClientRect();
+    const probeL = rect.left;
+    const probeW = rect.width;
+    const cy     = rect.top + rect.height / 2;
+    const vh     = window.innerHeight;
     const halfVh = Math.round(vh / 2);
-    const cy = d.offsetTop + d.offsetHeight / 2;
 
-    // Faixa ACIMA da probe
+    // Faixa ACIMA: do topo da probe até vh/2 acima do centro
     const topAbove = Math.max(0, cy - halfVh);
-    const htAbove  = cy - topAbove;
+    const htAbove  = rect.top - topAbove;
 
-    // Faixa ABAIXO da probe
-    const topBelow = cy + d.offsetHeight / 2;
+    // Faixa ABAIXO: do fundo da probe até vh/2 abaixo do centro
+    const topBelow = rect.bottom;
     const htBelow  = Math.min(vh, cy + halfVh) - topBelow;
 
     [
@@ -214,9 +217,14 @@
       const ov = document.createElement('div');
       ov.className = 'ml-search-overlay';
       ov.style.cssText = [
-        'position:fixed;left:0;right:0',
-        `top:${top}px;height:${height}px`,
-        'background:rgba(255,215,0,0.07)',
+        'position:fixed',
+        `left:${probeL}px`,
+        `width:${probeW}px`,
+        `top:${top}px`,
+        `height:${height}px`,
+        'background:rgba(255,215,0,0.10)',
+        'border-left:1px dashed #ffd70077',
+        'border-right:1px dashed #ffd70077',
         'border-top:1px dashed #ffd70077',
         'border-bottom:1px dashed #ffd70077',
         'pointer-events:none;z-index:99996',
@@ -239,7 +247,6 @@
   function autoDetectDeduction(ch) {
     if (!ch.probe) return null;
     const d = ch.probe;
-    const cx = d.offsetLeft + d.offsetWidth  / 2;
     const cy = d.offsetTop  + d.offsetHeight / 2;
 
     // Busca apenas vertical: metade da viewport acima e abaixo
