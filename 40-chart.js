@@ -3,6 +3,7 @@
   const ui = ML.ui;
   const MAX_PEAKS = 15;
   const PEAK_CLICK_RADIUS = 12; // px de tolerância para clicar num pico
+  const SNAP_RADIUS = 5;        // amostras para começar realce gradual
 
   function loadChartJs() {
     return new Promise((resolve) => {
@@ -22,19 +23,28 @@
   }
 
   // ── Estado global de seleção de pico ──────────────────────────────────────
-  // pickMode: null | { targetChId: string }  — canal alvo do alinhamento
-  // firstPick: null | { chId: string, xIndex: number }  — 1º pico clicado
   let pickMode  = null;
   let firstPick = null;
-  // Mapa chId → instância Chart + metadados para o modo de seleção
-  const chartMeta = {};  // chId → { chart, peaks, ch, visIdx }
+  const chartMeta = {};
 
-  function makePeakPlugin(ch, peaksRef) {
-    // peaksRef é um array mutável — pode ser trocado sem recriar o plugin
+  // Calcula a menor distância em amostras entre um pico deste canal
+  // e qualquer pico da referência (canal idx=0), considerando o shift atual
+  function nearestRefDist(peakXIndex, refPeaks) {
+    if (!refPeaks || !refPeaks.length) return Infinity;
+    let best = Infinity;
+    refPeaks.forEach(rp => {
+      const d = Math.abs(peakXIndex - rp.xIndex);
+      if (d < best) best = d;
+    });
+    return best;
+  }
+
+  function makePeakPlugin(ch, peaksRef, refPeaksRef) {
     return {
       id: 'peakLines_' + ch.id,
       afterDraw(chart) {
-        const peaks = peaksRef[0];
+        const peaks    = peaksRef[0];
+        const refPeaks = refPeaksRef ? refPeaksRef[0] : null;
         if (!peaks || !peaks.length) return;
         const ctx   = chart.ctx;
         const xAxis = chart.scales.x;
@@ -47,28 +57,42 @@
 
           const isSelected = firstPick && firstPick.xIndex === xIndex && firstPick.chId === ch.id;
           const isTarget   = pickMode && pickMode.targetChId === ch.id;
+          const snapDist   = nearestRefDist(xIndex, refPeaks);
 
           ctx.beginPath();
           ctx.moveTo(xPx, yAxis.top);
           ctx.lineTo(xPx, yAxis.bottom);
 
           if (isSelected) {
-            // pico selecionado: âmbar sólido
+            // pico selecionado no modo pick: âmbar
             ctx.strokeStyle = '#ffd700ee';
             ctx.lineWidth   = 3;
             ctx.setLineDash([4, 3]);
           } else if (pickMode && isTarget) {
-            // canal alvo em modo seleção: picos clicáveis realçados
             ctx.strokeStyle = color + 'cc';
             ctx.lineWidth   = 2;
             ctx.setLineDash([]);
           } else if (pickMode) {
-            // outros canais em modo seleção: picos clicáveis suavizados
             ctx.strokeStyle = color + '99';
             ctx.lineWidth   = 1.5;
             ctx.setLineDash([]);
+          } else if (snapDist === 0) {
+            // coincidente com pico da ref: branco tracejado
+            ctx.strokeStyle = '#ffffffcc';
+            ctx.lineWidth   = 3;
+            ctx.setLineDash([5, 3]);
+          } else if (snapDist === 1) {
+            // quase coincidente: cinza médio
+            ctx.strokeStyle = '#88888888';
+            ctx.lineWidth   = 1.5;
+            ctx.setLineDash([]);
+          } else if (snapDist <= SNAP_RADIUS) {
+            // dentro do raio de realce: cinza claro
+            ctx.strokeStyle = '#55555544';
+            ctx.lineWidth   = 1;
+            ctx.setLineDash([]);
           } else {
-            // modo normal
+            // longe: cor do canal fraca
             ctx.strokeStyle = color + '55';
             ctx.lineWidth   = 1;
             ctx.setLineDash([]);
@@ -88,7 +112,6 @@
     const old = document.getElementById('ml-chart-panel');
     if (old) old.remove();
 
-    // Limpa estado de seleção ao abrir novo painel
     pickMode  = null;
     firstPick = null;
     Object.keys(chartMeta).forEach(k => delete chartMeta[k]);
@@ -174,10 +197,7 @@
     panel.appendChild(pickStatusBar);
 
     function updatePickStatus() {
-      if (!pickMode) {
-        pickStatusBar.style.display = 'none';
-        return;
-      }
+      if (!pickMode) { pickStatusBar.style.display = 'none'; return; }
       pickStatusBar.style.display = 'flex';
       const targetCh = activeChannels.find(c => c.id === pickMode.targetChId);
       const tName = targetCh ? targetCh.label : '?';
@@ -193,11 +213,9 @@
     function cancelPickMode() {
       pickMode  = null;
       firstPick = null;
-      // Atualiza cursor de todos os canvas
       Object.values(chartMeta).forEach(m => { if (m.canvas) m.canvas.style.cursor = ''; });
       updatePickStatus();
       redrawPeaks();
-      // Restaura botões 🎯
       if (alignBtnRefs) Object.values(alignBtnRefs).forEach(b => {
         b.style.background  = '#1a1a2e';
         b.style.borderColor = '#ffd70055';
@@ -209,18 +227,15 @@
       Object.values(chartMeta).forEach(m => { if (m.chart) { try { m.chart.update('none'); } catch(e){} } });
     }
 
-    // Clique num canvas durante pickMode
     function handlePickClick(chId, event) {
       if (!pickMode) return;
       const meta = chartMeta[chId];
       if (!meta || !meta.chart || !meta.peaks) return;
-
       const xAxis = meta.chart.scales.x;
       if (!xAxis) return;
       const rect   = meta.canvas.getBoundingClientRect();
       const clickX = event.clientX - rect.left;
 
-      // Encontra o pico mais próximo dentro do raio
       let bestPeak = null, bestDist = Infinity;
       meta.peaks.forEach(p => {
         const px = xAxis.getPixelForValue(p.xIndex);
@@ -230,59 +245,55 @@
       if (!bestPeak) return;
 
       if (!firstPick) {
-        // 1º clique — qualquer gráfico
         firstPick = { chId, xIndex: bestPeak.xIndex };
         updatePickStatus();
         redrawPeaks();
         return;
       }
 
-      // 2º clique — deve ser em gráfico diferente
       if (firstPick.chId === chId) {
-        // mesmo gráfico: troca o pico selecionado
         firstPick = { chId, xIndex: bestPeak.xIndex };
         updatePickStatus();
         redrawPeaks();
         return;
       }
 
-      // Temos os dois picos em gráficos diferentes — aplica alinhamento
-      const secondPick = { chId, xIndex: bestPeak.xIndex };
-      applyPeakAlignment(firstPick, secondPick);
+      applyPeakAlignment(firstPick, { chId, xIndex: bestPeak.xIndex });
     }
 
     function applyPeakAlignment(pickA, pickB) {
-      // Um dos dois picos deve pertencer ao canal alvo (targetChId)
-      // O outro é a referência (pode ser qualquer canal, inclusive o ref)
       const targetChId = pickMode.targetChId;
       let refPick, tgtPick;
-      if (pickA.chId === targetChId) { tgtPick = pickA; refPick = pickB; }
+      if (pickA.chId === targetChId)      { tgtPick = pickA; refPick = pickB; }
       else if (pickB.chId === targetChId) { tgtPick = pickB; refPick = pickA; }
       else {
-        // Nenhum dos dois é o canal alvo — cancela e recomeça
         firstPick = pickB;
         updatePickStatus();
         redrawPeaks();
         return;
       }
 
-      const ch   = activeChannels.find(c => c.id === targetChId);
+      const ch = activeChannels.find(c => c.id === targetChId);
       if (!ch) { cancelPickMode(); return; }
 
       const iv = ui.realIvMs(ch);
-      // Offset: quantas amostras o pico do canal precisa mover para coincidir com o da ref
-      // shift positivo = canal está atrasado = mover dados p/ esquerda
-      // xIndex do canal (após shift atual) - xIndex ref = diferença residual a corrigir
-      const currentShiftSamp = Math.round((confirmedMs[targetChId] || 0) / iv) + (fineShiftSamples[targetChId] || 0);
-      const tgtPosAfterShift = tgtPick.xIndex - currentShiftSamp;
-      const delta = tgtPosAfterShift - refPick.xIndex;  // amostras a mais que precisa mover
-      const addMs = delta * iv;
-      confirmedMs[targetChId]      = (confirmedMs[targetChId] || 0) + addMs;
+
+      // Bug 1 fix: xIndex já está no espaço visual shiftado.
+      // deltaSamples = posição do pico do canal - posição do pico da ref
+      // Para alinhar, o canal precisa se mover -deltaSamples amostras
+      const deltaSamples = tgtPick.xIndex - refPick.xIndex;
+      confirmedMs[targetChId] = (confirmedMs[targetChId] || 0) - deltaSamples * iv;
       fineShiftSamples[targetChId] = 0;
 
-      // Atualiza régua
+      // Bug 2 fix: mover o slider para refletir o novo confirmedMs em amostras
       const sr = sliderRefs[targetChId];
-      if (sr) { sr.slider.value = 0; sr.refreshLabel(0); }
+      if (sr) {
+        const newSamp = Math.round(confirmedMs[targetChId] / iv);
+        // Garante que o novo valor cabe no range do slider
+        const clampedSamp = Math.max(parseInt(sr.slider.min), Math.min(parseInt(sr.slider.max), newSamp));
+        sr.slider.value = clampedSamp;
+        sr.refreshLabel(0);
+      }
       updateCardManual(targetChId, confirmedMs[targetChId]);
 
       cancelPickMode();
@@ -337,10 +348,6 @@
       if (ch.buffer.length > maxLen) maxLen = ch.buffer.length;
     });
 
-    // ── Três camadas de offset ─────────────────────────────────────────────
-    // originalAutoMs → imutável, usado só pelo reset
-    // confirmedMs    → posição confirmada (o que o gráfico exibe sempre)
-    // fineShiftSamples → ajuste fino da régua relativo ao confirmedMs
     const originalAutoMs = {};
     const confirmedMs    = {};
     ML.CHANNELS.forEach(ch => { originalAutoMs[ch.id] = 0; confirmedMs[ch.id] = 0; });
@@ -352,7 +359,6 @@
     const fineShiftSamples = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
 
-    // ── Escala Y fixa ──────────────────────────────────────────────────────
     const fixedYScale = {};
     ML.CHANNELS.forEach(ch => {
       if (!ch.buffer || !ch.buffer.length) { fixedYScale[ch.id] = { min: 0, max: 255 }; return; }
@@ -463,16 +469,6 @@
 
     const sliderRefs   = {};
     const alignBtnRefs = {};
-    const peaksByChannel = {};
-
-    function getPeaksForChannel(ch) {
-      if (peaksByChannel[ch.id]) return peaksByChannel[ch.id];
-      if (!ML.correlator) return [];
-      const lums = ch.buffer.map(p => p.lum);
-      const diff = ML.correlator.diffSeries(lums);
-      peaksByChannel[ch.id] = topPeaks(diff, ch.color, MAX_PEAKS);
-      return peaksByChannel[ch.id];
-    }
 
     activeChannels.forEach((ch, idx) => {
       if (idx === 0) return;
@@ -492,27 +488,24 @@
       slider.min   = -range;
       slider.max   =  range;
       slider.step  = 1;
-      slider.value = 0;  // 0 = centro = confirmedMs
+      // Bug 2 fix: slider inicia na posição do confirmedMs em amostras
+      const initSamp = Math.round((confirmedMs[ch.id] || 0) / iv);
+      slider.value = Math.max(-range, Math.min(range, initSamp));
       slider.className = 'ml-slider';
       slider.style.cssText = `flex:1;accent-color:${ch.color}`;
 
       const btnReset = document.createElement('button');
       btnReset.textContent = '\u21ba';
-      btnReset.title = 'Reset — volta ' + ch.label + ' para o valor calculado automaticamente';
+      btnReset.title = 'Reset \u2014 volta ' + ch.label + ' para o valor calculado automaticamente';
       btnReset.style.cssText = 'background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px;width:18px;text-align:center';
 
-      // ── Botão 🎯 Alinhar por pico ─────────────────────────────────────
       const btnAlign = document.createElement('button');
       btnAlign.textContent = '\uD83C\uDFAF';
       btnAlign.title = 'Alinhar ' + ch.label + ' clicando em picos nos gr\u00e1ficos';
       btnAlign.style.cssText = 'background:#1a1a2e;border:1px solid #ffd70055;color:#ffd700;border-radius:3px;padding:0;cursor:pointer;font:11px monospace;flex-shrink:0;line-height:14px;width:20px;height:16px;text-align:center;overflow:hidden';
       alignBtnRefs[ch.id] = btnAlign;
       btnAlign.onclick = () => {
-        if (pickMode && pickMode.targetChId === ch.id) {
-          cancelPickMode();
-          return;
-        }
-        // Inicia modo de seleção para este canal
+        if (pickMode && pickMode.targetChId === ch.id) { cancelPickMode(); return; }
         cancelPickMode();
         pickMode  = { targetChId: ch.id };
         firstPick = null;
@@ -520,7 +513,6 @@
         btnAlign.style.borderColor = '#ffd700';
         btnAlign.textContent = '\u23F3';
         updatePickStatus();
-        // Cursor crosshair em todos os canvas
         Object.values(chartMeta).forEach(m => { if (m.canvas) m.canvas.style.cursor = 'crosshair'; });
       };
 
@@ -539,17 +531,21 @@
       function doReset() {
         confirmedMs[ch.id]      = originalAutoMs[ch.id];
         fineShiftSamples[ch.id] = 0;
-        slider.value = 0;
+        const resetSamp = Math.round((originalAutoMs[ch.id] || 0) / iv);
+        slider.value = Math.max(-range, Math.min(range, resetSamp));
         refreshLabel(0);
         hideCardManual(ch.id);
         rebuildCharts();
       }
       btnReset.onclick = doReset;
 
+      // Bug 2 fix: slider representa offset total em amostras
+      // fineShiftSamples é sempre 0; o slider drive diretamente confirmedMs
       slider.addEventListener('input', () => {
-        const sliderVal = parseInt(slider.value);
-        fineShiftSamples[ch.id] = sliderVal;
-        const { totalMs } = refreshLabel(sliderVal);
+        const sliderSamp = parseInt(slider.value);
+        confirmedMs[ch.id]      = sliderSamp * iv;
+        fineShiftSamples[ch.id] = 0;
+        const { totalMs } = refreshLabel(0);
         if (manualMode) updateCardManual(ch.id, totalMs);
         rebuildCharts();
       });
@@ -573,12 +569,8 @@
       ML.manualOffsets = ML.manualOffsets || {};
       activeChannels.forEach((ch, idx) => {
         if (idx === 0) return;
-        const iv      = ui.realIvMs(ch);
-        const fine    = fineShiftSamples[ch.id] || 0;
-        const totalMs = (confirmedMs[ch.id] || 0) + fine * iv;
-        confirmedMs[ch.id]      = totalMs;
+        const totalMs = confirmedMs[ch.id] || 0;
         fineShiftSamples[ch.id] = 0;
-        if (sliderRefs[ch.id]) { sliderRefs[ch.id].slider.value = 0; sliderRefs[ch.id].refreshLabel(0); }
         ML.manualOffsets[ch.id] = totalMs;
         updateCardResult(ch.id, totalMs);
         hideCardManual(ch.id);
@@ -646,10 +638,8 @@
 
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
-      const iv          = ui.realIvMs(ch);
-      const confSamples = Math.round((confirmedMs[ch.id] || 0) / iv);
-      if (!manualMode) return confSamples;
-      return confSamples + (fineShiftSamples[ch.id] || 0);
+      const iv = ui.realIvMs(ch);
+      return Math.round((confirmedMs[ch.id] || 0) / iv);
     }
 
     function getPeakAnnotations(ch, lums) {
@@ -658,7 +648,6 @@
       return topPeaks(diff, ch.color, MAX_PEAKS);
     }
 
-    // Registra canvas no chartMeta e adiciona listener de clique para pickMode
     function registerCanvas(ch, canvas, chart, peaks) {
       chartMeta[ch.id] = { canvas, chart, peaks, ch };
       if (pickMode) canvas.style.cursor = 'crosshair';
@@ -670,14 +659,21 @@
       const rowH = Math.max(48, Math.floor((chartsArea.offsetHeight - totalGap) / channels.length));
       const ticks = xMaxTicks();
 
+      // Picos da referência (canal idx=0 nos channels visíveis) para realce gradual
+      const refChVisible = channels[0];
+      const refRawLums   = refChVisible.buffer.map(p => p.lum).slice(0, maxLen);
+      const refShift     = getTotalShift(refChVisible, 0);
+      const refLums      = shiftSeries(refRawLums, refShift);
+      const refPeaks     = getPeakAnnotations(refChVisible, refLums);
+      const refPeaksRef  = [refPeaks];
+
       channels.forEach((ch, idx) => {
         const rawLums = ch.buffer.map(p => p.lum).slice(0, maxLen);
         const shift   = getTotalShift(ch, idx);
         const lums    = shiftSeries(rawLums, shift);
         const { min: yMin, max: yMax } = fixedYScale[ch.id] || { min: 0, max: 255 };
-        // Picos dos dados BRUTOS (para clique) — recalcular sobre lums shifted
-        const peaks = getPeakAnnotations(ch, lums);
-        const peaksRef = [peaks];  // array mutável para o plugin
+        const peaks    = getPeakAnnotations(ch, lums);
+        const peaksRef = [peaks];
 
         const row = document.createElement('div');
         row.style.cssText = `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0;padding:2px 3px;border-radius:4px;background:${ch.color}0d;box-shadow:inset 0 0 0 1px ${ch.color}22;overflow:hidden`;
@@ -688,6 +684,10 @@
         wrap.style.cssText = 'flex:1;min-width:0;overflow:hidden';
         const cvs = document.createElement('canvas');
         wrap.appendChild(cvs); row.append(lblEl, wrap); chartsArea.appendChild(row);
+
+        // Para a referência não passa refPeaks (ela mesma não precisa realce)
+        // Para os outros canais passa refPeaksRef para calcular distância
+        const pluginRefPeaks = idx === 0 ? null : refPeaksRef;
 
         const ci = new Chart(cvs, {
           type: 'line',
@@ -709,7 +709,7 @@
               },
             },
           },
-          plugins: peaks.length ? [makePeakPlugin(ch, peaksRef)] : [],
+          plugins: peaks.length ? [makePeakPlugin(ch, peaksRef, pluginRefPeaks)] : [],
         });
         chartInstances.push(ci);
         registerCanvas(ch, cvs, ci, peaks);
@@ -725,6 +725,10 @@
         return { ch, lums, idx };
       });
 
+      // Picos da referência para realce gradual no overlay
+      const refEntry   = allLumsShifted[0];
+      const refPeaks   = getPeakAnnotations(refEntry.ch, refEntry.lums);
+
       const wrap = document.createElement('div');
       wrap.style.cssText = 'flex:1;min-height:0;overflow:hidden;border-radius:4px;background:#0a0a16;border:1px solid #1a1a30;position:relative';
       if (manualMode) {
@@ -736,12 +740,9 @@
       const cvs = document.createElement('canvas');
       wrap.appendChild(cvs); chartsArea.appendChild(wrap);
 
-      // No modo overlay o gráfico é compartilhado — picos de todos os canais
-      // Para o clique registramos todos os canais no mesmo canvas
       const allPeaksMerged = showPeaks && ML.correlator
         ? allLumsShifted.flatMap(({ ch, lums }) => getPeakAnnotations(ch, lums))
         : [];
-      const peaksRef = [allPeaksMerged];
 
       const datasets = allLumsShifted.map(({ ch, lums }) => ({
         label: ch.label, data: lums,
@@ -749,27 +750,50 @@
         borderWidth: 1.6, pointRadius: 0, tension: 0.2, fill: true, spanGaps: false,
       }));
 
-      // Plugin de picos para overlay usa canal sintético
       const overlayPeakPlugin = {
         id: 'peakLines_overlay',
         afterDraw(chart) {
-          const peaks = peaksRef[0];
-          if (!peaks || !peaks.length) return;
+          if (!allPeaksMerged.length) return;
           const ctx   = chart.ctx;
           const xAxis = chart.scales.x;
           const yAxis = chart.scales.y;
           if (!xAxis || !yAxis) return;
           ctx.save();
-          peaks.forEach(({ xIndex, color }) => {
+          allPeaksMerged.forEach(({ xIndex, color }) => {
             const xPx = xAxis.getPixelForValue(xIndex);
             if (xPx < xAxis.left || xPx > xAxis.right) return;
             const isSelected = firstPick && firstPick.xIndex === xIndex;
+            const snapDist   = nearestRefDist(xIndex, refPeaks);
+
             ctx.beginPath();
             ctx.moveTo(xPx, yAxis.top);
             ctx.lineTo(xPx, yAxis.bottom);
-            ctx.strokeStyle = isSelected ? '#ffd700ee' : (pickMode ? color + 'aa' : color + '55');
-            ctx.lineWidth   = isSelected ? 3 : 1;
-            ctx.setLineDash(isSelected ? [4,3] : []);
+
+            if (isSelected) {
+              ctx.strokeStyle = '#ffd700ee';
+              ctx.lineWidth   = 3;
+              ctx.setLineDash([4, 3]);
+            } else if (pickMode) {
+              ctx.strokeStyle = color + 'aa';
+              ctx.lineWidth   = 1.5;
+              ctx.setLineDash([]);
+            } else if (snapDist === 0) {
+              ctx.strokeStyle = '#ffffffcc';
+              ctx.lineWidth   = 3;
+              ctx.setLineDash([5, 3]);
+            } else if (snapDist === 1) {
+              ctx.strokeStyle = '#88888888';
+              ctx.lineWidth   = 1.5;
+              ctx.setLineDash([]);
+            } else if (snapDist <= SNAP_RADIUS) {
+              ctx.strokeStyle = '#55555544';
+              ctx.lineWidth   = 1;
+              ctx.setLineDash([]);
+            } else {
+              ctx.strokeStyle = color + '55';
+              ctx.lineWidth   = 1;
+              ctx.setLineDash([]);
+            }
             ctx.stroke();
             ctx.setLineDash([]);
           });
@@ -804,17 +828,12 @@
       });
       chartInstances.push(ci);
 
-      // No overlay: registra o canvas para cada canal ativo
-      // (handlePickClick vai receber o chId do canal cuja régua 🎯 foi ativada)
-      // Para clique no overlay, registra um handler genérico que identifica
-      // o canal pelo pico mais próximo
       cvs.addEventListener('click', e => {
         if (!pickMode) return;
         const xAxis = ci.scales.x;
         if (!xAxis) return;
         const rect   = cvs.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
-        // Encontra pico mais próximo em qualquer canal visível
         let bestPeak = null, bestDist = Infinity, bestChId = null;
         allLumsShifted.forEach(({ ch, lums }) => {
           const peaks = getPeakAnnotations(ch, lums);
@@ -825,9 +844,6 @@
           });
         });
         if (!bestPeak || !bestChId) return;
-
-        // Simula clique no canal identificado
-        // Substitui temporariamente chartMeta para o canvas
         const fakeMeta = { canvas: cvs, chart: ci, peaks: allPeaksMerged, ch: activeChannels.find(c => c.id === bestChId) };
         const prevMeta = chartMeta[bestChId];
         chartMeta[bestChId] = fakeMeta;
