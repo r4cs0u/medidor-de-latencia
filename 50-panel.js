@@ -1,11 +1,18 @@
 (function () {
   const ML = window.MedLat;
 
-  // TARGET_PTS por canal: 'rapido' = 20s, demais = 2 min
+  // TARGET_PTS global: usa o maior target entre todos os canais ativos
   function getTargetPts(ch) {
     return (ch.lagPreset === 'rapido')
       ? Math.ceil(20000 / ML.INTERVAL_MS)
       : Math.ceil(120000 / ML.INTERVAL_MS);
+  }
+
+  // Retorna o maior target entre os canais ativos (conclusão única)
+  function getGlobalTarget() {
+    const active = ML.CHANNELS.filter(ch => ch.active);
+    if (!active.length) return Math.ceil(120000 / ML.INTERVAL_MS);
+    return Math.max(...active.map(ch => getTargetPts(ch)));
   }
 
   function playDone() {
@@ -38,12 +45,19 @@
       #ml-widget:hover { transform: scale(1.1); }
       input[type=number].ml-sz-inp::-webkit-inner-spin-button,
       input[type=number].ml-sz-inp::-webkit-outer-spin-button { opacity:1; cursor:pointer; }
-      #ml-panel { scrollbar-width: thin; scrollbar-color: #2a2a4a transparent; }
-      #ml-panel::-webkit-scrollbar { width: 4px; }
-      #ml-panel::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 2px; }
     `;
     document.head.appendChild(s);
   })();
+
+  /* ── Utilitário: mantém elemento dentro da viewport ── */
+  function clampPos(left, top, elW, elH) {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    return {
+      left: Math.max(0, Math.min(left, vw - elW)),
+      top:  Math.max(0, Math.min(top,  vh - elH)),
+    };
+  }
 
   function makeDraggableWindow(id, titleText, titleColor, width) {
     const win = document.createElement('div');
@@ -71,8 +85,18 @@
     hdr.append(htitle, btnClose);
     win.appendChild(hdr);
     let drag = false, ox = 0, oy = 0;
-    hdr.addEventListener('mousedown', e => { drag = true; ox = e.clientX - win.offsetLeft; oy = e.clientY - win.offsetTop; e.preventDefault(); });
-    window.addEventListener('mousemove', e => { if (!drag) return; win.style.left = Math.max(0, e.clientX - ox) + 'px'; win.style.top = Math.max(0, e.clientY - oy) + 'px'; });
+    hdr.addEventListener('mousedown', e => {
+      drag = true;
+      ox = e.clientX - win.offsetLeft;
+      oy = e.clientY - win.offsetTop;
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', e => {
+      if (!drag) return;
+      const pos = clampPos(e.clientX - ox, e.clientY - oy, win.offsetWidth, win.offsetHeight);
+      win.style.left = pos.left + 'px';
+      win.style.top  = pos.top  + 'px';
+    });
     window.addEventListener('mouseup', () => drag = false);
     return { win, hdr };
   }
@@ -179,13 +203,11 @@
       .replace(/s$/i, '')
       .replace(/\s/g, '');
     if (norm === '' || norm === '0') return 0;
-    // aceita: +3.5, -3.5, 3.5, +3, -3, 3
     const m = norm.match(/^([+-])?(\d+(?:\.\d+)?)$/);
     if (!m) return null;
     const sign = m[1];
     const abs  = parseFloat(m[2]);
     if (isNaN(abs)) return null;
-    // sem sinal → negativo por padrão
     if (!sign) return -abs;
     return sign === '+' ? abs : -abs;
   }
@@ -372,8 +394,9 @@
     function onWMove(e) {
       if (!wdrag) return;
       widget.style.right = 'auto';
-      widget.style.left = Math.max(0, e.clientX - wx) + 'px';
-      widget.style.top  = Math.max(0, e.clientY - wy) + 'px';
+      const pos = clampPos(e.clientX - wx, e.clientY - wy, widget.offsetWidth, widget.offsetHeight);
+      widget.style.left = pos.left + 'px';
+      widget.style.top  = pos.top  + 'px';
     }
     function onWUp() {
       if (!wdrag) {
@@ -422,7 +445,7 @@
       'font-family:monospace;font-size:11px;color:#fff',
       `user-select:none;width:${panelW}px`,
       'display:flex;flex-direction:column',
-      'max-height:95vh;overflow-y:auto;overflow-x:hidden',
+      'max-height:95vh;overflow:hidden',
     ].join(';');
 
     const hdr = document.createElement('div');
@@ -431,7 +454,7 @@
       'padding:4px 8px;cursor:move',
       'border-bottom:1px solid #1e1e3a',
       'background:#1a1a2e;border-radius:6px 6px 0 0',
-      'position:sticky;top:0;z-index:1',
+      'flex-shrink:0',
     ].join(';');
 
     const ttl = document.createElement('span');
@@ -472,12 +495,17 @@
       pox = e.clientX - panel.offsetLeft;
       poy = e.clientY - panel.offsetTop;
     });
-    window.addEventListener('mousemove', e => { if (!pdrag) return; panel.style.left = Math.max(0, e.clientX - pox) + 'px'; panel.style.top = Math.max(0, e.clientY - poy) + 'px'; });
+    window.addEventListener('mousemove', e => {
+      if (!pdrag) return;
+      const pos = clampPos(e.clientX - pox, e.clientY - poy, panel.offsetWidth, panel.offsetHeight);
+      panel.style.left = pos.left + 'px';
+      panel.style.top  = pos.top  + 'px';
+    });
     window.addEventListener('mouseup', () => pdrag = false);
 
     function sec(label, extraContent) {
       const wrap = document.createElement('div');
-      wrap.style.cssText = 'padding:4px 8px;border-bottom:1px solid #1a1a30';
+      wrap.style.cssText = 'padding:4px 8px;border-bottom:1px solid #1a1a30;flex-shrink:0';
       const lh = document.createElement('div');
       lh.style.cssText = 'display:flex;align-items:center;justify-content:space-between;font-size:7px;color:#fff;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #1a1a30;padding-bottom:2px;margin-bottom:4px';
       const lhText = document.createElement('span');
@@ -571,7 +599,6 @@
             inp.value = formatDeduction(v);
             inp.style.color = v !== 0 ? '#ff9d00' : '#fff';
           }
-          // se inválido, mantém o texto como está
         }
         refreshRealColumn();
       });
@@ -675,7 +702,7 @@
 
       r1.append(tog, lblInp, lumEl, ptsEl);
 
-      /* linha 2: px individual — input mais largo para caber setas nativas */
+      /* linha 2: px individual — input com largura fixa para não cortar setas nativas */
       const r2 = row(2);
       r2.style.cssText += ';overflow:hidden;min-width:0';
       const szInp = document.createElement('input');
@@ -686,9 +713,10 @@
       szInp.title = 'Tamanho desta probe em pixels (use as setas \u2191\u2193)';
       szInp.style.cssText = [
         'background:#111827;border:1px solid #2a3a50;color:#00d4ff',
-        'font:bold 9px monospace;border-radius:3px;padding:1px 3px',
-        'text-align:left;outline:none;flex:1;min-width:0;width:0',
-        'box-sizing:border-box;height:18px',
+        'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
+        'text-align:left;outline:none',
+        'box-sizing:border-box;height:20px',
+        'flex:1;min-width:52px',
       ].join(';');
       szInp.addEventListener('focus', () => szInp.style.borderColor = '#00d4ff88');
       szInp.addEventListener('blur',  () => szInp.style.borderColor = '#2a3a50');
@@ -924,7 +952,7 @@
 
     /* ── Seção: Status ── */
     const secSt = document.createElement('div');
-    secSt.style.cssText = 'padding:3px 8px';
+    secSt.style.cssText = 'padding:3px 8px;flex-shrink:0';
     const statusEl = document.createElement('div');
     statusEl.style.cssText = 'font-size:8px;color:#aaa;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     statusEl.textContent = 'Pronto';
@@ -946,31 +974,27 @@
       });
     }, 200);
 
-    /* ── Timer de gravação: target pts dinâmico por canal ── */
+    /* ── Timer de gravação: conclusão única pelo maior target ── */
     setInterval(() => {
       if (!ML.state.recording) return;
 
       const activeChs = ML.CHANNELS.filter(ch => ch.active);
       if (!activeChs.length) return;
 
-      // Calcula target atual de cada canal com base no lagPreset vigente
-      // e verifica conclusão antecipada (ex: mudou de auto→rapido com pts já suficientes)
-      let allDone = true;
-      activeChs.forEach(ch => {
-        const target = getTargetPts(ch);
-        const pts    = ch.buffer ? ch.buffer.length : 0;
-        if (pts < target) allDone = false;
-      });
+      // Target único = maior entre todos os canais ativos
+      const globalTarget = getGlobalTarget();
+
+      // Todos concluem juntos quando o canal com mais pontos atingir o globalTarget
+      const allDone = activeChs.every(ch => (ch.buffer ? ch.buffer.length : 0) >= globalTarget);
       if (allDone) { doStop(); return; }
 
-      // Progresso: canal mais lento em relação ao seu próprio target
-      let minRatio = 1;
+      // Progresso: canal mais atrasado em relação ao globalTarget
+      let minPts = Infinity;
       activeChs.forEach(ch => {
-        const target = getTargetPts(ch);
-        const pts    = ch.buffer ? ch.buffer.length : 0;
-        minRatio = Math.min(minRatio, pts / target);
+        const pts = ch.buffer ? ch.buffer.length : 0;
+        if (pts < minPts) minPts = pts;
       });
-      const pct = Math.min(100, Math.round(minRatio * 100));
+      const pct = Math.min(100, Math.round((minPts / globalTarget) * 100));
 
       progBarInner.style.width = pct + '%';
       progLabel.textContent    = pct + '%';
