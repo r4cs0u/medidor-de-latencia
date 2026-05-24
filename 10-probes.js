@@ -65,10 +65,12 @@
 
   const EDGE_THRESH = 8;
 
+  // edgeSnap: atrai a probe ativa para bordas/centros de outras probes.
+  // Só chamado quando ML.state.snapGrid === true e durante arrasto com mouse (nunca setas).
   function edgeSnap(ch, x, y) {
     const pw = probeW(ch), ph = probeH(ch);
-    let bL = x, bR = x + pw, bT = y, bB = y + ph;
-    let cX = x + pw / 2, cY = y + ph / 2;
+    const bL = x, bR = x + pw, bT = y, bB = y + ph;
+    const cX = x + pw / 2, cY = y + ph / 2;
     let snapX = null, snapY = null;
     ML.CHANNELS.forEach(other => {
       if (other === ch || !other.active || !other.probe) return;
@@ -90,25 +92,33 @@
     return { x: snapX !== null ? snapX : x, y: snapY !== null ? snapY : y };
   }
 
-  function resolveCollision(ch, x, y) {
-    if (!ML.state.noOverlap) return { x, y };
+  // pushResolve: impede sobreposição movendo a probe ativa E empurrando as outras.
+  // Usado no mouse, no teclado e no resize. Respeita ML.state.noOverlap.
+  function pushResolve(ch, x, y) {
+    if (!ML.state.noOverlap) return { x: Math.max(0, x), y: Math.max(0, y) };
     const pw = probeW(ch), ph = probeH(ch);
     ML.CHANNELS.forEach(other => {
       if (other === ch || !other.active || !other.probe) return;
       const od = other.probe;
       const ow = probeW(other), oh = probeH(other);
-      const oL = parseInt(od.style.left) || 0;
-      const oT = parseInt(od.style.top)  || 0;
+      let oL = parseInt(od.style.left) || 0;
+      let oT = parseInt(od.style.top)  || 0;
       const oR = oL + ow, oB = oT + oh;
-      const bL = x, bR = x + pw, bT = y, bB = y + ph;
-      // Sobreposição real: strict (borda encostada = permitido)
-      if (bR <= oL || bL >= oR || bB <= oT || bT >= oB) return;
-      const overlapL = bR - oL, overlapR = oR - bL;
-      const overlapT = bB - oT, overlapB = oB - bT;
+      // sem sobreposição real (borda encostada = ok)
+      if (x + pw <= oL || x >= oR || y + ph <= oT || y >= oB) return;
+      const overlapL = x + pw - oL;  // quanto `ch` invade pela esquerda de `other`
+      const overlapR = oR - x;       // quanto `ch` invade pela direita de `other`
+      const overlapT = y + ph - oT;
+      const overlapB = oB - y;
       const minH = Math.min(overlapL, overlapR);
       const minV = Math.min(overlapT, overlapB);
-      if (minH <= minV) { x = overlapL <= overlapR ? oL - pw : oR; }
-      else              { y = overlapT <= overlapB ? oT - ph : oB; }
+      // empurra `other` para fora — direção de menor sobreposição
+      if (minH <= minV) {
+        od.style.left = (overlapL <= overlapR ? oR : oL - ow) + 'px';
+      } else {
+        od.style.top  = (overlapT <= overlapB ? oB : oT - oh) + 'px';
+      }
+      flashProbe(other);
     });
     return { x: Math.max(0, x), y: Math.max(0, y) };
   }
@@ -212,6 +222,10 @@
       mask.style.width = '80%'; mask.style.height = '80%';
       makeOff(ch);
       refreshFocusBorder(ch);
+      // empurra outras probes que agora colidem após o redimensionamento
+      const cx = parseInt(d.style.left) || 0;
+      const cy = parseInt(d.style.top)  || 0;
+      pushResolve(ch, cx, cy);
     };
     d.style.display = ch.active ? 'block' : 'none';
 
@@ -229,24 +243,28 @@
       let rx = Math.max(0, e.clientX - ox);
       let ry = Math.max(0, e.clientY - oy);
       rx = snapGrid(rx); ry = snapGrid(ry);
-      const prevX = rx, prevY = ry;
-      const snapped = edgeSnap(ch, rx, ry);
-      rx = snapped.x; ry = snapped.y;
-      if (rx !== prevX || ry !== prevY) {
-        ML.CHANNELS.forEach(other => {
-          if (other === ch || !other.active || !other.probe) return;
-          const ow = probeW(other), oh = probeH(other);
-          const oL = parseInt(other.probe.style.left)||0, oT = parseInt(other.probe.style.top)||0;
-          const touched = (
-            Math.abs(rx - (oL + ow)) <= EDGE_THRESH ||
-            Math.abs(rx + probeW(ch) - oL) <= EDGE_THRESH ||
-            Math.abs(ry - (oT + oh)) <= EDGE_THRESH ||
-            Math.abs(ry + probeH(ch) - oT) <= EDGE_THRESH
-          );
-          if (touched) flashProbe(other);
-        });
+      // edgeSnap: só ativa com snapGrid ligado (nunca nas setas)
+      if (ML.state.snapGrid) {
+        const prevX = rx, prevY = ry;
+        const snapped = edgeSnap(ch, rx, ry);
+        rx = snapped.x; ry = snapped.y;
+        if (rx !== prevX || ry !== prevY) {
+          ML.CHANNELS.forEach(other => {
+            if (other === ch || !other.active || !other.probe) return;
+            const ow = probeW(other), oh = probeH(other);
+            const oL = parseInt(other.probe.style.left)||0, oT = parseInt(other.probe.style.top)||0;
+            const touched = (
+              Math.abs(rx - (oL + ow)) <= EDGE_THRESH ||
+              Math.abs(rx + probeW(ch) - oL) <= EDGE_THRESH ||
+              Math.abs(ry - (oT + oh)) <= EDGE_THRESH ||
+              Math.abs(ry + probeH(ch) - oT) <= EDGE_THRESH
+            );
+            if (touched) flashProbe(other);
+          });
+        }
       }
-      const final = resolveCollision(ch, rx, ry);
+      // pushResolve: empurra outras probes (mouse) — só se colisão ligada
+      const final = pushResolve(ch, rx, ry);
       d.style.left = final.x + 'px';
       d.style.top  = final.y + 'px';
     });
@@ -274,8 +292,10 @@
     if (e.key === 'ArrowRight') left += step;
     if (e.key === 'ArrowUp')    top  = Math.max(0, top - step);
     if (e.key === 'ArrowDown')  top  += step;
-    d.style.left = left + 'px';
-    d.style.top  = top  + 'px';
+    // setas: sem snap, mas com colisão/push
+    const final = pushResolve(focusedProbe, left, top);
+    d.style.left = final.x + 'px';
+    d.style.top  = final.y + 'px';
   });
 
   window.addEventListener('mousedown', e => {
