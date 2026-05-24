@@ -217,6 +217,22 @@
     return (s > 0 ? '+' : '') + s.toFixed(3) + 's';
   }
 
+  /* ── Detecta se um elemento tem cor vermelha dominante ── */
+  function isRedText(el) {
+    if (!el) return false;
+    try {
+      const color = window.getComputedStyle(el).color;
+      // Parseia rgb(r,g,b) ou rgba(r,g,b,a)
+      const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      if (!m) return false;
+      const r = parseInt(m[1]);
+      const g = parseInt(m[2]);
+      const b = parseInt(m[3]);
+      // Vermelho dominante: R alto, G e B baixos relativamente
+      return r >= 180 && g < 100 && b < 100;
+    } catch(e) { return false; }
+  }
+
   /* ── Overlay de pesquisa restrito ao tamanho da probe ── */
   function showSearchOverlay(ch) {
     document.querySelectorAll('.ml-search-overlay').forEach(e => e.remove());
@@ -268,19 +284,27 @@
     });
   }
 
+  /* ── autoDetectDeduction: busca apenas texto vermelho na área da probe ──
+     Critérios:
+       1. Elemento pai com cor vermelha dominante (R≥180, G<100, B<100)
+       2. Valor absoluto entre 0 e 60s (descarta leituras absurdas)
+       3. Geometricamente mais próximo do centro vertical da probe
+  */
   function autoDetectDeduction(ch) {
     if (!ch.probe) return null;
     const d = ch.probe;
     const cy = d.offsetTop + d.offsetHeight / 2;
-    const RADIUS_Y = Math.round(window.innerHeight / 2);
+    const RADIUS_Y = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) / 2);
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         const p = node.parentElement;
         if (!p || p.closest('[id^="ml-"]')) return NodeFilter.FILTER_REJECT;
+        // só aceita nós cujo elemento pai seja texto vermelho
+        if (!isRedText(p)) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       }
     });
-    const RE = /([+\-\u2212]\d+[.,]\d+s|[+\-\u2212]\d+s)/g;
+    const RE = /([+\-\u2212]?\d+[.,]\d+s?|[+\-\u2212]\d+s?)/g;
     let best = null, bestDist = Infinity;
     while (walker.nextNode()) {
       const node = walker.currentNode;
@@ -297,6 +321,10 @@
           const ry = rect.top + rect.height / 2;
           const dy = Math.abs(ry - cy);
           if (dy > RADIUS_Y) continue;
+          // valida o valor numérico antes de aceitar
+          const parsed = parseDeductionS(m[0]);
+          if (parsed === null) continue;
+          if (Math.abs(parsed) > 60) continue; // descarta valores absurdos
           if (dy < bestDist) { bestDist = dy; best = m[0]; }
         } catch(e) {}
       }
@@ -702,7 +730,7 @@
 
       r1.append(tog, lblInp, lumEl, ptsEl);
 
-      /* linha 2: px individual — input com largura fixa para não cortar setas nativas */
+      /* linha 2: px individual */
       const r2 = row(2);
       r2.style.cssText += ';overflow:hidden;min-width:0';
       const szInp = document.createElement('input');
@@ -777,10 +805,14 @@
 
     secDet.appendChild(probeGrid);
 
+    // autoDetect ao soltar o mouse após arrastar uma probe (com feedback visual)
     window.addEventListener('mouseup', () => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch._dedInp) return;
+        if (!ch._wasDragged) return;
+        ch._wasDragged = false;
         if (ch._dedInp.value.trim() !== '') return;
+        showSearchOverlay(ch);
         const found = autoDetectDeduction(ch);
         if (!found) return;
         const v = parseDeductionS(found);
@@ -963,6 +995,9 @@
     panel.style.right = '8px';
     panel.style.top   = '8px';
 
+    // Inicia sempre minimizado
+    minimizePanel(panel);
+
     /* ── Atualizar lum no painel ── */
     setInterval(() => {
       ML.CHANNELS.forEach(ch => {
@@ -981,14 +1016,11 @@
       const activeChs = ML.CHANNELS.filter(ch => ch.active);
       if (!activeChs.length) return;
 
-      // Target único = maior entre todos os canais ativos
       const globalTarget = getGlobalTarget();
 
-      // Todos concluem juntos quando o canal com mais pontos atingir o globalTarget
       const allDone = activeChs.every(ch => (ch.buffer ? ch.buffer.length : 0) >= globalTarget);
       if (allDone) { doStop(); return; }
 
-      // Progresso: canal mais atrasado em relação ao globalTarget
       let minPts = Infinity;
       activeChs.forEach(ch => {
         const pts = ch.buffer ? ch.buffer.length : 0;
@@ -1003,7 +1035,6 @@
         progLabel.style.color         = pct >= 95 ? '#ffd700' : '#44ff88';
       }
 
-      // Atualiza pontos por canal
       activeChs.forEach(ch => {
         if (!ch.ptsEl) return;
         const pts = ch.buffer ? ch.buffer.length : 0;

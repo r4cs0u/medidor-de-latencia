@@ -92,47 +92,28 @@
     return { x: snapX !== null ? snapX : x, y: snapY !== null ? snapY : y };
   }
 
-  // pushResolve: impede sobreposição movendo a probe ativa E empurrando as outras.
-  // Usado no mouse, no teclado e no resize. Respeita ML.state.noOverlap.
-  function pushResolve(ch, x, y) {
+  // resolveCollision: impede sobreposição movendo SOMENTE a probe ativa.
+  // Não empurra outras probes. Respeita ML.state.noOverlap.
+  function resolveCollision(ch, x, y) {
     if (!ML.state.noOverlap) return { x: Math.max(0, x), y: Math.max(0, y) };
     const pw = probeW(ch), ph = probeH(ch);
     ML.CHANNELS.forEach(other => {
       if (other === ch || !other.active || !other.probe) return;
       const od = other.probe;
       const ow = probeW(other), oh = probeH(other);
-      let oL = parseInt(od.style.left) || 0;
-      let oT = parseInt(od.style.top)  || 0;
+      const oL = parseInt(od.style.left) || 0;
+      const oT = parseInt(od.style.top)  || 0;
       const oR = oL + ow, oB = oT + oh;
-      // sem sobreposição real (borda encostada = ok)
-      if (x + pw <= oL || x >= oR || y + ph <= oT || y >= oB) return;
-      const overlapL = x + pw - oL;  // quanto `ch` invade pela esquerda de `other`
-      const overlapR = oR - x;       // quanto `ch` invade pela direita de `other`
-      const overlapT = y + ph - oT;
-      const overlapB = oB - y;
+      const bL = x, bR = x + pw, bT = y, bB = y + ph;
+      if (bR <= oL || bL >= oR || bB <= oT || bT >= oB) return;
+      const overlapL = bR - oL, overlapR = oR - bL;
+      const overlapT = bB - oT, overlapB = oB - bT;
       const minH = Math.min(overlapL, overlapR);
       const minV = Math.min(overlapT, overlapB);
-      // empurra `other` para fora — direção de menor sobreposição
-      if (minH <= minV) {
-        od.style.left = (overlapL <= overlapR ? oR : oL - ow) + 'px';
-      } else {
-        od.style.top  = (overlapT <= overlapB ? oB : oT - oh) + 'px';
-      }
-      flashProbe(other);
+      if (minH <= minV) { x = overlapL <= overlapR ? oL - pw : oR; }
+      else              { y = overlapT <= overlapB ? oT - ph : oB; }
     });
     return { x: Math.max(0, x), y: Math.max(0, y) };
-  }
-
-  let flashTimers = {};
-  function flashProbe(other) {
-    if (flashTimers[other.id]) return;
-    const d = other.probe;
-    const orig = d.style.boxShadow;
-    d.style.boxShadow = `0 0 12px 3px ${other.color}`;
-    flashTimers[other.id] = setTimeout(() => {
-      if (d) d.style.boxShadow = orig;
-      delete flashTimers[other.id];
-    }, 180);
   }
 
   function dashedBorderSVG(w, h, color) {
@@ -222,16 +203,13 @@
       mask.style.width = '80%'; mask.style.height = '80%';
       makeOff(ch);
       refreshFocusBorder(ch);
-      // empurra outras probes que agora colidem após o redimensionamento
-      const cx = parseInt(d.style.left) || 0;
-      const cy = parseInt(d.style.top)  || 0;
-      pushResolve(ch, cx, cy);
     };
     d.style.display = ch.active ? 'block' : 'none';
 
     let drag = false, ox = 0, oy = 0;
     d.addEventListener('mousedown', e => {
       drag = true;
+      ch._wasDragged = false;
       ox = e.clientX - d.offsetLeft;
       oy = e.clientY - d.offsetTop;
       setFocus(ch);
@@ -240,31 +218,17 @@
     });
     window.addEventListener('mousemove', e => {
       if (!drag) return;
+      ch._wasDragged = true;
       let rx = Math.max(0, e.clientX - ox);
       let ry = Math.max(0, e.clientY - oy);
       rx = snapGrid(rx); ry = snapGrid(ry);
       // edgeSnap: só ativa com snapGrid ligado (nunca nas setas)
       if (ML.state.snapGrid) {
-        const prevX = rx, prevY = ry;
         const snapped = edgeSnap(ch, rx, ry);
         rx = snapped.x; ry = snapped.y;
-        if (rx !== prevX || ry !== prevY) {
-          ML.CHANNELS.forEach(other => {
-            if (other === ch || !other.active || !other.probe) return;
-            const ow = probeW(other), oh = probeH(other);
-            const oL = parseInt(other.probe.style.left)||0, oT = parseInt(other.probe.style.top)||0;
-            const touched = (
-              Math.abs(rx - (oL + ow)) <= EDGE_THRESH ||
-              Math.abs(rx + probeW(ch) - oL) <= EDGE_THRESH ||
-              Math.abs(ry - (oT + oh)) <= EDGE_THRESH ||
-              Math.abs(ry + probeH(ch) - oT) <= EDGE_THRESH
-            );
-            if (touched) flashProbe(other);
-          });
-        }
       }
-      // pushResolve: empurra outras probes (mouse) — só se colisão ligada
-      const final = pushResolve(ch, rx, ry);
+      // resolveCollision: move só a probe ativa, sem empurrar outras
+      const final = resolveCollision(ch, rx, ry);
       d.style.left = final.x + 'px';
       d.style.top  = final.y + 'px';
     });
@@ -292,8 +256,8 @@
     if (e.key === 'ArrowRight') left += step;
     if (e.key === 'ArrowUp')    top  = Math.max(0, top - step);
     if (e.key === 'ArrowDown')  top  += step;
-    // setas: sem snap, mas com colisão/push
-    const final = pushResolve(focusedProbe, left, top);
+    // setas: sem snap, colisão normal (sem push)
+    const final = resolveCollision(focusedProbe, left, top);
     d.style.left = final.x + 'px';
     d.style.top  = final.y + 'px';
   });
