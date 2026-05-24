@@ -18,6 +18,22 @@
     } catch(e) {}
   }
 
+  /* ── Injetar keyframes pulse ── */
+  (function injectStyles() {
+    if (document.getElementById('ml-styles')) return;
+    const s = document.createElement('style');
+    s.id = 'ml-styles';
+    s.textContent = `
+      @keyframes mlPulse {
+        0%,100% { box-shadow: 0 0 6px #c62828aa; border-color: #c62828; }
+        50%      { box-shadow: 0 0 14px #ff0000cc; border-color: #ff4444; }
+      }
+      #ml-widget { transition: transform .1s; }
+      #ml-widget:hover { transform: scale(1.1); }
+    `;
+    document.head.appendChild(s);
+  })();
+
   /* ── helper: janela arrastável genérica ── */
   function makeDraggableWindow(id, titleText, titleColor, width) {
     const win = document.createElement('div');
@@ -158,9 +174,8 @@
   /* ── Parser de dedução ── */
   function parseDeductionS(str) {
     if (!str) return null;
-    // Normaliza: hífen unicode → -, vírgula → ponto, espaços → nada
     const norm = str.trim()
-      .replace(/\u2212/g, '-')   // sinal de menos unicode
+      .replace(/\u2212/g, '-')
       .replace(/,/g, '.')
       .replace(/\s/g, '');
     const m = norm.match(/^([+-]?\d+(?:\.\d+)?)s$/i);
@@ -173,18 +188,13 @@
     return (s > 0 ? '+' : '') + s.toFixed(3) + 's';
   }
 
-  /* ── Auto-detect de dedução ao mover probe ──
-     Estratégia: busca textos com padrão de tempo em toda a página,
-     calcula distância horizontal (eixo X alinhado à tela no multiviewer)
-     e distância total. Prioriza o mais próximo dentro do raio.
-  ── */
+  /* ── Auto-detect de dedução ── */
   function autoDetectDeduction(ch) {
     if (!ch.probe) return null;
     const d = ch.probe;
     const cx = d.offsetLeft + d.offsetWidth  / 2;
     const cy = d.offsetTop  + d.offsetHeight / 2;
 
-    // Raio ampliado: textos ficam na barra superior, bem acima da probe
     const RADIUS_X = 300;
     const RADIUS_Y = 500;
 
@@ -196,7 +206,6 @@
       }
     });
 
-    // Aceita: -0,366s  +0.1s  -1s  −0,366s  0,1s  (com ou sem sinal)
     const RE = /([\u2212+-]?\d+[.,]\d+\s*s|[\u2212+-]\d+\s*s)/gi;
     let best = null, bestDist = Infinity;
 
@@ -218,10 +227,7 @@
           const dy = Math.abs(ry - cy);
           if (dx > RADIUS_X || dy > RADIUS_Y) continue;
           const dist = Math.hypot(dx, dy);
-          if (dist < bestDist) {
-            bestDist = dist;
-            best = m[0];
-          }
+          if (dist < bestDist) { bestDist = dist; best = m[0]; }
         } catch(e) {}
       }
     }
@@ -291,8 +297,70 @@
     });
   }
 
+  /* ── Minimizar / Restaurar ── */
+  function minimizePanel(panel) {
+    panel.style.display = 'none';
+
+    const widget = document.createElement('div');
+    widget.id = 'ml-widget';
+    widget.title = 'Restaurar Analisador de Lat\u00eancia';
+    widget.innerHTML = '\ud83d\udd50';
+    widget.style.cssText = [
+      'position:fixed;top:8px;right:8px;z-index:999999',
+      'width:32px;height:32px;border-radius:8px',
+      'background:#12121fee;border:2px solid #00d4ff',
+      'display:flex;align-items:center;justify-content:center',
+      'font-size:16px;cursor:pointer;user-select:none',
+      'box-shadow:0 2px 12px #000a',
+    ].join(';');
+
+    /* pulso vermelho se gravando */
+    function syncPulse() {
+      if (ML.state && ML.state.recording) {
+        widget.style.animation = 'mlPulse 1s ease-in-out infinite';
+        widget.style.borderColor = '#c62828';
+      } else {
+        widget.style.animation = '';
+        widget.style.borderColor = '#00d4ff';
+      }
+    }
+    syncPulse();
+    const pulseTimer = setInterval(syncPulse, 500);
+
+    /* arrastar widget */
+    let wdrag = false, wx = 0, wy = 0;
+    widget.addEventListener('mousedown', e => {
+      wdrag = false;
+      wx = e.clientX - widget.offsetLeft;
+      wy = e.clientY - widget.offsetTop;
+      widget._moved = false;
+      e.preventDefault();
+    });
+    const onWMove = e => {
+      if (Math.hypot(e.clientX - (wx + widget.offsetLeft), e.clientY - (wy + widget.offsetTop)) > 3) {
+        wdrag = true; widget._moved = true;
+      }
+      if (!wdrag) return;
+      widget.style.right = 'auto';
+      widget.style.left = Math.max(0, e.clientX - wx) + 'px';
+      widget.style.top  = Math.max(0, e.clientY - wy) + 'px';
+    };
+    const onWUp = () => {
+      if (!widget._moved) {
+        clearInterval(pulseTimer);
+        widget.remove();
+        panel.style.display = 'block';
+      }
+      wdrag = false;
+    };
+    window.addEventListener('mousemove', onWMove);
+    window.addEventListener('mouseup', onWUp);
+
+    document.body.appendChild(widget);
+  }
+
   function init() {
-    ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-guide'].forEach(id => {
+    ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-guide', 'ml-widget'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.remove();
     });
@@ -333,17 +401,20 @@
       return b;
     }
 
-    const btnTips  = mkIconBtn('\ud83d\udca1', 'Boas Pr\u00e1ticas', '#ffd700');
-    const btnGuide = mkIconBtn('\ud83d\udccb', 'Instru\u00e7\u00f5es de Uso', '#00d4ff');
+    const btnTips  = mkIconBtn('\ud83d\udca1', 'Dicas para uma medi\u00e7\u00e3o precisa', '#ffd700');
+    const btnGuide = mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
+    const btnMin   = mkIconBtn('\u2212', 'Minimizar para widget', '#aaaaaa');
     const btnX     = document.createElement('button');
     btnX.textContent = '\u2715';
+    btnX.title = 'Fechar o medidor';
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"]').forEach(e => e.remove()); };
 
     btnTips.onclick  = () => toggleTips(panel);
     btnGuide.onclick = () => toggleGuide(panel);
+    btnMin.onclick   = () => minimizePanel(panel);
 
-    hdr.append(ttl, btnTips, btnGuide, btnX);
+    hdr.append(ttl, btnTips, btnGuide, btnMin, btnX);
     panel.appendChild(hdr);
 
     /* Drag */
@@ -393,6 +464,7 @@
 
     function mkLagSelect(ch) {
       const sel = document.createElement('select');
+      sel.title = 'Faixa de atraso esperada em rela\u00e7\u00e3o \u00e0 refer\u00eancia';
       sel.style.cssText = [
         'background:#111827;border:1px solid #2a3a50;color:#fff',
         'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
@@ -427,10 +499,10 @@
       inp.type = 'text';
       inp.placeholder = '0.000s';
       inp.value = ch.deduction ? formatDeduction(ch.deduction) : '';
-      inp.title = 'Dedu\u00e7\u00e3o do multiviewer (ex: -0.366s).';
+      inp.title = 'Offset fixo exibido pelo multiviewer neste canal';
       inp.style.cssText = [
         'background:#111827;border:1px solid #2a3a5088;color:#ff9d00',
-        'font:bold 8px monospace;width:100%;border-radius:3px',
+        'font:bold 8px monospace;flex:1;min-width:0;border-radius:3px',
         'padding:1px 3px;text-align:center;outline:none',
       ].join(';');
       inp.addEventListener('focus', () => inp.style.borderColor = '#ff9d0088');
@@ -457,6 +529,7 @@
     const secTG = sec('Posicionamento');
 
     const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 44);
+    pxInp.title = 'Tamanho das probes em pixels';
     function applyGlobalPx(v) {
       const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
       ML.state.probeW = c;
@@ -475,10 +548,12 @@
     pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
 
     const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0');
+    btnSnap.title = 'Ativa grade magn\u00e9tica para alinhar probes';
     function updateSnapBtn() { btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF'; btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e'; btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#fff'; }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
 
     const btnCol = mkBtn('', '#2a1a0d', 'flex:1;min-width:0');
+    btnCol.title = 'Evita sobreposi\u00e7\u00e3o entre probes';
     function updateColBtn() { btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF'; btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e'; btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#fff'; }
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
 
@@ -510,6 +585,7 @@
       const r1 = row(3);
       r1.style.overflow = 'hidden';
       const tog = document.createElement('button');
+      tog.title = 'Ativar ou desativar esta tela';
       tog.style.cssText = `width:8px;height:8px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
       tog.onclick = () => {
         ch.active = !ch.active;
@@ -521,6 +597,7 @@
 
       const lblInp = document.createElement('input');
       lblInp.value = i === 0 ? 'Ref.' : ch.label;
+      lblInp.title = 'Clique para renomear a tela';
       lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
       lblInp.addEventListener('change', () => {
         ch.label = lblInp.value.replace(/^\u2605\s*/, '');
@@ -529,6 +606,7 @@
       });
 
       const lumEl = document.createElement('span');
+      lumEl.title = 'Lumin\u00e2ncia atual da probe (0\u2013255)';
       lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;flex-shrink:0`;
       lumEl.textContent = '--'; ch.lumEl = lumEl;
 
@@ -542,6 +620,9 @@
       const r2 = row(2);
       r2.style.overflow = 'hidden';
       const szInp = mkNum(ML.state.probeW, 16, 500, 2, 34);
+      szInp.title = 'Tamanho desta probe em pixels';
+      szInp.style.flex = '1';
+      szInp.style.minWidth = '0';
       ch._szInp = szInp;
       function applyChanPx(v) { const c = Math.max(16, Math.min(500, Math.round(v/2)*2)); ch.probeW = c; szInp.value = c; if (ch.active && ch.resize) ch.resize(); }
       const szM = mkBtn('\u2212', '#1e2a3a', 'padding:1px 3px;font-size:8px;flex-shrink:0');
@@ -620,6 +701,8 @@
     const secAn = sec('An\u00e1lise');
     const btnRec     = mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:3px 0;font-size:10px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:3px 0;font-size:10px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
+    btnRec.title     = 'Inicia a captura de lumin\u00e2ncia (~2 min)';
+    btnAnalyze.title = 'Calcula a lat\u00eancia com base nos dados gravados';
 
     function doStop() {
       ML.recorder.stop();
@@ -696,7 +779,7 @@
     /* ── Seção: Resultados ── */
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
-    btnCopyInline.title = 'Copiar resultados';
+    btnCopyInline.title = 'Copiar tabela de resultados para a \u00e1rea de transfer\u00eancia';
     btnCopyInline.style.cssText = 'background:transparent;border:1px solid #00d4ff44;color:#00d4ff;border-radius:3px;padding:0 4px;cursor:pointer;font-size:10px;line-height:14px';
     btnCopyInline.addEventListener('mouseenter', () => btnCopyInline.style.background = '#00d4ff18');
     btnCopyInline.addEventListener('mouseleave', () => btnCopyInline.style.background = 'transparent');
