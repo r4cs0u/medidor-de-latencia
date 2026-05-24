@@ -15,8 +15,9 @@
       }
       #ml-widget { transition: transform .1s; }
       #ml-widget:hover { transform: scale(1.1); }
-      input[type=number].ml-sz-inp::-webkit-inner-spin-button,
-      input[type=number].ml-sz-inp::-webkit-outer-spin-button { opacity:1; cursor:pointer; }
+      .ml-sz-inp { -moz-appearance: textfield; }
+      .ml-sz-inp::-webkit-inner-spin-button,
+      .ml-sz-inp::-webkit-outer-spin-button { display:none; }
     `;
     document.head.appendChild(s);
   })();
@@ -43,11 +44,11 @@
 
   function mkLagSelect(ch) {
     const sel = document.createElement('select');
-    sel.title = 'Faixa de atraso esperada em rela\u00e7\u00e3o \u00e0 refer\u00eancia';
+    sel.title = 'Faixa de atraso esperada em relação à referência';
     sel.style.cssText = [
       'background:#111827;border:1px solid #2a3a50;color:#fff',
       'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
-      'cursor:pointer;outline:none;width:100%',
+      'cursor:pointer;outline:none;width:100%;height:18px;box-sizing:border-box',
     ].join(';');
     [{ value: 'auto', label: 'Auto' }, { value: 'rapido', label: '\u22645s' }, { value: 'internet', label: '\u226430s' }]
       .forEach(o => {
@@ -69,11 +70,11 @@
     const inp = document.createElement('input');
     inp.type = 'text'; inp.placeholder = '0.000s';
     inp.value = ch.deduction ? ui.formatDeduction(ch.deduction) : '';
-    inp.title = 'Offset fixo do multiviewer. Ex: 3 \u2192 -3.000s  +1.5 \u2192 +1.500s';
+    inp.title = 'Offset fixo do multiviewer. Ex: 3 → -3.000s  +1.5 → +1.500s';
     inp.style.cssText = [
       'background:#111827;border:1px solid #2a3a5088;color:#ff9d00',
       'font:bold 8px monospace;width:100%;box-sizing:border-box;border-radius:3px',
-      'padding:1px 3px;text-align:center;outline:none',
+      'padding:1px 3px;text-align:center;outline:none;height:18px',
     ].join(';');
     inp.addEventListener('focus', () => inp.style.borderColor = '#ff9d0088');
     inp.addEventListener('blur',  () => {
@@ -113,7 +114,7 @@
       'border-radius:6px;box-shadow:0 4px 24px #000c',
       'font-family:monospace;font-size:11px;color:#fff',
       `user-select:none;width:${panelW}px`,
-      'display:flex;flex-direction:column;max-height:95vh;overflow:hidden',
+      'display:flex;flex-direction:column;height:calc(100vh - 16px);overflow:hidden',
     ].join(';');
 
     // Header
@@ -127,7 +128,7 @@
     const ttl = document.createElement('span');
     ttl.textContent = '\u{1F550} ANALISADOR DE LAT\u00CANCIA';
     ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
-    const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medi\u00e7\u00e3o precisa', '#ffd700');
+    const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medição precisa', '#ffd700');
     const btnGuide = ui.mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
     const btnMin   = ui.mkIconBtn('\u2212', 'Minimizar para widget', '#aaaaaa');
     const btnX     = document.createElement('button');
@@ -156,6 +157,10 @@
     });
     window.addEventListener('mouseup', () => pdrag = false);
 
+    // Wrapper de conteúdo scrollável
+    const scrollBody = document.createElement('div');
+    scrollBody.style.cssText = 'flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column';
+
     /* ── Seção: Posicionamento ── */
     const secTG = ui.sec('Posicionamento');
     const pxInp = ui.mkNum(ML.state.probeW, 16, 500, 2, 44);
@@ -177,7 +182,7 @@
     pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
 
     const btnSnap = ui.mkBtn('', '#0d4f3c', 'flex:1;min-width:0');
-    btnSnap.title = 'Ativa grade magn\u00e9tica para alinhar probes';
+    btnSnap.title = 'Ativa grade magnética para alinhar probes';
     function updateSnapBtn() {
       btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF';
       btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e';
@@ -186,7 +191,7 @@
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
 
     const btnCol = ui.mkBtn('', '#2a1a0d', 'flex:1;min-width:0');
-    btnCol.title = 'Evita sobreposi\u00e7\u00e3o entre probes';
+    btnCol.title = 'Evita sobreposição entre probes';
     function updateColBtn() {
       btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF';
       btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e';
@@ -197,7 +202,7 @@
     const rowPos = ui.row(4);
     rowPos.append(ui.sp('PX', 'flex-shrink:0;font-size:8px'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
     secTG.appendChild(rowPos);
-    panel.appendChild(secTG);
+    scrollBody.appendChild(secTG);
 
     /* ── Seção: Telas ── */
     const secDet = ui.sec('Telas');
@@ -232,7 +237,7 @@
       };
 
       const lblInp = document.createElement('input');
-      lblInp.value = i === 0 ? 'Ref.' : ch.label;
+      lblInp.value = i === 0 ? 'Referência' : ch.label;
       lblInp.title = 'Clique para renomear a tela';
       lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
       lblInp.addEventListener('change', () => {
@@ -242,7 +247,7 @@
       });
 
       const lumEl = document.createElement('span');
-      lumEl.title = 'Lumin\u00e2ncia atual da probe (0\u2013255)';
+      lumEl.title = 'Luminância atual da probe (0–255)';
       lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;flex-shrink:0`;
       lumEl.textContent = '--'; ch.lumEl = lumEl;
 
@@ -252,21 +257,25 @@
 
       r1.append(tog, lblInp, lumEl, ptsEl);
 
+      // Row px individual com botões - e +
       const r2 = ui.row(2);
-      r2.style.cssText += ';overflow:hidden;min-width:0';
+      r2.style.cssText += ';overflow:hidden;min-width:0;align-items:center';
+
       const szInp = document.createElement('input');
-      szInp.type = 'number'; szInp.min = 16; szInp.max = 500; szInp.step = 2;
+      szInp.type = 'text';
       szInp.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
       szInp.className = 'ml-sz-inp';
-      szInp.title = 'Tamanho desta probe em pixels (use as setas \u2191\u2193)';
+      szInp.title = 'Tamanho desta probe em pixels';
       szInp.style.cssText = [
         'background:#111827;border:1px solid #2a3a50;color:#00d4ff',
         'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
-        'text-align:left;outline:none;box-sizing:border-box;height:20px;flex:1;min-width:52px',
+        'text-align:center;outline:none;box-sizing:border-box',
+        'height:18px;width:28px;flex-shrink:0;min-width:0',
       ].join(';');
       szInp.addEventListener('focus', () => szInp.style.borderColor = '#00d4ff88');
       szInp.addEventListener('blur',  () => szInp.style.borderColor = '#2a3a50');
       ch._szInp = szInp;
+
       function applyChanPx(v) {
         const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
         ch.probeW = c; szInp.value = c;
@@ -274,11 +283,30 @@
       }
       szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
       szInp.addEventListener('keydown', e => {
-        if (e.key === 'Enter')     { e.preventDefault(); applyChanPx(parseInt(szInp.value) || ML.state.probeW); szInp.blur(); }
-        if (e.key === 'ArrowUp')   { e.preventDefault(); applyChanPx((parseInt(szInp.value) || 16) + 2); }
-        if (e.key === 'ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value) || 16) - 2); }
+        if (e.key === 'Enter') { e.preventDefault(); applyChanPx(parseInt(szInp.value) || ML.state.probeW); szInp.blur(); }
       });
-      r2.append(ui.sp('px', 'font-size:7px;color:#aaa;flex-shrink:0'), szInp);
+
+      const btnSzM = document.createElement('button');
+      btnSzM.textContent = '\u2212';
+      btnSzM.title = 'Diminuir probe';
+      btnSzM.style.cssText = [
+        'background:#1e2a3a;border:1px solid #2a3a50;color:#00d4ff',
+        'font:bold 9px monospace;border-radius:3px;padding:0 3px',
+        'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
+      ].join(';');
+      btnSzM.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) - 2);
+
+      const btnSzP = document.createElement('button');
+      btnSzP.textContent = '+';
+      btnSzP.title = 'Aumentar probe';
+      btnSzP.style.cssText = [
+        'background:#1e2a3a;border:1px solid #2a3a50;color:#00d4ff',
+        'font:bold 9px monospace;border-radius:3px;padding:0 3px',
+        'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
+      ].join(';');
+      btnSzP.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) + 2);
+
+      r2.append(ui.sp('px', 'font-size:7px;color:#aaa;flex-shrink:0'), btnSzM, szInp, btnSzP);
 
       const r3ded = ui.row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
@@ -296,14 +324,14 @@
     });
 
     secDet.appendChild(probeGrid);
-    panel.appendChild(secDet);
+    scrollBody.appendChild(secDet);
 
     /* ── Seção: Análise ── */
     const secAn = ui.sec('An\u00e1lise');
     const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = ui.mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
-    btnRec.title     = 'Inicia a captura de lumin\u00e2ncia';
-    btnAnalyze.title = 'Calcula a lat\u00eancia com base nos dados gravados';
+    btnRec.title     = 'Inicia a captura de luminância';
+    btnAnalyze.title = 'Calcula a latência com base nos dados gravados';
 
     const progWrap = document.createElement('div');
     progWrap.style.cssText = 'display:none;flex-direction:column;gap:1px;padding:2px 0';
@@ -389,12 +417,12 @@
     rowBtns.append(btnRec, btnAnalyze);
     secAn.appendChild(rowBtns);
     secAn.appendChild(progWrap);
-    panel.appendChild(secAn);
+    scrollBody.appendChild(secAn);
 
     /* ── Seção: Resultados ── */
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
-    btnCopyInline.title = 'Copiar tabela de resultados para a \u00e1rea de transfer\u00eancia';
+    btnCopyInline.title = 'Copiar tabela de resultados para a área de transferência';
     btnCopyInline.style.cssText = 'background:transparent;border:1px solid #00d4ff44;color:#00d4ff;border-radius:3px;padding:0 4px;cursor:pointer;font-size:10px;line-height:14px';
     btnCopyInline.addEventListener('mouseenter', () => btnCopyInline.style.background = '#00d4ff18');
     btnCopyInline.addEventListener('mouseleave', () => btnCopyInline.style.background = 'transparent');
@@ -418,7 +446,7 @@
       tr.style.cssText = `border-bottom:1px solid #1a1a2a;opacity:${ch.active ? 1 : .4};transition:opacity .2s`;
       ch._panelTr = tr;
       const tdName = document.createElement('td');
-      tdName.textContent = (i === 0 ? '\u2605 ' : '') + ch.label;
+      tdName.textContent = (i === 0 ? '\u2605 ' : '') + (i === 0 ? 'Referência' : ch.label);
       tdName.style.cssText = `color:${ch.color};padding:2px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px`;
       ch._tdName = tdName;
       const tdOff = document.createElement('td');
@@ -434,7 +462,7 @@
     });
     tbl.appendChild(tbody);
     secRes.appendChild(tbl);
-    panel.appendChild(secRes);
+    scrollBody.appendChild(secRes);
 
     /* ── Seção: Status ── */
     const secSt = document.createElement('div');
@@ -443,8 +471,9 @@
     statusEl.style.cssText = 'font-size:8px;color:#aaa;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     statusEl.textContent = 'Pronto';
     secSt.appendChild(statusEl);
-    panel.appendChild(secSt);
+    scrollBody.appendChild(secSt);
 
+    panel.appendChild(scrollBody);
     document.body.appendChild(panel);
     panel.style.right = '8px';
     panel.style.top   = '8px';
