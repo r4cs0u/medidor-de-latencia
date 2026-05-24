@@ -1,8 +1,8 @@
 (function () {
   const ML = window.MedLat;
   const ui = ML.ui;
-  let MAX_PEAKS = 10;
-  const SNAP_RADIUS = 3;
+  const MAX_PEAKS = 30;
+  const SNAP_RADIUS = 15; // raio de atração em amostras (~500ms @33fps)
 
   function loadChartJs() {
     return new Promise((resolve) => {
@@ -65,7 +65,7 @@
   async function showChart(results) {
     if (!Array.isArray(results)) results = [results];
     await loadChartJs();
-    ui.injectSliderCSS();                          // era injectSliderCSS() local
+    ui.injectSliderCSS();
     const old = document.getElementById('ml-chart-panel');
     if (old) old.remove();
 
@@ -74,11 +74,12 @@
       ? mainPanel.getBoundingClientRect()
       : { left: window.innerWidth - 248, top: 8, width: 228, height: 0 };
 
-    const sidePanelW = (mpRect.width || 228) + 16;
-    const INIT_W = Math.max(320, Math.min(window.innerWidth - sidePanelW - 8, window.innerWidth * 0.72));
-    const INIT_H = Math.max(260, Math.min(window.innerHeight - 16, window.innerHeight * 0.92));
-    const initLeft = 4;
-    const initTop  = 8;
+    // Janela ocupa toda a área à esquerda do painel principal
+    const GAP = 6;
+    const initLeft = GAP;
+    const initTop  = GAP;
+    const INIT_W = Math.max(320, mpRect.left - initLeft - GAP);
+    const INIT_H = Math.max(260, window.innerHeight - initTop - GAP);
 
     const panel = document.createElement('div');
     panel.id = 'ml-chart-panel';
@@ -125,31 +126,12 @@
     updatePeaksBtn();
     btnPeaks.onclick = () => { showPeaks = !showPeaks; updatePeaksBtn(); rebuildCharts(); };
 
-    const selPeaks = document.createElement('select');
-    selPeaks.style.cssText = [
-      'background:#1e2a3a;border:1px solid #2a3a50;color:#ffd700',
-      'border-radius:3px;padding:1px 4px;cursor:pointer;font:bold 8px monospace',
-      'flex-shrink:0;outline:none;height:18px',
-    ].join(';');
-    [5, 10, 15, 20, 25, 30].forEach(n => {
-      const opt = document.createElement('option');
-      opt.value = n;
-      opt.textContent = n + ' picos';
-      if (n === MAX_PEAKS) opt.selected = true;
-      selPeaks.appendChild(opt);
-    });
-    selPeaks.addEventListener('change', () => {
-      MAX_PEAKS = parseInt(selPeaks.value);
-      Object.keys(peaksByChannel).forEach(k => delete peaksByChannel[k]);
-      rebuildCharts();
-    });
-
     const btnClose = document.createElement('button');
     btnClose.textContent = '\u2715';
     btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnClose.onclick = () => panel.remove();
 
-    hdr.append(htitle, btnManual, btnPeaks, selPeaks, btnMode, btnClose);
+    hdr.append(htitle, btnManual, btnPeaks, btnMode, btnClose);
     panel.appendChild(hdr);
 
     let pdrag = false, pox = 0, poy = 0;
@@ -216,6 +198,7 @@
     const fineShiftSamples = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
 
+    // cardRefs armazena também valEl para atualização direta
     const cardRefs = {};
 
     function buildCards() {
@@ -243,12 +226,21 @@
         }
 
         const card = mkCardCompact(ch.label, '', ch.color, autoTxt, autoColor);
-        cardRefs[ch.id] = { autoMs: autoOffsetMs[ch.id] || 0, ch, manualEl: card._manualEl };
+        cardRefs[ch.id] = { autoMs: autoOffsetMs[ch.id] || 0, ch, manualEl: card._manualEl, valEl: card._valEl };
         bar.appendChild(card);
       });
       body.appendChild(bar);
     }
     buildCards();
+
+    // Atualiza o valor principal do card (resultado) imediatamente
+    function updateCardResult(chId, totalMs) {
+      const ref = cardRefs[chId];
+      if (!ref || !ref.valEl) return;
+      const s = totalMs / 1000;
+      ref.valEl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
+      ref.valEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+    }
 
     function updateCardManual(chId, totalMs) {
       const ref = cardRefs[chId];
@@ -305,6 +297,20 @@
     const sliderRefs = {};
     const peaksByChannel = {};
 
+    // snap global toggle (começa ativado)
+    let snapEnabled = true;
+
+    // Retorna índices dos picos da referência para snap
+    function getRefPeakIndices() {
+      const refCh = activeChannels[0];
+      if (!ML.correlator) return [];
+      if (peaksByChannel['__ref__']) return peaksByChannel['__ref__'];
+      const lums = refCh.buffer.map(p => p.lum);
+      const diff = ML.correlator.diffSeries(lums);
+      peaksByChannel['__ref__'] = topPeaks(diff, refCh.color, MAX_PEAKS).map(p => p.xIndex);
+      return peaksByChannel['__ref__'];
+    }
+
     function getPeakIndices(ch) {
       if (peaksByChannel[ch.id]) return peaksByChannel[ch.id];
       if (!ML.correlator) return [];
@@ -317,7 +323,7 @@
     activeChannels.forEach((ch, idx) => {
       if (idx === 0) return;
 
-      const iv    = ui.realIvMs(ch);              // era realIvMs(ch) local
+      const iv    = ui.realIvMs(ch);
       const range = Math.max(50, Math.round(ch.buffer.length * 1.0));
 
       const row = document.createElement('div');
@@ -341,6 +347,18 @@
       btnReset.title = 'Reset ' + ch.label;
       btnReset.style.cssText = `background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px`;
 
+      // Botão magnético por régua
+      const btnSnap = document.createElement('button');
+      btnSnap.title = 'Snap magnético';
+      btnSnap.style.cssText = `background:#1a1a2e;border:1px solid #ffd70066;color:#ffd700;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px`;
+      function updateSnapBtn() {
+        btnSnap.textContent = snapEnabled ? '\uD83E\uDDF2' : '\u2014';
+        btnSnap.style.opacity = snapEnabled ? '1' : '0.4';
+        btnSnap.style.borderColor = snapEnabled ? '#ffd700aa' : '#ffd70033';
+      }
+      updateSnapBtn();
+      btnSnap.onclick = () => { snapEnabled = !snapEnabled; updateSnapBtn(); };
+
       const valLbl = document.createElement('span');
       valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
 
@@ -363,15 +381,39 @@
       btnReset.onclick = doReset;
 
       slider.addEventListener('input', () => {
-        const sliderVal = parseInt(slider.value);
+        let sliderVal = parseInt(slider.value);
+
+        // Snap magnético: detecta pico de referência próximo e atrai
+        if (snapEnabled && ML.correlator) {
+          const refPeaks = getRefPeakIndices();
+          const chPeaks  = getPeakIndices(ch);
+          const autoSamp = Math.round((autoOffsetMs[ch.id] || 0) / iv);
+          // Para cada pico do canal, calcula posição deslocada e verifica proximidade com pico ref
+          let bestSnap = null, bestDist = Infinity;
+          chPeaks.forEach(cp => {
+            const shiftedPos = cp - autoSamp - sliderVal;
+            refPeaks.forEach(rp => {
+              const dist = rp - shiftedPos;
+              if (Math.abs(dist) < Math.abs(bestDist) && Math.abs(dist) <= SNAP_RADIUS) {
+                bestDist = dist;
+                bestSnap = sliderVal + dist;
+              }
+            });
+          });
+          if (bestSnap !== null) {
+            sliderVal = Math.max(parseInt(slider.min), Math.min(parseInt(slider.max), bestSnap));
+            slider.value = sliderVal;
+          }
+        }
+
         fineShiftSamples[ch.id] = sliderVal;
         const { totalMs } = refreshLabel(sliderVal);
         if (manualMode) updateCardManual(ch.id, totalMs);
         rebuildCharts();
       });
 
-      sliderRefs[ch.id] = { slider, valLbl, range, doReset };
-      row.append(lbl, slider, btnReset, valLbl);
+      sliderRefs[ch.id] = { slider, valLbl, range, doReset, refreshLabel };
+      row.append(lbl, slider, btnReset, btnSnap, valLbl);
       manualBar.appendChild(row);
     });
 
@@ -389,19 +431,27 @@
       ML.manualOffsets = ML.manualOffsets || {};
       activeChannels.forEach((ch, idx) => {
         if (idx === 0) return;
-        const iv   = ui.realIvMs(ch);             // era realIvMs(ch) local
+        const iv   = ui.realIvMs(ch);
         const fine = fineShiftSamples[ch.id] || 0;
         const totalMs = (autoOffsetMs[ch.id] || 0) + fine * iv;
         ML.manualOffsets[ch.id] = totalMs;
         autoOffsetMs[ch.id] = totalMs;
+        // Não reseta o slider para zero — mantém posição visual pós-ajuste
+        // O fineShift passa a ser 0 relativo ao novo autoOffset, slider fica no mesmo valor
         fineShiftSamples[ch.id] = 0;
         if (sliderRefs[ch.id]) {
+          // Mantém valor visual do slider mas zera o fine interno
+          // (próximo ajuste parte do novo base)
           sliderRefs[ch.id].slider.value = 0;
-          sliderRefs[ch.id].valLbl.textContent = (totalMs >= 0 ? '+' : '') + (totalMs / 1000).toFixed(3) + 's';
-          sliderRefs[ch.id].valLbl.style.color = '#aaa';
+          // Atualiza label do slider para refletir novo base (fine=0 sobre novo auto)
+          sliderRefs[ch.id].refreshLabel(0);
         }
+        // Atualiza resultado no card imediatamente
+        updateCardResult(ch.id, totalMs);
         hideCardManual(ch.id);
       });
+      // Invalida cache de picos da referência para recalcular com novo offset
+      delete peaksByChannel['__ref__'];
       if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
       rebuildCharts();
       btnConfirm.textContent = '\u2714 Salvo!';
@@ -467,7 +517,7 @@
 
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
-      const iv          = ui.realIvMs(ch);        // era realIvMs(ch) local
+      const iv          = ui.realIvMs(ch);
       const autoSamples = Math.round((autoOffsetMs[ch.id] || 0) / iv);
       if (!manualMode) return autoSamples;
       return autoSamples + (fineShiftSamples[ch.id] || 0);
@@ -643,6 +693,7 @@
     manualEl.textContent = '';
     card.append(nameEl, valEl, manualEl);
     card._manualEl = manualEl;
+    card._valEl    = valEl;
     return card;
   }
 
