@@ -27,8 +27,6 @@
   let firstPick = null;
   const chartMeta = {};
 
-  // Calcula a menor distância em amostras entre um pico deste canal
-  // e qualquer pico da referência (canal idx=0), considerando o shift atual
   function nearestRefDist(peakXIndex, refPeaks) {
     if (!refPeaks || !refPeaks.length) return Infinity;
     let best = Infinity;
@@ -64,7 +62,6 @@
           ctx.lineTo(xPx, yAxis.bottom);
 
           if (isSelected) {
-            // pico selecionado no modo pick: âmbar
             ctx.strokeStyle = '#ffd700ee';
             ctx.lineWidth   = 3;
             ctx.setLineDash([4, 3]);
@@ -77,22 +74,18 @@
             ctx.lineWidth   = 1.5;
             ctx.setLineDash([]);
           } else if (snapDist === 0) {
-            // coincidente com pico da ref: branco tracejado
             ctx.strokeStyle = '#ffffffcc';
             ctx.lineWidth   = 3;
             ctx.setLineDash([5, 3]);
           } else if (snapDist === 1) {
-            // quase coincidente: cinza médio
             ctx.strokeStyle = '#88888888';
             ctx.lineWidth   = 1.5;
             ctx.setLineDash([]);
           } else if (snapDist <= SNAP_RADIUS) {
-            // dentro do raio de realce: cinza claro
             ctx.strokeStyle = '#55555544';
             ctx.lineWidth   = 1;
             ctx.setLineDash([]);
           } else {
-            // longe: cor do canal fraca
             ctx.strokeStyle = color + '55';
             ctx.lineWidth   = 1;
             ctx.setLineDash([]);
@@ -180,7 +173,6 @@
     hdr.append(htitle, btnManual, btnPeaks, btnMode, btnClose);
     panel.appendChild(hdr);
 
-    // ── Barra de status do modo seleção ────────────────────────────────────
     const pickStatusBar = document.createElement('div');
     pickStatusBar.style.cssText = [
       'display:none;align-items:center;justify-content:space-between',
@@ -278,18 +270,18 @@
 
       const iv = ui.realIvMs(ch);
 
-      // Bug 1 fix: xIndex já está no espaço visual shiftado.
-      // deltaSamples = posição do pico do canal - posição do pico da ref
-      // Para alinhar, o canal precisa se mover -deltaSamples amostras
+      // shift > 0 → série vai para ESQUERDA; shift < 0 → vai para DIREITA
+      // confirmedMs positivo → shift positivo → esquerda
+      // Para mover o pico do canal de tgtPick.xIndex até refPick.xIndex:
+      //   deslocamento necessário (positivo = esquerda) = tgtPick.xIndex - refPick.xIndex
+      //   logo: newConfirmedMs = confirmedMs + deltaSamples * iv
       const deltaSamples = tgtPick.xIndex - refPick.xIndex;
-      confirmedMs[targetChId] = (confirmedMs[targetChId] || 0) - deltaSamples * iv;
+      confirmedMs[targetChId] = (confirmedMs[targetChId] || 0) + deltaSamples * iv;
       fineShiftSamples[targetChId] = 0;
 
-      // Bug 2 fix: mover o slider para refletir o novo confirmedMs em amostras
       const sr = sliderRefs[targetChId];
       if (sr) {
         const newSamp = Math.round(confirmedMs[targetChId] / iv);
-        // Garante que o novo valor cabe no range do slider
         const clampedSamp = Math.max(parseInt(sr.slider.min), Math.min(parseInt(sr.slider.max), newSamp));
         sr.slider.value = clampedSamp;
         sr.refreshLabel(0);
@@ -488,7 +480,6 @@
       slider.min   = -range;
       slider.max   =  range;
       slider.step  = 1;
-      // Bug 2 fix: slider inicia na posição do confirmedMs em amostras
       const initSamp = Math.round((confirmedMs[ch.id] || 0) / iv);
       slider.value = Math.max(-range, Math.min(range, initSamp));
       slider.className = 'ml-slider';
@@ -539,8 +530,6 @@
       }
       btnReset.onclick = doReset;
 
-      // Bug 2 fix: slider representa offset total em amostras
-      // fineShiftSamples é sempre 0; o slider drive diretamente confirmedMs
       slider.addEventListener('input', () => {
         const sliderSamp = parseInt(slider.value);
         confirmedMs[ch.id]      = sliderSamp * iv;
@@ -659,7 +648,6 @@
       const rowH = Math.max(48, Math.floor((chartsArea.offsetHeight - totalGap) / channels.length));
       const ticks = xMaxTicks();
 
-      // Picos da referência (canal idx=0 nos channels visíveis) para realce gradual
       const refChVisible = channels[0];
       const refRawLums   = refChVisible.buffer.map(p => p.lum).slice(0, maxLen);
       const refShift     = getTotalShift(refChVisible, 0);
@@ -685,8 +673,6 @@
         const cvs = document.createElement('canvas');
         wrap.appendChild(cvs); row.append(lblEl, wrap); chartsArea.appendChild(row);
 
-        // Para a referência não passa refPeaks (ela mesma não precisa realce)
-        // Para os outros canais passa refPeaksRef para calcular distância
         const pluginRefPeaks = idx === 0 ? null : refPeaksRef;
 
         const ci = new Chart(cvs, {
@@ -725,7 +711,6 @@
         return { ch, lums, idx };
       });
 
-      // Picos da referência para realce gradual no overlay
       const refEntry   = allLumsShifted[0];
       const refPeaks   = getPeakAnnotations(refEntry.ch, refEntry.lums);
 
