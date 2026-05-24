@@ -16,6 +16,7 @@
   var MODULOS = [
     '00-core.js',
     '10-probes.js',
+    '15-ui-utils.js',
     '20-recorder.js',
     '30-correlator.js',
     '40-chart.js',
