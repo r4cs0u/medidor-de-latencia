@@ -2,37 +2,6 @@
   const ML = window.MedLat;
   const ui = ML.ui;
 
-  // ── Lógica de gravação ────────────────────────────────────────────────
-
-  function getTargetPts(ch) {
-    return (ch.lagPreset === 'rapido')
-      ? Math.ceil(20000 / ML.INTERVAL_MS)
-      : Math.ceil(120000 / ML.INTERVAL_MS);
-  }
-
-  function getGlobalTarget() {
-    const active = ML.CHANNELS.filter(ch => ch.active);
-    if (!active.length) return Math.ceil(120000 / ML.INTERVAL_MS);
-    return Math.max(...active.map(ch => getTargetPts(ch)));
-  }
-
-  function playDone() {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      [[660, 0], [880, 0.15], [1100, 0.30]].forEach(([freq, t]) => {
-        const osc  = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.15, ctx.currentTime + t);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
-        osc.start(ctx.currentTime + t);
-        osc.stop(ctx.currentTime + t + 0.2);
-      });
-    } catch(e) {}
-  }
-
   // ── CSS específico do painel ──────────────────────────────────────────
 
   (function injectStyles() {
@@ -52,138 +21,7 @@
     document.head.appendChild(s);
   })();
 
-  // ── Janelas auxiliares ────────────────────────────────────────────────
-
-  function toggleTips(anchorPanel) {
-    const existing = document.getElementById('ml-tips');
-    if (existing) { existing.remove(); return; }
-    const TIPS = [
-      ['\ud83c\udfaf', 'Centralize as probes sobre a imagem'],
-      ['\ud83d\udcfa', 'Grave durante o programa, nunca no intervalo'],
-      ['\u23f1\ufe0f', 'N\u00e3o interrompa \u2014 aguarde o sinal sonoro (~2 min)'],
-      ['\ud83d\udda5\ufe0f', 'Evite processos pesados durante a grava\u00e7\u00e3o'],
-    ];
-    const auxW = Math.round(Math.max(190, Math.min(260, window.innerWidth * 0.12)));
-    const { win } = ui.makeDraggableWindow('ml-tips', '\ud83d\udca1 Boas Pr\u00e1ticas', '#ffd700', auxW);
-    const body = document.createElement('div');
-    body.style.cssText = 'padding:6px 8px;display:flex;flex-direction:column;gap:5px';
-    TIPS.forEach(([icon, text]) => {
-      const r = document.createElement('div');
-      r.style.cssText = 'display:flex;align-items:flex-start;gap:5px;line-height:1.35';
-      const ic = document.createElement('span');
-      ic.textContent = icon;
-      ic.style.cssText = 'font-size:11px;flex-shrink:0;margin-top:1px';
-      const tx = document.createElement('span');
-      tx.textContent = text;
-      tx.style.cssText = 'font-size:9px;color:#fff';
-      r.append(ic, tx);
-      body.appendChild(r);
-    });
-    win.appendChild(body);
-    ui.positionNearPanel(win, anchorPanel);
-  }
-
-  function toggleGuide(anchorPanel) {
-    const existing = document.getElementById('ml-guide');
-    if (existing) { existing.remove(); return; }
-    const auxW = Math.round(Math.max(200, Math.min(270, window.innerWidth * 0.13)));
-    const { win } = ui.makeDraggableWindow('ml-guide', '\ud83d\udccb Como Usar', '#00d4ff', auxW);
-    const STEPS = [
-      { section: '\u2699\ufe0f  PREPARA\u00c7\u00c3O', color: '#ffd700', items: [
-        '1. Ative as telas desejadas (\u25cf)',
-        '2. Ajuste o tamanho via PX Global ou por tela',
-        '3. Posicione cada probe sobre a imagem do v\u00eddeo (arrastar ou setas)',
-        '4. Dedu\u00e7\u00e3o offset j\u00e1 exibido no multiviewer (em vermelho), adicione o valor em segundos',
-        '5. Lag estimado: Range da diferen\u00e7a entre os sinais',
-      ]},
-      { section: '\u23fa  GRAVA\u00c7\u00c3O', color: '#44ff88', items: [
-        '6. Clique em \u25cf GRAVAR \u2014 a an\u00e1lise inicia sozinha ao terminar',
-      ]},
-      { section: '\ud83d\udcca  AN\u00c1LISE', color: '#ce93d8', items: [
-        '7. Resultado = A lat\u00eancia estimada aparece por tela automaticamente',
-        '8. Real = Resultado + Dedu\u00e7\u00e3o canal \u2212 Dedu\u00e7\u00e3o ref. (desconta o atraso j\u00e1 conhecido do multiviewer)',
-        '9. Para ajuste fino: clique em Manual e mova as r\u00e9guas',
-        '10. Clique em \u2714 Confirmar para exportar e copiar os resultados',
-      ]},
-    ];
-    const body = document.createElement('div');
-    body.style.cssText = 'padding:6px 8px;display:flex;flex-direction:column;gap:6px';
-    STEPS.forEach(({ section, color, items }) => {
-      const secLabel = document.createElement('div');
-      secLabel.textContent = section;
-      secLabel.style.cssText = `color:${color};font-size:8px;font-weight:bold;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;padding-bottom:2px;border-bottom:1px solid ${color}33`;
-      body.appendChild(secLabel);
-      items.forEach(text => {
-        const item = document.createElement('div');
-        item.textContent = text;
-        item.style.cssText = 'font-size:9px;color:#ddd;line-height:1.5;padding-left:4px';
-        body.appendChild(item);
-      });
-    });
-    win.appendChild(body);
-    ui.positionNearPanel(win, anchorPanel);
-  }
-
-  // ── Lógica de dedução ─────────────────────────────────────────────────
-
-  // Aceita: "3", "-3", "+3", "3.5", "3,5", "-1.2s", "+0.5s", etc.
-  // Sem sinal explícito → negativo por padrão
-  function parseDeductionS(str) {
-    if (!str) return null;
-    const norm = str.trim()
-      .replace(/\u2212/g, '-')
-      .replace(/,/g, '.')
-      .replace(/s$/i, '')
-      .replace(/\s/g, '');
-    if (norm === '' || norm === '0') return 0;
-    const m = norm.match(/^([+-])?(\d+(?:\.\d+)?)$/);
-    if (!m) return null;
-    const sign = m[1];
-    const abs  = parseFloat(m[2]);
-    if (isNaN(abs)) return null;
-    if (!sign) return -abs;
-    return sign === '+' ? abs : -abs;
-  }
-
-  function formatDeduction(s) {
-    if (s === 0) return '0.000s';
-    return (s > 0 ? '+' : '') + s.toFixed(3) + 's';
-  }
-
   // ── Resultados ────────────────────────────────────────────────────────
-
-  function copyResults(btn) {
-    const lines = ML.CHANNELS
-      .filter(ch => ch.active)
-      .map((ch, i) => {
-        const name   = (i === 0 ? '\u2605 REF' : ch.label).padEnd(12);
-        const offset = ch.offsetEl ? ch.offsetEl.textContent : '--';
-        const real   = ch.realEl   ? ch.realEl.textContent   : '--';
-        return name + '\t' + offset + '\t' + real;
-      });
-    const text = 'Tela\t\tResultado\tReal\n' + lines.join('\n');
-    const orig = btn.innerHTML;
-    try {
-      navigator.clipboard.writeText(text).then(() => {
-        btn.innerHTML = '\u2714';
-        btn.style.background = '#0d4f3c'; btn.style.color = '#44ff88';
-        setTimeout(() => { btn.innerHTML = orig; btn.style.background = 'transparent'; btn.style.color = '#00d4ff'; }, 1500);
-      }).catch(() => fallbackCopy(text, btn, orig));
-    } catch(e) { fallbackCopy(text, btn, orig); }
-  }
-
-  function fallbackCopy(text, btn, orig) {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
-    document.body.appendChild(ta);
-    ta.focus(); ta.select();
-    try { document.execCommand('copy'); } catch(e) {}
-    ta.remove();
-    btn.innerHTML = '\u2714';
-    btn.style.background = '#0d4f3c'; btn.style.color = '#44ff88';
-    setTimeout(() => { btn.innerHTML = orig; btn.style.background = 'transparent'; btn.style.color = '#00d4ff'; }, 1500);
-  }
 
   function refreshRealColumn() {
     const refDed = ML.CHANNELS[0].deduction || 0;
@@ -197,69 +35,8 @@
       if (isNaN(offsetS)) { ch.realEl.textContent = '--'; ch.realEl.style.color = '#fff'; return; }
       const realS = offsetS + (ch.deduction || 0) - refDed;
       ch.realEl.textContent = (realS > 0 ? '+' : '') + realS.toFixed(3) + 's';
-      ch.realEl.style.color = Math.abs(realS) < 0.1 ? '#44ff88' : Math.abs(realS) < 1 ? '#ffd700' : '#ff8844';
+      ch.realEl.style.color = ui.colorByOffset(Math.abs(realS));
     });
-  }
-
-  // ── Widget minimizado ─────────────────────────────────────────────────
-
-  function minimizePanel(panel) {
-    panel.style.display = 'none';
-    const widget = document.createElement('div');
-    widget.id = 'ml-widget';
-    widget.title = 'Restaurar Analisador de Lat\u00eancia';
-    widget.innerHTML = '\ud83d\udd50';
-    widget.style.cssText = [
-      'position:fixed;top:8px;right:8px;z-index:999999',
-      'width:32px;height:32px;border-radius:8px',
-      'background:#12121fee;border:2px solid #00d4ff',
-      'display:flex;align-items:center;justify-content:center',
-      'font-size:16px;cursor:pointer;user-select:none',
-      'box-shadow:0 2px 12px #000a',
-    ].join(';');
-    function syncPulse() {
-      if (ML.state && ML.state.recording) {
-        widget.style.animation = 'mlPulse 1s ease-in-out infinite';
-        widget.style.borderColor = '#c62828';
-      } else {
-        widget.style.animation = '';
-        widget.style.borderColor = '#00d4ff';
-      }
-    }
-    syncPulse();
-    const pulseTimer = setInterval(syncPulse, 500);
-    let wdrag = false, wx = 0, wy = 0;
-    function onWMove(e) {
-      if (!wdrag) return;
-      widget.style.right = 'auto';
-      const pos = ui.clampPos(e.clientX - wx, e.clientY - wy, widget.offsetWidth, widget.offsetHeight);
-      widget.style.left = pos.left + 'px';
-      widget.style.top  = pos.top  + 'px';
-    }
-    function onWUp() {
-      if (!wdrag) {
-        clearInterval(pulseTimer);
-        window.removeEventListener('mousemove', onWMove);
-        window.removeEventListener('mouseup', onWUp);
-        widget.remove();
-        panel.style.display = 'block';
-      }
-      wdrag = false;
-    }
-    widget.addEventListener('mousedown', e => {
-      e.stopPropagation(); e.preventDefault();
-      wdrag = false;
-      wx = e.clientX - widget.offsetLeft;
-      wy = e.clientY - widget.offsetTop;
-      function onMoveOnce(ev) {
-        if (Math.hypot(ev.clientX - (wx + widget.offsetLeft), ev.clientY - (wy + widget.offsetTop)) > 4) wdrag = true;
-      }
-      window.addEventListener('mousemove', onMoveOnce, { once: false });
-      widget._onMoveOnce = onMoveOnce;
-      window.addEventListener('mousemove', onWMove);
-      window.addEventListener('mouseup', onWUp, { once: true });
-    });
-    document.body.appendChild(widget);
   }
 
   // ── Inputs de canal ───────────────────────────────────────────────────
@@ -291,7 +68,7 @@
   function mkDeductionInput(ch) {
     const inp = document.createElement('input');
     inp.type = 'text'; inp.placeholder = '0.000s';
-    inp.value = ch.deduction ? formatDeduction(ch.deduction) : '';
+    inp.value = ch.deduction ? ui.formatDeduction(ch.deduction) : '';
     inp.title = 'Offset fixo do multiviewer. Ex: 3 \u2192 -3.000s  +1.5 \u2192 +1.500s';
     inp.style.cssText = [
       'background:#111827;border:1px solid #2a3a5088;color:#ff9d00',
@@ -305,10 +82,10 @@
       if (raw === '' || raw === '0' || raw === '0.000s') {
         ch.deduction = 0; inp.value = ''; inp.style.color = '#fff';
       } else {
-        const v = parseDeductionS(raw);
+        const v = ui.parseDeductionS(raw);
         if (v !== null) {
           ch.deduction = v;
-          inp.value = formatDeduction(v);
+          inp.value = ui.formatDeduction(v);
           inp.style.color = v !== 0 ? '#ff9d00' : '#fff';
         }
       }
@@ -357,9 +134,9 @@
     btnX.textContent = '\u2715'; btnX.title = 'Fechar o medidor';
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"], .ml-search-overlay').forEach(e => e.remove()); };
-    btnTips.onclick  = () => toggleTips(panel);
-    btnGuide.onclick = () => toggleGuide(panel);
-    btnMin.onclick   = () => minimizePanel(panel);
+    btnTips.onclick  = () => ML.help.toggleTips(panel);
+    btnGuide.onclick = () => ML.help.toggleGuide(panel);
+    btnMin.onclick   = () => ui.minimizePanel(panel);
     hdr.append(ttl, btnTips, btnGuide, btnMin, btnX);
     panel.appendChild(hdr);
 
@@ -542,7 +319,7 @@
 
     function doStop() {
       ML.recorder.stop();
-      playDone();
+      ui.playDone();
       progWrap.style.display = 'none';
       progBarInner.style.width = '0%';
       btnRec.textContent = '\u25cf GRAVAR';
@@ -588,7 +365,7 @@
             } else {
               const s = r.offsetMs / 1000;
               ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
-              ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+              ch.offsetEl.style.color = ui.colorByOffset(Math.abs(s));
             }
           }
         });
@@ -621,7 +398,7 @@
     btnCopyInline.style.cssText = 'background:transparent;border:1px solid #00d4ff44;color:#00d4ff;border-radius:3px;padding:0 4px;cursor:pointer;font-size:10px;line-height:14px';
     btnCopyInline.addEventListener('mouseenter', () => btnCopyInline.style.background = '#00d4ff18');
     btnCopyInline.addEventListener('mouseleave', () => btnCopyInline.style.background = 'transparent');
-    btnCopyInline.onclick = () => copyResults(btnCopyInline);
+    btnCopyInline.onclick = () => ui.copyResults(btnCopyInline);
 
     const secRes = ui.sec('Resultados', btnCopyInline);
     const tbl = document.createElement('table');
@@ -672,7 +449,7 @@
     panel.style.right = '8px';
     panel.style.top   = '8px';
 
-    minimizePanel(panel);
+    ui.minimizePanel(panel);
 
     /* ── Timers ── */
     setInterval(() => {
@@ -689,7 +466,7 @@
       if (!ML.state.recording) return;
       const activeChs = ML.CHANNELS.filter(ch => ch.active);
       if (!activeChs.length) return;
-      const globalTarget = getGlobalTarget();
+      const globalTarget = ML.recorder.getGlobalTarget();
       if (activeChs.every(ch => (ch.buffer ? ch.buffer.length : 0) >= globalTarget)) { doStop(); return; }
       let minPts = Infinity;
       activeChs.forEach(ch => { const pts = ch.buffer ? ch.buffer.length : 0; if (pts < minPts) minPts = pts; });

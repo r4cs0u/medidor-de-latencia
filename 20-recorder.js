@@ -30,6 +30,20 @@
     });
   }
 
+  // ── Alvo de pontos por canal ───────────────────────────────────────────
+
+  function getTargetPts(ch) {
+    return (ch.lagPreset === 'rapido')
+      ? Math.ceil(20000 / ML.INTERVAL_MS)
+      : Math.ceil(120000 / ML.INTERVAL_MS);
+  }
+
+  function getGlobalTarget() {
+    const active = ML.CHANNELS.filter(ch => ch.active);
+    if (!active.length) return Math.ceil(120000 / ML.INTERVAL_MS);
+    return Math.max(...active.map(ch => getTargetPts(ch)));
+  }
+
   ML.recorder = {
     start() {
       ML.CHANNELS.forEach(ch => { ch.buffer = []; ch.prevLum = null; });
@@ -62,6 +76,8 @@
         lum:   ch.buffer.map(p => p.lum),
       };
     },
+    getTargetPts,
+    getGlobalTarget,
   };
 
   console.log('[MedLat] 20-recorder carregado.');

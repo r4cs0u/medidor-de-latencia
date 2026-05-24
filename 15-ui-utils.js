@@ -115,6 +115,155 @@
     return ML.INTERVAL_MS;
   }
 
+  // ── Som de conclusão ───────────────────────────────────────────────────
+
+  function playDone() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [[660, 0], [880, 0.15], [1100, 0.30]].forEach(([freq, t]) => {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.15, ctx.currentTime + t);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
+        osc.start(ctx.currentTime + t);
+        osc.stop(ctx.currentTime + t + 0.2);
+      });
+    } catch(e) {}
+  }
+
+  // ── Dedução ────────────────────────────────────────────────────────────
+
+  // Aceita: "3", "-3", "+3", "3.5", "3,5", "-1.2s", "+0.5s", etc.
+  // Sem sinal explícito → negativo por padrão
+  function parseDeductionS(str) {
+    if (!str) return null;
+    const norm = str.trim()
+      .replace(/\u2212/g, '-')
+      .replace(/,/g, '.')
+      .replace(/s$/i, '')
+      .replace(/\s/g, '');
+    if (norm === '' || norm === '0') return 0;
+    const m = norm.match(/^([+-])?(\d+(?:\.\d+)?)$/);
+    if (!m) return null;
+    const sign = m[1];
+    const abs  = parseFloat(m[2]);
+    if (isNaN(abs)) return null;
+    if (!sign) return -abs;
+    return sign === '+' ? abs : -abs;
+  }
+
+  function formatDeduction(s) {
+    if (s === 0) return '0.000s';
+    return (s > 0 ? '+' : '') + s.toFixed(3) + 's';
+  }
+
+  // ── Cor por valor de offset ────────────────────────────────────────────
+
+  function colorByOffset(absS) {
+    if (absS < 0.1) return '#44ff88';
+    if (absS < 1)   return '#ffd700';
+    return '#ff8844';
+  }
+
+  // ── Cópia de resultados ────────────────────────────────────────────────
+
+  function fallbackCopy(text, btn, orig) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    ta.remove();
+    btn.innerHTML = '\u2714';
+    btn.style.background = '#0d4f3c'; btn.style.color = '#44ff88';
+    setTimeout(() => { btn.innerHTML = orig; btn.style.background = 'transparent'; btn.style.color = '#00d4ff'; }, 1500);
+  }
+
+  function copyResults(btn) {
+    const lines = ML.CHANNELS
+      .filter(ch => ch.active)
+      .map((ch, i) => {
+        const name   = (i === 0 ? '\u2605 REF' : ch.label).padEnd(12);
+        const offset = ch.offsetEl ? ch.offsetEl.textContent : '--';
+        const real   = ch.realEl   ? ch.realEl.textContent   : '--';
+        return name + '\t' + offset + '\t' + real;
+      });
+    const text = 'Tela\t\tResultado\tReal\n' + lines.join('\n');
+    const orig = btn.innerHTML;
+    try {
+      navigator.clipboard.writeText(text).then(() => {
+        btn.innerHTML = '\u2714';
+        btn.style.background = '#0d4f3c'; btn.style.color = '#44ff88';
+        setTimeout(() => { btn.innerHTML = orig; btn.style.background = 'transparent'; btn.style.color = '#00d4ff'; }, 1500);
+      }).catch(() => fallbackCopy(text, btn, orig));
+    } catch(e) { fallbackCopy(text, btn, orig); }
+  }
+
+  // ── Widget minimizado ──────────────────────────────────────────────────
+
+  function minimizePanel(panel) {
+    panel.style.display = 'none';
+    const widget = document.createElement('div');
+    widget.id = 'ml-widget';
+    widget.title = 'Restaurar Analisador de Lat\u00eancia';
+    widget.innerHTML = '\ud83d\udd50';
+    widget.style.cssText = [
+      'position:fixed;top:8px;right:8px;z-index:999999',
+      'width:32px;height:32px;border-radius:8px',
+      'background:#12121fee;border:2px solid #00d4ff',
+      'display:flex;align-items:center;justify-content:center',
+      'font-size:16px;cursor:pointer;user-select:none',
+      'box-shadow:0 2px 12px #000a',
+    ].join(';');
+    function syncPulse() {
+      if (ML.state && ML.state.recording) {
+        widget.style.animation = 'mlPulse 1s ease-in-out infinite';
+        widget.style.borderColor = '#c62828';
+      } else {
+        widget.style.animation = '';
+        widget.style.borderColor = '#00d4ff';
+      }
+    }
+    syncPulse();
+    const pulseTimer = setInterval(syncPulse, 500);
+    let wdrag = false, wx = 0, wy = 0;
+    function onWMove(e) {
+      if (!wdrag) return;
+      widget.style.right = 'auto';
+      const pos = clampPos(e.clientX - wx, e.clientY - wy, widget.offsetWidth, widget.offsetHeight);
+      widget.style.left = pos.left + 'px';
+      widget.style.top  = pos.top  + 'px';
+    }
+    function onWUp() {
+      if (!wdrag) {
+        clearInterval(pulseTimer);
+        window.removeEventListener('mousemove', onWMove);
+        window.removeEventListener('mouseup', onWUp);
+        widget.remove();
+        panel.style.display = 'block';
+      }
+      wdrag = false;
+    }
+    widget.addEventListener('mousedown', e => {
+      e.stopPropagation(); e.preventDefault();
+      wdrag = false;
+      wx = e.clientX - widget.offsetLeft;
+      wy = e.clientY - widget.offsetTop;
+      function onMoveOnce(ev) {
+        if (Math.hypot(ev.clientX - (wx + widget.offsetLeft), ev.clientY - (wy + widget.offsetTop)) > 4) wdrag = true;
+      }
+      window.addEventListener('mousemove', onMoveOnce, { once: false });
+      widget._onMoveOnce = onMoveOnce;
+      window.addEventListener('mousemove', onWMove);
+      window.addEventListener('mouseup', onWUp, { once: true });
+    });
+    document.body.appendChild(widget);
+  }
+
   // ── Helpers DOM ────────────────────────────────────────────────────────
 
   function mkIconBtn(icon, title, color) {
@@ -175,6 +324,10 @@
     clampPos, positionNearPanel,
     makeDraggableWindow,
     injectSliderCSS, realIvMs,
+    playDone,
+    parseDeductionS, formatDeduction, colorByOffset,
+    fallbackCopy, copyResults,
+    minimizePanel,
     mkIconBtn, mkBtn, mkNum, sec, row, sp,
   };
 
