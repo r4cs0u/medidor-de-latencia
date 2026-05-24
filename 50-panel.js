@@ -222,11 +222,13 @@
     if (!el) return false;
     try {
       const color = window.getComputedStyle(el).color;
+      // Parseia rgb(r,g,b) ou rgba(r,g,b,a)
       const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
       if (!m) return false;
       const r = parseInt(m[1]);
       const g = parseInt(m[2]);
       const b = parseInt(m[3]);
+      // Vermelho dominante: R alto, G e B baixos relativamente
       return r >= 180 && g < 100 && b < 100;
     } catch(e) { return false; }
   }
@@ -282,132 +284,52 @@
     });
   }
 
-  /* ── autoDetectDeduction: OCR por pixels – lê texto vermelho renderizado no vídeo ──
-     Pipeline:
-       1. Localiza o elemento de mídia (video/canvas/img) sob a probe
-       2. Captura a área: metade da probe acima + metade abaixo do centro
-       3. Dilatação morfológica + threshold permissivo para vermelho degradado por codec
-       4. Upscale 5× nearest-neighbor (bordas duras → melhor OCR)
-       5. Tesseract.js PSM7 (linha única) extrai o valor
+  /* ── autoDetectDeduction: busca apenas texto vermelho na área da probe ──
+     Critérios:
+       1. Elemento pai com cor vermelha dominante (R≥180, G<100, B<100)
+       2. Valor absoluto entre 0 e 60s (descarta leituras absurdas)
+       3. Geometricamente mais próximo do centro vertical da probe
   */
-  async function autoDetectDeduction(ch) {
+  function autoDetectDeduction(ch) {
     if (!ch.probe) return null;
     const d = ch.probe;
-    const rect = d.getBoundingClientRect();
-    const pw   = rect.width;
-    const halfH = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) / 2);
-
-    // Localiza o elemento de mídia sob a probe
-    const cx = rect.left + pw / 2;
-    const cy = rect.top  + rect.height / 2;
-    d.style.pointerEvents = 'none';
-    const el = document.elementFromPoint(cx, cy);
-    d.style.pointerEvents = 'auto';
-    if (!el) return null;
-    let media = null, node = el;
-    for (let i = 0; i < 6; i++) {
-      if (!node) break;
-      if (['VIDEO','CANVAS','IMG'].includes(node.tagName)) { media = node; break; }
-      const c = node.querySelector('video,canvas,img');
-      if (c) { media = c; break; }
-      node = node.parentElement;
-    }
-    if (!media) return null;
-
-    const mr    = media.getBoundingClientRect();
-    if (!mr.width || !mr.height) return null;
-    const nw    = media.videoWidth  || media.naturalWidth  || mr.width;
-    const nh    = media.videoHeight || media.naturalHeight || mr.height;
-    const scaleX = nw / mr.width;
-    const scaleY = nh / mr.height;
-
-    // Área de busca: metade da probe acima + metade abaixo do centro
-    const searchTop = cy - halfH;
-    const searchH   = halfH * 2;
-    const sx = Math.max(0, Math.floor((rect.left  - mr.left) * scaleX));
-    const sy = Math.max(0, Math.floor((searchTop  - mr.top ) * scaleY));
-    const sw = Math.max(1, Math.ceil(pw      * scaleX));
-    const sh = Math.max(1, Math.ceil(searchH * scaleY));
-
-    // Captura os pixels da área de busca
-    const cap = document.createElement('canvas');
-    cap.width = sw; cap.height = sh;
-    const ctx = cap.getContext('2d', { willReadFrequently: true });
-    try { ctx.drawImage(media, sx, sy, sw, sh, 0, 0, sw, sh); }
-    catch(e) { return null; }
-
-    // --- Passo 1: marca pixels vermelhos (threshold permissivo para vídeo comprimido) ---
-    const imgData = ctx.getImageData(0, 0, sw, sh);
-    const pix = imgData.data;
-    const redMask = new Uint8Array(sw * sh); // 1 = pixel vermelho
-    for (let i = 0; i < pix.length; i += 4) {
-      const r = pix[i], g = pix[i+1], b = pix[i+2];
-      // Permissivo: cobre vermelho degradado por codec H.264 (artefatos de chroma)
-      if (r >= 140 && r > g * 1.4 && r > b * 1.4 && g < 130 && b < 130) {
-        redMask[i >> 2] = 1;
+    const cy = d.offsetTop + d.offsetHeight / 2;
+    const RADIUS_Y = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) / 2);
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const p = node.parentElement;
+        if (!p || p.closest('[id^="ml-"]')) return NodeFilter.FILTER_REJECT;
+        // só aceita nós cujo elemento pai seja texto vermelho
+        if (!isRedText(p)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
       }
-    }
-
-    // --- Passo 2: dilatação morfológica 1px (recupera pixels isolados apagados por compressão) ---
-    const dilated = new Uint8Array(sw * sh);
-    for (let row = 0; row < sh; row++) {
-      for (let col = 0; col < sw; col++) {
-        if (redMask[row * sw + col]) { dilated[row * sw + col] = 1; continue; }
-        let found = false;
-        for (let dr = -1; dr <= 1 && !found; dr++) {
-          for (let dc = -1; dc <= 1 && !found; dc++) {
-            const nr = row + dr, nc = col + dc;
-            if (nr >= 0 && nr < sh && nc >= 0 && nc < sw && redMask[nr * sw + nc]) found = true;
-          }
-        }
-        dilated[row * sw + col] = found ? 1 : 0;
-      }
-    }
-
-    // --- Passo 3: binariza → texto preto sobre fundo branco ---
-    for (let i = 0; i < pix.length; i += 4) {
-      const v = dilated[i >> 2] ? 0 : 255;
-      pix[i] = pix[i+1] = pix[i+2] = v;
-      pix[i+3] = 255;
-    }
-    ctx.putImageData(imgData, 0, 0);
-
-    // --- Passo 4: upscale 5× nearest-neighbor (bordas duras = melhor OCR) ---
-    const SCALE = 5;
-    const big = document.createElement('canvas');
-    big.width  = sw * SCALE;
-    big.height = sh * SCALE;
-    const bigCtx = big.getContext('2d');
-    bigCtx.imageSmoothingEnabled = false;
-    bigCtx.drawImage(cap, 0, 0, big.width, big.height);
-
-    // --- Passo 5: Tesseract PSM7 (linha única) + OEM1 (LSTM) ---
-    if (!window.Tesseract) {
-      await new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-        s.onload = res; s.onerror = rej;
-        document.head.appendChild(s);
-      }).catch(() => null);
-      if (!window.Tesseract) return null;
-    }
-
-    try {
-      const result = await Tesseract.recognize(big, 'eng', {
-        tessedit_char_whitelist: '0123456789.,+-s',
-        tessedit_pageseg_mode:   '7',
-        tessedit_ocr_engine_mode: '1',
-      });
-      const text = result.data.text.replace(/\s+/g, ' ').trim();
-      console.log('[MedLat] OCR raw:', JSON.stringify(text));
-      const RE = /([+\-]?\d*[.,]\d+s?|[+\-]\d+s?)/g;
+    });
+    const RE = /([+\-\u2212]?\d+[.,]\d+s?|[+\-\u2212]\d+s?)/g;
+    let best = null, bestDist = Infinity;
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const text = node.textContent;
       let m;
+      RE.lastIndex = 0;
       while ((m = RE.exec(text)) !== null) {
-        const v = parseDeductionS(m[0]);
-        if (v !== null && Math.abs(v) <= 60) return m[0];
+        try {
+          const range = document.createRange();
+          range.setStart(node, m.index);
+          range.setEnd(node, m.index + m[0].length);
+          const rect = range.getBoundingClientRect();
+          if (!rect.width) continue;
+          const ry = rect.top + rect.height / 2;
+          const dy = Math.abs(ry - cy);
+          if (dy > RADIUS_Y) continue;
+          // valida o valor numérico antes de aceitar
+          const parsed = parseDeductionS(m[0]);
+          if (parsed === null) continue;
+          if (Math.abs(parsed) > 60) continue; // descarta valores absurdos
+          if (dy < bestDist) { bestDist = dy; best = m[0]; }
+        } catch(e) {}
       }
-      return null;
-    } catch(e) { console.warn('[MedLat] OCR erro:', e); return null; }
+    }
+    return best;
   }
 
   function copyResults(btn) {
@@ -416,43 +338,50 @@
       .map((ch, i) => {
         const name   = (i === 0 ? '\u2605 REF' : ch.label).padEnd(12);
         const offset = ch.offsetEl ? ch.offsetEl.textContent : '--';
-        const real   = ch.realEl  ? ch.realEl.textContent  : '--';
+        const real   = ch.realEl   ? ch.realEl.textContent   : '--';
         return name + '\t' + offset + '\t' + real;
       });
-    const header = '\u2605 REF'.padEnd(12) + '\tOffset\tReal';
-    const text = [header, ...lines].join('\n');
-    if (navigator.clipboard && navigator.clipboard.writeText) {
+    const text = 'Tela\t\tResultado\tReal\n' + lines.join('\n');
+    const orig = btn.innerHTML;
+    try {
       navigator.clipboard.writeText(text).then(() => {
-        const orig = btn.textContent;
-        btn.textContent = '\u2714 Copiado!';
-        btn.style.background = '#1b5e20';
-        setTimeout(() => { btn.textContent = orig; btn.style.background = '#0d47a1'; }, 1500);
-      }).catch(() => fallbackCopy(text, btn, btn.textContent));
-    } else {
-      fallbackCopy(text, btn, btn.textContent);
+        btn.innerHTML = '\u2714';
+        btn.style.background = '#0d4f3c';
+        btn.style.color = '#44ff88';
+        setTimeout(() => { btn.innerHTML = orig; btn.style.background = 'transparent'; btn.style.color = '#00d4ff'; }, 1500);
+      }).catch(() => fallbackCopy(text, btn, orig));
+    } catch(e) {
+      fallbackCopy(text, btn, orig);
     }
   }
 
   function fallbackCopy(text, btn, orig) {
     const ta = document.createElement('textarea');
     ta.value = text;
-    ta.style.cssText = 'position:fixed;opacity:0';
+    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
     document.body.appendChild(ta);
-    ta.select();
+    ta.focus(); ta.select();
     try { document.execCommand('copy'); } catch(e) {}
     ta.remove();
-    btn.textContent = '\u2714 Copiado!';
-    btn.style.background = '#1b5e20';
-    setTimeout(() => { btn.textContent = orig; btn.style.background = '#0d47a1'; }, 1500);
+    btn.innerHTML = '\u2714';
+    btn.style.background = '#0d4f3c';
+    btn.style.color = '#44ff88';
+    setTimeout(() => { btn.innerHTML = orig; btn.style.background = 'transparent'; btn.style.color = '#00d4ff'; }, 1500);
   }
 
   function refreshRealColumn() {
     const refDed = ML.CHANNELS[0].deduction || 0;
     ML.CHANNELS.forEach((ch, i) => {
-      if (!ch.active || !ch.realEl) return;
-      if (i === 0) { ch.realEl.textContent = '\u2014'; ch.realEl.style.color = '#aaa'; return; }
+      if (!ch.realEl) return;
+      if (i === 0) {
+        ch.realEl.textContent = '0.000s';
+        ch.realEl.style.color = '#44ff88';
+        return;
+      }
       if (!ch.offsetEl || ch.offsetEl.textContent === '--' || ch.offsetEl.textContent === 'ERRO') {
-        ch.realEl.textContent = '--'; ch.realEl.style.color = '#fff'; return;
+        ch.realEl.textContent = '--';
+        ch.realEl.style.color = '#fff';
+        return;
       }
       const raw = ch.offsetEl.textContent.replace('s', '').replace(',', '.');
       const offsetS = parseFloat(raw);
@@ -464,250 +393,206 @@
     });
   }
 
-  /* ─────────────────────────────────────────────────────────
-     minimizePanel: colapsa/expande o painel
-  ───────────────────────────────────────────────────────── */
   function minimizePanel(panel) {
-    const body = panel.querySelector('#ml-panel-body');
-    const btn  = panel.querySelector('#ml-min-btn');
-    if (!body || !btn) return;
-    const isMin = body.style.display === 'none';
-    body.style.display = isMin ? '' : 'none';
-    btn.textContent    = isMin ? '\u2212' : '+';
-    btn.title          = isMin ? 'Minimizar painel' : 'Expandir painel';
-  }
-
-  /* ─────────────────────────────────────────────────────────
-     Widget flutuante (botão circular)
-  ───────────────────────────────────────────────────────── */
-  function spawnWidget(panel) {
-    if (document.getElementById('ml-widget')) return;
+    panel.style.display = 'none';
     const widget = document.createElement('div');
     widget.id = 'ml-widget';
-    widget.textContent = '\u23f1';
-    widget.title = 'MedLat \u2014 clique para reabrir painel';
+    widget.title = 'Restaurar Analisador de Lat\u00eancia';
+    widget.innerHTML = '\ud83d\udd50';
     widget.style.cssText = [
-      'position:fixed;bottom:20px;right:20px',
-      'width:36px;height:36px;border-radius:50%',
-      'background:#1a1a2e;border:1px solid #00d4ff66',
-      'color:#00d4ff;font-size:18px',
+      'position:fixed;top:8px;right:8px;z-index:999999',
+      'width:32px;height:32px;border-radius:8px',
+      'background:#12121fee;border:2px solid #00d4ff',
       'display:flex;align-items:center;justify-content:center',
-      'cursor:pointer;z-index:99999',
-      'box-shadow:0 2px 12px #0008',
-      'user-select:none',
+      'font-size:16px;cursor:pointer;user-select:none',
+      'box-shadow:0 2px 12px #000a',
     ].join(';');
-
-    let wx = 0, wy = 0, wDrag = false, wMoved = false;
-
     function syncPulse() {
-      if (ML.state.recording) {
+      if (ML.state && ML.state.recording) {
         widget.style.animation = 'mlPulse 1s ease-in-out infinite';
         widget.style.borderColor = '#c62828';
       } else {
         widget.style.animation = '';
-        widget.style.borderColor = '#00d4ff66';
+        widget.style.borderColor = '#00d4ff';
       }
     }
-
+    syncPulse();
+    const pulseTimer = setInterval(syncPulse, 500);
+    let wdrag = false, wx = 0, wy = 0;
     function onWMove(e) {
-      if (!wDrag) return;
-      wMoved = true;
+      if (!wdrag) return;
+      widget.style.right = 'auto';
       const pos = clampPos(e.clientX - wx, e.clientY - wy, widget.offsetWidth, widget.offsetHeight);
-      widget.style.left   = pos.left + 'px';
-      widget.style.top    = pos.top  + 'px';
-      widget.style.bottom = 'auto';
-      widget.style.right  = 'auto';
+      widget.style.left = pos.left + 'px';
+      widget.style.top  = pos.top  + 'px';
     }
-
     function onWUp() {
-      if (!wDrag) return;
-      wDrag = false;
-      if (!wMoved) {
+      if (!wdrag) {
+        clearInterval(pulseTimer);
+        window.removeEventListener('mousemove', onWMove);
+        window.removeEventListener('mouseup', onWUp);
         widget.remove();
-        panel.style.display = '';
-        function onMoveOnce(ev) {
-          const pos = clampPos(
-            ev.clientX - panel.offsetWidth  / 2,
-            ev.clientY - panel.offsetHeight / 2,
-            panel.offsetWidth, panel.offsetHeight
-          );
-          panel.style.left = pos.left + 'px';
-          panel.style.top  = pos.top  + 'px';
-          window.removeEventListener('mousemove', onMoveOnce);
-        }
-        window.addEventListener('mousemove', onMoveOnce);
+        panel.style.display = 'block';
       }
+      wdrag = false;
     }
-
     widget.addEventListener('mousedown', e => {
-      wDrag = true; wMoved = false;
+      e.stopPropagation();
+      e.preventDefault();
+      wdrag = false;
       wx = e.clientX - widget.offsetLeft;
       wy = e.clientY - widget.offsetTop;
-      e.preventDefault();
+      function onMoveOnce(ev) {
+        if (Math.hypot(ev.clientX - (wx + widget.offsetLeft), ev.clientY - (wy + widget.offsetTop)) > 4) {
+          wdrag = true;
+        }
+      }
+      window.addEventListener('mousemove', onMoveOnce, { once: false });
+      widget._onMoveOnce = onMoveOnce;
+      window.addEventListener('mousemove', onWMove);
+      window.addEventListener('mouseup', onWUp, { once: true });
     });
-    window.addEventListener('mousemove', onWMove);
-    window.addEventListener('mouseup',   onWUp);
-    syncPulse();
-    setInterval(syncPulse, 500);
     document.body.appendChild(widget);
   }
 
-  /* ─────────────────────────────────────────────────────────
-     init: monta o painel principal
-  ───────────────────────────────────────────────────────── */
   function init() {
-    const vw  = window.innerWidth;
-    const panW = Math.round(Math.max(200, Math.min(310, vw * 0.155)));
+    ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-guide', 'ml-widget'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    });
+
+    const vw = window.innerWidth;
+    const panelW = Math.round(Math.max(286, Math.min(390, vw * 0.18)));
 
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
     panel.style.cssText = [
-      'position:fixed;top:40px;right:16px;z-index:99998',
-      'background:#0e0e1aee;border:1px solid #1e1e3a',
-      'border-radius:8px;box-shadow:0 4px 24px #000c',
-      'font-family:monospace;font-size:10px;color:#ccc',
-      `width:${panW}px`,
-      'overflow:hidden',
+      'position:fixed;top:8px;right:8px;z-index:99999',
+      'background:#12121fee;border:1px solid #2a2a4a',
+      'border-radius:6px;box-shadow:0 4px 24px #000c',
+      'font-family:monospace;font-size:11px;color:#fff',
+      `user-select:none;width:${panelW}px`,
+      'display:flex;flex-direction:column',
+      'max-height:95vh;overflow:hidden',
     ].join(';');
 
-    /* ── Cabeçalho ── */
     const hdr = document.createElement('div');
     hdr.style.cssText = [
-      'display:flex;align-items:center;padding:5px 8px;cursor:move',
-      'background:#12122a;border-bottom:1px solid #1e1e3a',
-      'border-radius:8px 8px 0 0;user-select:none;gap:4px',
+      'display:flex;align-items:center;gap:4px;overflow:hidden',
+      'padding:4px 8px;cursor:move',
+      'border-bottom:1px solid #1e1e3a',
+      'background:#1a1a2e;border-radius:6px 6px 0 0',
+      'flex-shrink:0',
     ].join(';');
 
-    const htitle = document.createElement('span');
-    htitle.textContent = '\u23f1 MedLat';
-    htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.08em;flex:1';
+    const ttl = document.createElement('span');
+    ttl.textContent = '\u{1F550} ANALISADOR DE LAT\u00CANCIA';
+    ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
 
     function mkIconBtn(icon, title, color) {
       const b = document.createElement('button');
-      b.textContent = icon;
+      b.innerHTML = icon;
       b.title = title;
-      b.style.cssText = [
-        `background:none;border:none;color:${color}`,
-        'cursor:pointer;font-size:12px;padding:0 2px;line-height:1',
-        'flex-shrink:0;opacity:.7',
-      ].join(';');
-      b.addEventListener('mouseenter', () => b.style.opacity = '1');
-      b.addEventListener('mouseleave', () => b.style.opacity = '.7');
+      b.style.cssText = `background:transparent;border:1px solid ${color}44;color:${color};border-radius:3px;padding:0 5px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0;font-weight:bold`;
+      b.addEventListener('mouseenter', () => b.style.background = color + '22');
+      b.addEventListener('mouseleave', () => b.style.background = 'transparent');
       return b;
     }
 
-    const btnTips  = mkIconBtn('\ud83d\udca1', 'Boas pr\u00e1ticas', '#ffd700');
-    const btnGuide = mkIconBtn('\ud83d\udccb', 'Como usar',    '#00d4ff');
-    const btnMin   = document.createElement('button');
-    btnMin.id = 'ml-min-btn';
-    btnMin.textContent = '\u2212';
-    btnMin.title = 'Minimizar painel';
-    btnMin.style.cssText = 'background:#1a1a2e;border:1px solid #2a2a4a;color:#aaa;border-radius:3px;padding:0 5px;cursor:pointer;font-size:10px;line-height:16px;flex-shrink:0';
-    const btnClose = document.createElement('button');
-    btnClose.textContent = '\u2715';
-    btnClose.title = 'Fechar painel';
-    btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 5px;cursor:pointer;font-size:10px;line-height:16px;flex-shrink:0';
+    const btnTips  = mkIconBtn('\ud83d\udca1', 'Dicas para uma medi\u00e7\u00e3o precisa', '#ffd700');
+    const btnGuide = mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
+    const btnMin   = mkIconBtn('\u2212', 'Minimizar para widget', '#aaaaaa');
+    const btnX     = document.createElement('button');
+    btnX.textContent = '\u2715';
+    btnX.title = 'Fechar o medidor';
+    btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
+    btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"], .ml-search-overlay').forEach(e => e.remove()); };
 
     btnTips.onclick  = () => toggleTips(panel);
     btnGuide.onclick = () => toggleGuide(panel);
     btnMin.onclick   = () => minimizePanel(panel);
-    btnClose.onclick = () => { panel.style.display = 'none'; spawnWidget(panel); };
 
-    hdr.append(htitle, btnTips, btnGuide, btnMin, btnClose);
+    hdr.append(ttl, btnTips, btnGuide, btnMin, btnX);
     panel.appendChild(hdr);
 
-    /* ── Corpo ── */
-    const body = document.createElement('div');
-    body.id = 'ml-panel-body';
-    body.style.cssText = 'display:flex;flex-direction:column;gap:0';
-
-    /* ── drag do painel ── */
-    let pDrag = false, pox = 0, poy = 0;
+    let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => {
-      pDrag = true;
+      if (e.target !== hdr && e.target !== ttl) return;
+      pdrag = true;
+      panel.style.right = 'auto';
       pox = e.clientX - panel.offsetLeft;
       poy = e.clientY - panel.offsetTop;
-      e.preventDefault();
     });
     window.addEventListener('mousemove', e => {
-      if (!pDrag) return;
+      if (!pdrag) return;
       const pos = clampPos(e.clientX - pox, e.clientY - poy, panel.offsetWidth, panel.offsetHeight);
       panel.style.left = pos.left + 'px';
       panel.style.top  = pos.top  + 'px';
-      panel.style.right = 'auto';
     });
-    window.addEventListener('mouseup', () => pDrag = false);
+    window.addEventListener('mouseup', () => pdrag = false);
 
-    /* ── helpers de UI ── */
     function sec(label, extraContent) {
-      const s = document.createElement('div');
-      s.style.cssText = 'border-top:1px solid #1e1e3a;padding:4px 6px 3px';
-      const lhText = document.createElement('div');
-      lhText.style.cssText = 'color:#888;font-size:7px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:3px';
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'padding:4px 8px;border-bottom:1px solid #1a1a30;flex-shrink:0';
+      const lh = document.createElement('div');
+      lh.style.cssText = 'display:flex;align-items:center;justify-content:space-between;font-size:7px;color:#fff;letter-spacing:.12em;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #1a1a30;padding-bottom:2px;margin-bottom:4px';
+      const lhText = document.createElement('span');
       lhText.textContent = label;
-      s.appendChild(lhText);
-      if (extraContent) s.appendChild(extraContent);
-      return s;
+      lh.appendChild(lhText);
+      if (extraContent) lh.appendChild(extraContent);
+      wrap.appendChild(lh);
+      return wrap;
     }
-
     function row(gap) {
-      const r = document.createElement('div');
-      r.style.cssText = `display:flex;align-items:center;gap:${gap}px;flex-wrap:nowrap;min-width:0`;
-      return r;
+      const d = document.createElement('div');
+      d.style.cssText = `display:flex;align-items:center;gap:${gap||4}px;overflow:hidden`;
+      return d;
     }
-
     function sp(txt, extra) {
       const s = document.createElement('span');
-      s.style.cssText = (extra || '') + ';white-space:nowrap;flex-shrink:0';
       s.textContent = txt;
+      s.style.cssText = 'font-size:9px;color:#fff;white-space:nowrap;' + (extra || '');
       return s;
     }
-
     function mkBtn(txt, bg, extra) {
       const b = document.createElement('button');
       b.textContent = txt;
-      b.style.cssText = `background:${bg};border:1px solid ${bg}88;color:#fff;border-radius:3px;cursor:pointer;${extra || ''}`;
+      b.style.cssText = `background:${bg};border:1px solid ${bg}55;color:#fff;border-radius:3px;padding:2px 4px;cursor:pointer;font-size:9px;font-family:monospace;font-weight:bold;white-space:nowrap;${extra||''}`;
       return b;
     }
-
     function mkNum(val, min, max, step, w) {
       const inp = document.createElement('input');
-      inp.type  = 'number';
-      inp.value = val; inp.min = min; inp.max = max; inp.step = step;
-      inp.className = 'ml-sz-inp';
-      inp.style.cssText = [
-        `width:${w}px`,
-        'background:#1e1e2e;border:1px solid #2a2a4a',
-        'color:#fff;border-radius:3px;padding:1px 2px',
-        'font-family:monospace;font-size:9px;text-align:center',
-      ].join(';');
+      inp.type = 'number'; inp.min = min; inp.max = max; inp.step = step; inp.value = val;
+      inp.style.cssText = `background:#111827;border:1px solid #2a3a50;color:#00d4ff;font:bold 10px monospace;width:${w}px;border-radius:3px;padding:1px 3px;text-align:center;outline:none;-moz-appearance:textfield`;
+      inp.addEventListener('focus', () => inp.style.borderColor = '#00d4ff88');
+      inp.addEventListener('blur',  () => inp.style.borderColor = '#2a3a50');
       return inp;
     }
 
     function mkLagSelect(ch) {
       const sel = document.createElement('select');
+      sel.title = 'Faixa de atraso esperada em rela\u00e7\u00e3o \u00e0 refer\u00eancia';
       sel.style.cssText = [
-        'flex:1;min-width:0;background:#1e1e2e;border:1px solid #2a2a4a',
-        'color:#fff;border-radius:3px;padding:1px 2px',
-        'font-family:monospace;font-size:9px;cursor:pointer',
+        'background:#111827;border:1px solid #2a3a50;color:#fff',
+        'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
+        'cursor:pointer;outline:none;width:100%',
       ].join(';');
       const opts = [
         { value: 'auto',     label: 'Auto' },
         { value: 'rapido',   label: '\u22645s' },
         { value: 'internet', label: '\u226430s' },
       ];
-      function updateSelStyle() {
-        const p = ML.LAG_PRESETS[ch.lagPreset];
-        sel.style.color = p ? '#ffd700' : '#fff';
-        sel.style.borderColor = p ? '#ffd70066' : '#2a2a4a';
-      }
       opts.forEach(o => {
         const opt = document.createElement('option');
         opt.value = o.value;
         opt.textContent = o.label;
-        if (ch.lagPreset === o.value) opt.selected = true;
+        if ((ch.lagPreset || 'auto') === o.value) opt.selected = true;
         sel.appendChild(opt);
       });
+      function updateSelStyle() {
+        sel.style.borderColor = sel.value === 'auto' ? '#2a3a50' : '#ffd70088';
+        sel.style.color       = sel.value === 'auto' ? '#fff'    : '#ffd700';
+      }
       sel.addEventListener('change', () => {
         ch.lagPreset = sel.value;
         updateSelStyle();
@@ -720,171 +605,175 @@
       const inp = document.createElement('input');
       inp.type = 'text';
       inp.placeholder = '0.000s';
-      inp.style.cssText = [
-        'flex:1;min-width:0;background:#1e1e2e;border:1px solid #ff9d0044',
-        'color:#ff9d00;border-radius:3px;padding:1px 3px',
-        'font-family:monospace;font-size:9px',
-      ].join(';');
       inp.value = ch.deduction ? formatDeduction(ch.deduction) : '';
-      inp.addEventListener('change', () => {
+      inp.title = 'Offset fixo do multiviewer. Ex: 3 → -3.000s  +1.5 → +1.500s';
+      inp.style.cssText = [
+        'background:#111827;border:1px solid #2a3a5088;color:#ff9d00',
+        'font:bold 8px monospace;width:100%;box-sizing:border-box;border-radius:3px',
+        'padding:1px 3px;text-align:center;outline:none',
+      ].join(';');
+      inp.addEventListener('focus', () => inp.style.borderColor = '#ff9d0088');
+      inp.addEventListener('blur',  () => {
+        inp.style.borderColor = '#2a3a5088';
         const raw = inp.value.trim();
-        if (!raw) {
+        if (raw === '' || raw === '0' || raw === '0.000s') {
           ch.deduction = 0;
           inp.value = '';
-          inp.style.color = '#ff9d00';
-          refreshRealColumn();
-          return;
-        }
-        const v = parseDeductionS(raw);
-        if (v !== null) {
-          ch.deduction = v;
-          inp.value = formatDeduction(v);
-          inp.style.color = '#ff9d00';
+          inp.style.color = '#fff';
         } else {
-          inp.style.color = '#ff4444';
+          const v = parseDeductionS(raw);
+          if (v !== null) {
+            ch.deduction = v;
+            inp.value = formatDeduction(v);
+            inp.style.color = v !== 0 ? '#ff9d00' : '#fff';
+          }
         }
         refreshRealColumn();
       });
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
       ch._dedInp = inp;
       return inp;
     }
 
+    /* ── Seção: Posicionamento ── */
+    const secTG = sec('Posicionamento');
+    const pxInp = mkNum(ML.state.probeW, 16, 500, 2, 44);
+    pxInp.title = 'Tamanho das probes em pixels';
     function applyGlobalPx(v) {
-      ML.state.probeW = v;
+      const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
+      ML.state.probeW = c;
+      pxInp.value = c;
       ML.CHANNELS.forEach(ch => {
-        if (ch.probeW !== null) return;
-        if (ch.resize) ch.resize();
+        ch.probeW = c;
+        if (ch._szInp) ch._szInp.value = c;
+        if (ch.active && ch.resize) ch.resize();
       });
     }
+    const btnPxM = mkBtn('\u2212', '#1e2a3a', 'padding:2px 5px');
+    const btnPxP = mkBtn('+', '#1e2a3a', 'padding:2px 5px');
+    btnPxM.onclick = () => applyGlobalPx(ML.state.probeW - 2);
+    btnPxP.onclick = () => applyGlobalPx(ML.state.probeW + 2);
+    pxInp.addEventListener('change', () => applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW));
+    pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
 
-    /* ── Seção: Config Global ── */
-    const secCfg = sec('Config');
-
-    const rPx = row(4);
-    const pxInp = mkNum(ML.state.probeW, 60, 600, 4, 44);
-    pxInp.title = 'Tamanho das probes em pixels';
-    pxInp.addEventListener('change', () => {
-      const v = Math.max(60, Math.min(600, parseInt(pxInp.value) || ML.state.probeW));
-      pxInp.value = v;
-      applyGlobalPx(v);
-    });
-    pxInp.addEventListener('keydown', e => {
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-      e.preventDefault();
-      const step = e.shiftKey ? 20 : 4;
-      const v = Math.max(60, Math.min(600, ML.state.probeW + (e.key === 'ArrowUp' ? step : -step)));
-      ML.state.probeW = v;
-      pxInp.value = v;
-      applyGlobalPx(v);
-    });
-
-    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;padding:2px 0;font-size:8px;letter-spacing:.03em');
+    const btnSnap = mkBtn('', '#0d4f3c', 'flex:1;min-width:0');
+    btnSnap.title = 'Ativa grade magn\u00e9tica para alinhar probes';
     function updateSnapBtn() { btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF'; btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e'; btnSnap.style.color = ML.state.snapGrid ? '#44ff88' : '#fff'; }
-    btnSnap.addEventListener('click', () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); });
-    updateSnapBtn();
+    btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
 
-    const btnCol = mkBtn('', '#3a1a0d', 'flex:1;padding:2px 0;font-size:8px;letter-spacing:.03em');
+    const btnCol = mkBtn('', '#2a1a0d', 'flex:1;min-width:0');
+    btnCol.title = 'Evita sobreposi\u00e7\u00e3o entre probes';
     function updateColBtn() { btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF'; btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e'; btnCol.style.color = ML.state.noOverlap ? '#ff8844' : '#fff'; }
-    btnCol.addEventListener('click', () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); });
-    updateColBtn();
+    btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
 
-    rPx.append(sp('px', 'font-size:7px;color:#aaa'), pxInp, btnSnap, btnCol);
-    secCfg.appendChild(rPx);
-    body.appendChild(secCfg);
+    const rowPos = row(4);
+    rowPos.append(sp('PX', 'flex-shrink:0;font-size:8px'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
+    secTG.appendChild(rowPos);
+    panel.appendChild(secTG);
 
-    /* ── Seção: Probes (canais) ── */
-    const secDet = sec('Probes');
+    /* ── Seção: Telas (grid 3×N) ── */
+    const secDet = sec('Telas');
     const probeGrid = document.createElement('div');
-    probeGrid.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+    probeGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px';
 
     ML.CHANNELS.forEach((ch, i) => {
       ch.deduction = ch.deduction || 0;
+
       const card = document.createElement('div');
       card.style.cssText = [
         'display:flex;flex-direction:column;gap:2px',
-        `border-left:2px solid ${ch.color}88`,
-        'padding-left:4px',
+        'padding:3px 4px;border-radius:4px',
+        `border:1px solid ${ch.color}55`,
+        `background:${ch.color}0d`,
+        `border-top:2px solid ${ch.color}99`,
+        `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
+        'box-sizing:border-box;min-width:0;overflow:hidden;width:100%',
       ].join(';');
+      ch._panelRow = card;
 
       /* linha 1: toggle + label + lum */
-      const r1 = row(4);
-
-      const tog = document.createElement('input');
-      tog.type = 'checkbox';
-      tog.checked = ch.active;
-      tog.title = 'Ativar canal';
-      tog.style.cssText = `accent-color:${ch.color};cursor:pointer;flex-shrink:0`;
-      tog.addEventListener('change', () => {
-        ch.active = tog.checked;
-        if (ch.probe) ch.probe.style.display = ch.active ? 'block' : 'none';
-      });
+      const r1 = row(3);
+      r1.style.cssText += ';overflow:hidden;min-width:0';
+      const tog = document.createElement('button');
+      tog.title = 'Ativar ou desativar esta tela';
+      tog.style.cssText = `width:8px;height:8px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
+      tog.onclick = () => {
+        ch.active = !ch.active;
+        tog.style.background = ch.active ? ch.color : 'transparent';
+        card.style.opacity = ch.active ? 1 : .4;
+        ch.probe.style.display = ch.active ? 'block' : 'none';
+        if (!ch.active) {
+          ch.prevLum = null;
+        } else {
+          if (ch.resize) ch.resize();
+        }
+      };
 
       const lblInp = document.createElement('input');
-      lblInp.type = 'text';
       lblInp.value = i === 0 ? 'Ref.' : ch.label;
-      lblInp.style.cssText = [
-        'flex:1;min-width:0;background:transparent;border:none;border-bottom:1px solid #2a2a4a',
-        `color:${ch.color};font-family:monospace;font-size:9px;padding:0 2px`,
-      ].join(';');
+      lblInp.title = 'Clique para renomear a tela';
+      lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
       lblInp.addEventListener('change', () => {
         ch.label = lblInp.value.replace(/^\u2605\s*/, '');
         if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
         if (ch._tdName) ch._tdName.textContent = (i === 0 ? '\u2605 ' : '') + ch.label;
       });
 
-      const lumSp = document.createElement('span');
-      lumSp.style.cssText = 'font-size:8px;color:#555;flex-shrink:0;min-width:24px;text-align:right';
-      ch.lumEl = lumSp;
+      const lumEl = document.createElement('span');
+      lumEl.title = 'Lumin\u00e2ncia atual da probe (0\u2013255)';
+      lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;flex-shrink:0`;
+      lumEl.textContent = '--'; ch.lumEl = lumEl;
 
-      r1.append(tog, lblInp, lumSp);
+      const ptsEl = document.createElement('span');
+      ptsEl.style.cssText = 'display:none';
+      ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
 
-      /* linha 2: tamanho individual */
-      const r2 = row(4);
+      r1.append(tog, lblInp, lumEl, ptsEl);
+
+      /* linha 2: px individual */
+      const r2 = row(2);
       r2.style.cssText += ';overflow:hidden;min-width:0';
-      const szInp = mkNum(ch.probeW !== null ? ch.probeW : ML.state.probeW, 60, 600, 4, 40);
+      const szInp = document.createElement('input');
+      szInp.type = 'number';
+      szInp.min = 16; szInp.max = 500; szInp.step = 2;
+      szInp.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
+      szInp.className = 'ml-sz-inp';
       szInp.title = 'Tamanho desta probe em pixels (use as setas \u2191\u2193)';
-
+      szInp.style.cssText = [
+        'background:#111827;border:1px solid #2a3a50;color:#00d4ff',
+        'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
+        'text-align:left;outline:none',
+        'box-sizing:border-box;height:20px',
+        'flex:1;min-width:52px',
+      ].join(';');
+      szInp.addEventListener('focus', () => szInp.style.borderColor = '#00d4ff88');
+      szInp.addEventListener('blur',  () => szInp.style.borderColor = '#2a3a50');
+      ch._szInp = szInp;
       function applyChanPx(v) {
-        ch.probeW = v;
-        if (ch.resize) ch.resize();
+        const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
+        ch.probeW = c;
+        szInp.value = c;
+        if (ch.active && ch.resize) ch.resize();
       }
-
-      szInp.addEventListener('change', () => {
-        const v = Math.max(60, Math.min(600, parseInt(szInp.value) || ML.state.probeW));
-        szInp.value = v;
-        applyChanPx(v);
-      });
+      szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
       szInp.addEventListener('keydown', e => {
-        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-        e.preventDefault();
-        const step = e.shiftKey ? 20 : 4;
-        const cur = ch.probeW !== null ? ch.probeW : ML.state.probeW;
-        const v = Math.max(60, Math.min(600, cur + (e.key === 'ArrowUp' ? step : -step)));
-        ch.probeW = v;
-        szInp.value = v;
-        applyChanPx(v);
+        if (e.key === 'Enter')     { e.preventDefault(); applyChanPx(parseInt(szInp.value) || ML.state.probeW); szInp.blur(); }
+        if (e.key === 'ArrowUp')   { e.preventDefault(); applyChanPx((parseInt(szInp.value) || 16) + 2); }
+        if (e.key === 'ArrowDown') { e.preventDefault(); applyChanPx((parseInt(szInp.value) || 16) - 2); }
       });
-
-      const btnReset = mkBtn('\u21ba', '#1a1a2e', 'padding:1px 4px;font-size:9px;border-color:#2a2a4a;color:#aaa');
-      btnReset.title = 'Resetar para tamanho global';
-      btnReset.addEventListener('click', () => {
-        ch.probeW = null;
-        szInp.value = ML.state.probeW;
-        applyChanPx(null);
-      });
-
-      r2.append(sp('px', 'font-size:7px;color:#aaa'), szInp, btnReset);
+      r2.append(sp('px', 'font-size:7px;color:#aaa;flex-shrink:0'), szInp);
 
       /* linha 3: dedução */
-      const r3ded = row(4);
+      const r3ded = row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
       const dedInp = mkDeductionInput(ch);
-      const btnAuto = mkBtn('\ud83d\udd0d', '#2a1a00', 'padding:1px 5px;font-size:10px;border-color:#ff9d0044;flex-shrink:0');
-      btnAuto.title = 'Detectar dedução automaticamente';
-      btnAuto.addEventListener('click', async () => {
-        btnAuto.style.color = '#ffd700';
+      const btnAuto = document.createElement('button');
+      btnAuto.innerHTML = '\ud83d\udd0d';
+      btnAuto.title = 'Detectar dedu\u00e7\u00e3o automaticamente';
+      btnAuto.style.cssText = 'background:#1e2a3a;border:1px solid #ff9d0044;color:#ff9d00;border-radius:3px;padding:0 3px;cursor:pointer;font-size:9px;line-height:15px;flex-shrink:0';
+      btnAuto.onclick = () => {
         showSearchOverlay(ch);
-        const found = await autoDetectDeduction(ch);
+        const found = autoDetectDeduction(ch);
         if (found) {
           const v = parseDeductionS(found);
           if (v !== null) {
@@ -897,8 +786,7 @@
           btnAuto.style.color = '#ff4444';
           setTimeout(() => btnAuto.style.color = '#ff9d00', 800);
         }
-        btnAuto.style.color = '#ff9d00';
-      });
+      };
       r3ded.append(sp('ded', 'font-size:7px;color:#ff9d00;flex-shrink:0'), dedInp, btnAuto);
 
       /* linha 4: lag (só canais não-ref) */
@@ -919,13 +807,13 @@
 
     // autoDetect ao soltar o mouse após arrastar uma probe (com feedback visual)
     window.addEventListener('mouseup', () => {
-      ML.CHANNELS.forEach(async ch => {
+      ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch._dedInp) return;
         if (!ch._wasDragged) return;
         ch._wasDragged = false;
         if (ch._dedInp.value.trim() !== '') return;
         showSearchOverlay(ch);
-        const found = await autoDetectDeduction(ch);
+        const found = autoDetectDeduction(ch);
         if (!found) return;
         const v = parseDeductionS(found);
         if (v !== null) {
@@ -961,191 +849,202 @@
     const progBarInner = document.createElement('div');
     progBarInner.style.cssText = [
       'height:100%;width:0%;background:#44ff88',
-      'border-radius:3px;transition:width .4s',
+      'border-radius:3px;transition:width .5s linear',
     ].join(';');
-    const progLabel = document.createElement('div');
-    progLabel.style.cssText = 'font-size:8px;color:#aaa;text-align:center';
     progBarOuter.appendChild(progBarInner);
+    const progLabel = document.createElement('div');
+    progLabel.style.cssText = 'font-size:8px;color:#44ff88;text-align:center;letter-spacing:.05em';
+    progLabel.textContent = '0%';
     progWrap.append(progBarOuter, progLabel);
 
     function doStop() {
-      ML.recorder && ML.recorder.stop && ML.recorder.stop();
-      ML.state.recording = false;
-      btnRec.textContent    = '\u25cf GRAVAR';
-      btnRec.style.background = '#1b5e20';
-      btnRec.style.boxShadow  = '0 0 8px #1b5e2066';
-      btnRec.style.animation  = '';
-      progWrap.style.display  = 'none';
+      ML.recorder.stop();
+      playDone();
+      progWrap.style.display = 'none';
       progBarInner.style.width = '0%';
-      progLabel.textContent    = '';
+      btnRec.textContent = '\u25cf GRAVAR';
+      btnRec.style.background = '#1b5e20'; btnRec.style.borderColor = '#2e7d3288'; btnRec.style.boxShadow = '0 0 8px #1b5e2066';
+      const pts = ML.CHANNELS.filter(c => c.active).map(c => c.buffer.length + 'pt').join(', ');
+      statusEl.textContent = 'Pronto (' + pts + ')';
+      statusEl.style.color = '#ffd700';
+      btnAnalyze.disabled = false;
+      setTimeout(() => btnAnalyze.onclick(), 300);
     }
 
-    btnRec.addEventListener('click', () => {
-      if (ML.state.recording) { doStop(); return; }
-      const active = ML.CHANNELS.filter(c => c.active);
-      if (!active.length) { btnRec.style.background = '#7f0000'; setTimeout(() => btnRec.style.background = '#1b5e20', 600); return; }
-      ML.state.recording = true;
-      btnRec.textContent     = '\u25a0 PARAR';
-      btnRec.style.background = '#c62828';
-      btnRec.style.animation  = 'mlPulse 1s ease-in-out infinite';
-      btnRec.style.boxShadow  = 'none';
-      btnAnalyze.style.opacity = '.45';
-      btnAnalyze.disabled      = true;
-      progWrap.style.display   = 'flex';
-      progBarInner.style.background = '#44ff88';
-
-      /* limpa buffers */
-      ML.CHANNELS.forEach(ch => {
-        ch.buffer  = [];
-        ch.prevLum = null;
-        if (ch.offsetEl) { ch.offsetEl.textContent = '--'; ch.offsetEl.style.color = '#fff'; }
-        if (ch.realEl)   { ch.realEl.textContent   = '--'; ch.realEl.style.color   = '#fff'; }
-      });
-
-      ML.recorder && ML.recorder.start && ML.recorder.start();
-
-      const target = getGlobalTarget();
-      const tickMs = ML.INTERVAL_MS;
-      let elapsed  = 0;
-
-      const tid = setInterval(() => {
-        if (!ML.state.recording) { clearInterval(tid); return; }
-
-        /* atualiza luminâncias */
-        ML.CHANNELS.forEach(ch => {
-          if (!ch.active) return;
-          const lum = ML.getLum ? ML.getLum(ch) : null;
-          if (ch.lumEl) ch.lumEl.textContent = lum != null && lum >= 0 ? Math.round(lum) : (lum === -1 ? 'X' : '-');
+    btnRec.onclick = () => {
+      if (!ML.state.recording) {
+        ML.recorder.start();
+        btnRec.textContent = '\u25a0 PARAR';
+        btnRec.style.background = '#7f0000'; btnRec.style.borderColor = '#c6282888'; btnRec.style.boxShadow = '0 0 8px #c6282855';
+        statusEl.textContent = 'Gravando...'; statusEl.style.color = '#44ff88';
+        progWrap.style.display = 'flex';
+        progBarInner.style.width = '0%';
+        progLabel.textContent = '0%';
+        progLabel.style.color = '#44ff88';
+        btnAnalyze.disabled = true;
+        ML.CHANNELS.forEach((ch, i) => {
+          ch._prevPts   = 0;
+          ch._stableCnt = 0;
+          if (ch.ptsEl) { ch.ptsEl.textContent = '0pt'; ch.ptsEl.style.color = '#fff'; }
+          if (i !== 0) {
+            if (ch.offsetEl) { ch.offsetEl.textContent = '--'; ch.offsetEl.style.color = '#fff'; }
+            if (ch.realEl)   { ch.realEl.textContent   = '--'; ch.realEl.style.color   = '#fff'; }
+          }
         });
+      } else {
+        doStop();
+      }
+    };
 
-        elapsed++;
-        const pct = Math.min(100, Math.round((elapsed / target) * 100));
-        progBarInner.style.width = pct + '%';
-        const secsLeft = Math.max(0, Math.round(((target - elapsed) * tickMs) / 1000));
-        progLabel.textContent = pct < 100
-          ? `${pct}% \u2014 ~${secsLeft}s restantes`
-          : 'Finalizando\u2026';
-
-        if (elapsed >= target) {
-          clearInterval(tid);
-          progBarInner.style.background = '#ffd700';
-
-          /* dispara análise */
-          if (ML.correlator && ML.correlator.analyze) {
-            const results = ML.correlator.analyze();
-            results.forEach(r => {
-              const ch = ML.CHANNELS.find(c => c.id === r.id);
-              if (!ch) return;
-              if (ch.offsetEl) {
-                ch.offsetEl.textContent = r.error ? 'ERRO' : '--';
-                ch.offsetEl.style.color = r.error ? '#ff4444' : '#fff';
-                if (!r.error) {
-                  const s = r.offsetMs / 1000;
-                  ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
-                  ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
-                }
-              }
-            });
-            refreshRealColumn();
-            const errs = results.filter(r => r.error);
-            progLabel.textContent = errs.length
-              ? errs.map(r => r.label + ': ' + r.error).join(' | ')
-              : '\u2714 Conclu\u00eddo';
-            progLabel.style.color = errs.length ? '#ff4444' : '#44ff88';
+    btnAnalyze.onclick = () => {
+      statusEl.textContent = 'Calculando...'; statusEl.style.color = '#fff';
+      setTimeout(() => {
+        const results = ML.correlator.analyzeBestAll();
+        results.forEach(r => {
+          const ch = r.channel;
+          if (!ch || r.isReference) return;
+          if (ch.offsetEl) {
+            if (r.skipped || r.error) {
+              ch.offsetEl.textContent = r.error ? 'ERRO' : '--';
+              ch.offsetEl.style.color = r.error ? '#ff4444' : '#fff';
+            } else {
+              const s = r.offsetMs / 1000;
+              ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
+              ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+            }
           }
+        });
+        refreshRealColumn();
+        if (ML.chart && ML.chart.show) ML.chart.show(results);
+        const errs = results.filter(r => r.error);
+        statusEl.textContent = errs.length
+          ? errs.map(r => r.label + ': ' + r.error).join(' | ')
+          : 'An\u00e1lise conclu\u00edda';
+        statusEl.style.color = errs.length ? '#ff8844' : '#44ff88';
+      }, 30);
+    };
 
-          doStop();
-          playDone();
-          btnAnalyze.style.opacity = '1';
-          btnAnalyze.disabled      = false;
-        }
-      }, tickMs);
+    Object.defineProperty(btnAnalyze, 'disabled', {
+      set(v) { this._disabled = v; this.style.opacity = v ? .45 : 1; this.style.cursor = v ? 'not-allowed' : 'pointer'; },
+      get() { return this._disabled; },
     });
+    btnAnalyze.disabled = true;
 
-    btnAnalyze.addEventListener('click', () => {
-      if (!ML.correlator || !ML.correlator.analyze) return;
-      const results = ML.correlator.analyze();
-      results.forEach(r => {
-        const ch = ML.CHANNELS.find(c => c.id === r.id);
-        if (!ch) return;
-        if (ch.offsetEl) {
-          ch.offsetEl.textContent = r.error ? 'ERRO' : '--';
-          ch.offsetEl.style.color = r.error ? '#ff4444' : '#fff';
-          if (!r.error) {
-            const s = r.offsetMs / 1000;
-            ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
-            ch.offsetEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
-          }
-        }
-      });
-      refreshRealColumn();
-    });
-
-    const rBtns = row(4);
-    rBtns.append(btnRec, btnAnalyze);
-    secAn.append(rBtns, progWrap);
-    body.appendChild(secAn);
+    const rowBtns = row(4); rowBtns.style.marginBottom = '2px';
+    rowBtns.append(btnRec, btnAnalyze);
+    secAn.appendChild(rowBtns);
+    secAn.appendChild(progWrap);
+    panel.appendChild(secAn);
 
     /* ── Seção: Resultados ── */
-    const secRes = sec('Resultados');
+    const btnCopyInline = document.createElement('button');
+    btnCopyInline.innerHTML = '\ud83d\udccb';
+    btnCopyInline.title = 'Copiar tabela de resultados para a \u00e1rea de transfer\u00eancia';
+    btnCopyInline.style.cssText = 'background:transparent;border:1px solid #00d4ff44;color:#00d4ff;border-radius:3px;padding:0 4px;cursor:pointer;font-size:10px;line-height:14px';
+    btnCopyInline.addEventListener('mouseenter', () => btnCopyInline.style.background = '#00d4ff18');
+    btnCopyInline.addEventListener('mouseleave', () => btnCopyInline.style.background = 'transparent');
+    btnCopyInline.onclick = () => copyResults(btnCopyInline);
+
+    const secRes = sec('Resultados', btnCopyInline);
     const tbl = document.createElement('table');
-    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:8px';
+    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
     const thead = document.createElement('thead');
-    const trh = document.createElement('tr');
-    ['Canal','Offset','Real'].forEach((h, hi) => {
+    const trH = document.createElement('tr');
+    ['Tela','Resultado','Real'].forEach((h, hi) => {
       const th = document.createElement('th');
       th.textContent = h;
-      th.style.cssText = `color:#666;font-weight:normal;padding:1px 2px;text-align:${hi === 0 ? 'left' : 'right'}`;
-      trh.appendChild(th);
+      th.style.cssText = `color:#aaa;font-weight:bold;padding:1px ${hi===0?'2px':'4px'};text-align:${hi===0?'left':'center'};border-bottom:1px solid #2a2a4a`;
+      trH.appendChild(th);
     });
-    thead.appendChild(trh);
+    thead.appendChild(trH);
     tbl.appendChild(thead);
     const tbody = document.createElement('tbody');
-
     ML.CHANNELS.forEach((ch, i) => {
       const tr = document.createElement('tr');
+      tr.style.cssText = `border-bottom:1px solid #1a1a2a;opacity:${ch.active?1:.4};transition:opacity .2s`;
+      ch._panelTr = tr;
       const tdName = document.createElement('td');
       tdName.textContent = (i === 0 ? '\u2605 ' : '') + ch.label;
-      tdName.style.cssText = `color:${ch.color};padding:1px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px`;
+      tdName.style.cssText = `color:${ch.color};padding:2px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px`;
       ch._tdName = tdName;
-
       const tdOff = document.createElement('td');
-      tdOff.textContent = '--';
-      tdOff.style.cssText = 'color:#fff;padding:1px 2px;text-align:right;white-space:nowrap';
-
-      const tdReal = document.createElement('td');
-      tdReal.textContent = '--';
-      tdReal.style.cssText = 'color:#fff;padding:1px 2px;text-align:right;white-space:nowrap';
-
+      tdOff.textContent = i === 0 ? '0.000s' : '--';
+      tdOff.style.cssText = `color:${i===0?'#44ff88':'#fff'};padding:2px 4px;text-align:center;font-weight:bold`;
       ch.offsetEl = tdOff;
-      ch.realEl   = tdReal;
+      const tdReal = document.createElement('td');
+      tdReal.textContent = i === 0 ? '0.000s' : '--';
+      tdReal.style.cssText = `color:${i===0?'#44ff88':'#fff'};padding:2px 4px;text-align:center;font-weight:bold`;
+      ch.realEl = tdReal;
       tr.append(tdName, tdOff, tdReal);
       tbody.appendChild(tr);
     });
-
     tbl.appendChild(tbody);
     secRes.appendChild(tbl);
+    panel.appendChild(secRes);
 
-    const btnCopy = mkBtn('\ud83d\udccb Copiar Resultados', '#0d47a1', 'width:100%;margin-top:3px;padding:2px 0;font-size:9px');
-    btnCopy.addEventListener('click', () => copyResults(btnCopy));
-    secRes.appendChild(btnCopy);
+    /* ── Seção: Status ── */
+    const secSt = document.createElement('div');
+    secSt.style.cssText = 'padding:3px 8px;flex-shrink:0';
+    const statusEl = document.createElement('div');
+    statusEl.style.cssText = 'font-size:8px;color:#aaa;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    statusEl.textContent = 'Pronto';
+    secSt.appendChild(statusEl);
+    panel.appendChild(secSt);
 
-    body.appendChild(secRes);
-    panel.appendChild(body);
     document.body.appendChild(panel);
+    panel.style.right = '8px';
+    panel.style.top   = '8px';
 
-    /* posição inicial */
-    requestAnimationFrame(() => {
-      const pos = clampPos(
-        window.innerWidth - panel.offsetWidth - 16,
-        40,
-        panel.offsetWidth,
-        panel.offsetHeight
-      );
-      panel.style.left = pos.left + 'px';
-      panel.style.top  = pos.top  + 'px';
-      panel.style.right = 'auto';
-    });
+    // Inicia sempre minimizado
+    minimizePanel(panel);
+
+    /* ── Atualizar lum no painel ── */
+    setInterval(() => {
+      ML.CHANNELS.forEach(ch => {
+        if (!ch.active || !ch.lumEl) return;
+        const y = ML.getLum ? ML.getLum(ch) : null;
+        if (y === null)    { ch.lumEl.textContent = '--';  ch.lumEl.style.color = ch.color; }
+        else if (y === -1) { ch.lumEl.textContent = '\ud83d\udd12'; ch.lumEl.style.color = '#ff4444'; }
+        else               { ch.lumEl.textContent = Math.round(y); ch.lumEl.style.color = ch.color; }
+      });
+    }, 200);
+
+    /* ── Timer de gravação: conclusão única pelo maior target ── */
+    setInterval(() => {
+      if (!ML.state.recording) return;
+
+      const activeChs = ML.CHANNELS.filter(ch => ch.active);
+      if (!activeChs.length) return;
+
+      const globalTarget = getGlobalTarget();
+
+      const allDone = activeChs.every(ch => (ch.buffer ? ch.buffer.length : 0) >= globalTarget);
+      if (allDone) { doStop(); return; }
+
+      let minPts = Infinity;
+      activeChs.forEach(ch => {
+        const pts = ch.buffer ? ch.buffer.length : 0;
+        if (pts < minPts) minPts = pts;
+      });
+      const pct = Math.min(100, Math.round((minPts / globalTarget) * 100));
+
+      progBarInner.style.width = pct + '%';
+      progLabel.textContent    = pct + '%';
+      if (pct >= 80) {
+        progBarInner.style.background = pct >= 95 ? '#ffd700' : '#44ff88';
+        progLabel.style.color         = pct >= 95 ? '#ffd700' : '#44ff88';
+      }
+
+      activeChs.forEach(ch => {
+        if (!ch.ptsEl) return;
+        const pts = ch.buffer ? ch.buffer.length : 0;
+        ch.ptsEl.textContent = pts + 'pt';
+        const stable = pts === (ch._prevPts || 0);
+        ch._stableCnt = stable ? (ch._stableCnt || 0) + 1 : 0;
+        ch._prevPts = pts;
+        ch.ptsEl.style.color = ch._stableCnt > 3 ? '#ff8844' : '#44ff88';
+      });
+    }, 1000);
   }
 
   if (document.readyState === 'loading') {
@@ -1153,4 +1052,6 @@
   } else {
     init();
   }
+
+  console.log('[MedLat] 50-panel carregado.');
 })();
