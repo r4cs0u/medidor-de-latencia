@@ -480,6 +480,25 @@
 
     ui.minimizePanel(panel);
 
+    // ── Expõe refreshOffsets para o 40-chart.js ──────────────────────────
+    // Chamado por ML.panel.refreshOffsets(ML.manualOffsets) após confirmar
+    // ajuste manual. Atualiza a coluna "Resultado" de cada canal e recalcula
+    // a coluna "Real" para refletir o valor confirmado na janela de gráficos.
+    ML.panel = {
+      refreshOffsets(offsets) {
+        if (!offsets) return;
+        ML.CHANNELS.forEach((ch, i) => {
+          if (i === 0 || !ch.offsetEl) return;
+          const ms = offsets[ch.id];
+          if (ms == null) return;
+          const s = ms / 1000;
+          ch.offsetEl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
+          ch.offsetEl.style.color = ui.colorByOffset(Math.abs(s));
+        });
+        refreshRealColumn();
+      },
+    };
+
     /* ── Timers ── */
     setInterval(() => {
       ML.CHANNELS.forEach(ch => {
