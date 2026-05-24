@@ -20,8 +20,7 @@
       const y = ML.getLum(ch);
       const v = (y !== null && y !== -1) ? Math.round(y) : null;
 
-      // Atualiza display de lum no painel
-      if (ch.lumEl) ch.lumEl.textContent = v !== null ? v : (y === -1 ? '🔒' : '--');
+      if (ch.lumEl) ch.lumEl.textContent = v !== null ? v : (y === -1 ? '\uD83D\uDD12' : '--');
 
       if (v !== null) {
         ch.buffer.push({ ts, lum: v });
@@ -34,8 +33,9 @@
   ML.recorder = {
     start() {
       ML.CHANNELS.forEach(ch => { ch.buffer = []; ch.prevLum = null; });
-      ML.state.recording = true;
-      ML.state.running   = true;
+      ML.state.recording    = true;
+      ML.state.running      = true;
+      ML.state.recStartTime = Date.now();
       lastTick = 0;
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(tick);
@@ -54,7 +54,6 @@
     clear() {
       ML.CHANNELS.forEach(ch => { ch.buffer = []; ch.prevLum = null; });
     },
-    // Retorna {ts[], lum[]} para um canal, reamostrado em INTERVAL_MS
     getSeries(ch) {
       return {
         label: ch.label,

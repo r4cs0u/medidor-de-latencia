@@ -101,6 +101,7 @@
       const oT = parseInt(od.style.top)  || 0;
       const oR = oL + ow, oB = oT + oh;
       const bL = x, bR = x + pw, bT = y, bB = y + ph;
+      // Sobreposição real: strict (borda encostada = permitido)
       if (bR <= oL || bL >= oR || bB <= oT || bT >= oB) return;
       const overlapL = bR - oL, overlapR = oR - bL;
       const overlapT = bB - oT, overlapB = oB - bT;
@@ -288,29 +289,22 @@
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  // ── Tamanho inicial responsivo ──────────────────────────────────────────────
-  // Baseado na menor dimensão da viewport × 0.22, com clamp entre 120 e 300px.
-  // Exemplos:  1920×1080 → 238px  |  1366×768 → 169px  |  1280×720 → 158px
-  // O valor é par para compatibilidade com o step=2 do painel.
   const responsiveW = Math.round(Math.max(120, Math.min(300, Math.min(vw, vh) * 0.22)) / 2) * 2;
   ML.state.probeW = responsiveW;
 
-  // ── Posições iniciais (fracionais calibradas para 1920×1080) ────────────────
-  // INIT_CENTER: centro de cada probe como fração da viewport [fracX, fracY]
-  // INIT_FINE:   ajuste fino em px após o cálculo fracional   [dx, dy]
   const INIT_CENTER = [
-    [0.555, 0.322],  // ch0 Referência
-    [0.308, 0.322],  // ch1 Tela 2
-    [0.432, 0.322],  // ch2 Tela 3
-    [0.681, 0.322],  // ch3 Tela 4
-    [0.804, 0.322],  // ch4 Tela 5
+    [0.555, 0.322],
+    [0.308, 0.322],
+    [0.432, 0.322],
+    [0.681, 0.322],
+    [0.804, 0.322],
   ];
   const INIT_FINE = [
-    [  0, -5],  // ch0 Referência
-    [  0, -5],  // ch1 Tela 2
-    [  0, -5],  // ch2 Tela 3
-    [ -2, -5],  // ch3 Tela 4: +2px esquerda
-    [ -2, -5],  // ch4 Tela 5: +2px esquerda
+    [  0, -5],
+    [  0, -5],
+    [  0, -5],
+    [ -2, -5],
+    [ -2, -5],
   ];
 
   ML.CHANNELS.forEach((ch, i) => {
