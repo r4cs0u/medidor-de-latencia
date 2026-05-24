@@ -284,52 +284,102 @@
     });
   }
 
-  /* ── autoDetectDeduction: busca apenas texto vermelho na área da probe ──
-     Critérios:
-       1. Elemento pai com cor vermelha dominante (R≥180, G<100, B<100)
-       2. Valor absoluto entre 0 e 60s (descarta leituras absurdas)
-       3. Geometricamente mais próximo do centro vertical da probe
+  /* ── autoDetectDeduction: OCR por pixels – lê texto vermelho renderizado no vídeo ──
+     Fluxo:
+       1. Captura área acima/abaixo da probe (raio = metade da largura da probe)
+          diretamente do elemento <video>/<canvas> via canvas offscreen
+       2. Filtra pixels vermelhos (R≥160, G<110, B<110, R>G*1.8) → máscara P&B
+       3. Upscale 3× para melhorar acurácia do OCR
+       4. Tesseract.js (CDN, carregado sob demanda) extrai o texto
+       5. Parseado com parseDeductionS existente
   */
-  function autoDetectDeduction(ch) {
+  async function autoDetectDeduction(ch) {
     if (!ch.probe) return null;
     const d = ch.probe;
-    const cy = d.offsetTop + d.offsetHeight / 2;
-    const RADIUS_Y = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) / 2);
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        const p = node.parentElement;
-        if (!p || p.closest('[id^="ml-"]')) return NodeFilter.FILTER_REJECT;
-        // só aceita nós cujo elemento pai seja texto vermelho
-        if (!isRedText(p)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    });
-    const RE = /([+\-\u2212]?\d+[.,]\d+s?|[+\-\u2212]\d+s?)/g;
-    let best = null, bestDist = Infinity;
-    while (walker.nextNode()) {
-      const node = walker.currentNode;
-      const text = node.textContent;
-      let m;
-      RE.lastIndex = 0;
-      while ((m = RE.exec(text)) !== null) {
-        try {
-          const range = document.createRange();
-          range.setStart(node, m.index);
-          range.setEnd(node, m.index + m[0].length);
-          const rect = range.getBoundingClientRect();
-          if (!rect.width) continue;
-          const ry = rect.top + rect.height / 2;
-          const dy = Math.abs(ry - cy);
-          if (dy > RADIUS_Y) continue;
-          // valida o valor numérico antes de aceitar
-          const parsed = parseDeductionS(m[0]);
-          if (parsed === null) continue;
-          if (Math.abs(parsed) > 60) continue; // descarta valores absurdos
-          if (dy < bestDist) { bestDist = dy; best = m[0]; }
-        } catch(e) {}
-      }
+    const rect = d.getBoundingClientRect();
+    const pw   = rect.width;
+    const halfH = Math.round((ch.probeW != null ? ch.probeW : ML.state.probeW) / 2);
+
+    // Localiza o elemento de mídia sob a probe
+    const cx = rect.left + pw / 2;
+    const cy = rect.top  + rect.height / 2;
+    d.style.pointerEvents = 'none';
+    const el = document.elementFromPoint(cx, cy);
+    d.style.pointerEvents = 'auto';
+    if (!el) return null;
+    let media = null, node = el;
+    for (let i = 0; i < 6; i++) {
+      if (!node) break;
+      if (['VIDEO','CANVAS','IMG'].includes(node.tagName)) { media = node; break; }
+      const c = node.querySelector('video,canvas,img');
+      if (c) { media = c; break; }
+      node = node.parentElement;
     }
-    return best;
+    if (!media) return null;
+
+    const mr    = media.getBoundingClientRect();
+    if (!mr.width || !mr.height) return null;
+    const nw    = media.videoWidth  || media.naturalWidth  || mr.width;
+    const nh    = media.videoHeight || media.naturalHeight || mr.height;
+    const scaleX = nw / mr.width;
+    const scaleY = nh / mr.height;
+
+    // Área de busca: metade da probe acima + metade abaixo do centro
+    const searchTop = cy - halfH;
+    const searchH   = halfH * 2;
+    const sx = Math.max(0, Math.floor((rect.left  - mr.left) * scaleX));
+    const sy = Math.max(0, Math.floor((searchTop  - mr.top ) * scaleY));
+    const sw = Math.max(1, Math.ceil(pw      * scaleX));
+    const sh = Math.max(1, Math.ceil(searchH * scaleY));
+
+    // Captura os pixels da área de busca
+    const cap = document.createElement('canvas');
+    cap.width = sw; cap.height = sh;
+    const ctx = cap.getContext('2d', { willReadFrequently: true });
+    try { ctx.drawImage(media, sx, sy, sw, sh, 0, 0, sw, sh); }
+    catch(e) { return null; }
+
+    // Filtra pixels vermelhos → máscara branco/preto para OCR
+    const imgData = ctx.getImageData(0, 0, sw, sh);
+    const pix = imgData.data;
+    for (let i = 0; i < pix.length; i += 4) {
+      const r = pix[i], g = pix[i+1], b = pix[i+2];
+      const isRed = r >= 160 && g < 110 && b < 110 && r > g * 1.8;
+      pix[i] = pix[i+1] = pix[i+2] = isRed ? 0 : 255;
+      pix[i+3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    // Upscale 3× para melhorar acurácia do OCR em texto pequeno
+    const big = document.createElement('canvas');
+    big.width  = sw * 3;
+    big.height = sh * 3;
+    big.getContext('2d').drawImage(cap, 0, 0, big.width, big.height);
+
+    // Carrega Tesseract.js sob demanda (sem backend)
+    if (!window.Tesseract) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      }).catch(() => null);
+      if (!window.Tesseract) return null;
+    }
+
+    try {
+      const result = await Tesseract.recognize(big, 'eng', {
+        tessedit_char_whitelist: '0123456789.,-+s',
+      });
+      const text = result.data.text;
+      const RE = /([+\-]?\d+[.,]\d+s?|[+\-]\d+s?)/g;
+      let m;
+      while ((m = RE.exec(text)) !== null) {
+        const v = parseDeductionS(m[0]);
+        if (v !== null && Math.abs(v) <= 60) return m[0];
+      }
+      return null;
+    } catch(e) { return null; }
   }
 
   function copyResults(btn) {
@@ -771,9 +821,11 @@
       btnAuto.innerHTML = '\ud83d\udd0d';
       btnAuto.title = 'Detectar dedu\u00e7\u00e3o automaticamente';
       btnAuto.style.cssText = 'background:#1e2a3a;border:1px solid #ff9d0044;color:#ff9d00;border-radius:3px;padding:0 3px;cursor:pointer;font-size:9px;line-height:15px;flex-shrink:0';
-      btnAuto.onclick = () => {
+      btnAuto.onclick = async () => {
         showSearchOverlay(ch);
-        const found = autoDetectDeduction(ch);
+        btnAuto.disabled = true;
+        const found = await autoDetectDeduction(ch);
+        btnAuto.disabled = false;
         if (found) {
           const v = parseDeductionS(found);
           if (v !== null) {
@@ -807,13 +859,13 @@
 
     // autoDetect ao soltar o mouse após arrastar uma probe (com feedback visual)
     window.addEventListener('mouseup', () => {
-      ML.CHANNELS.forEach(ch => {
+      ML.CHANNELS.forEach(async ch => {
         if (!ch.active || !ch._dedInp) return;
         if (!ch._wasDragged) return;
         ch._wasDragged = false;
         if (ch._dedInp.value.trim() !== '') return;
         showSearchOverlay(ch);
-        const found = autoDetectDeduction(ch);
+        const found = await autoDetectDeduction(ch);
         if (!found) return;
         const v = parseDeductionS(found);
         if (v !== null) {
