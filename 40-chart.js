@@ -1,5 +1,6 @@
 (function () {
   const ML = window.MedLat;
+  const ui = ML.ui;
   let MAX_PEAKS = 10;
   const SNAP_RADIUS = 3;
 
@@ -61,66 +62,10 @@
     };
   }
 
-  function injectSliderCSS() {
-    if (document.getElementById('ml-slider-css')) return;
-    const st = document.createElement('style');
-    st.id = 'ml-slider-css';
-    st.textContent = `
-      .ml-slider {
-        -webkit-appearance: none;
-        appearance: none;
-        height: 6px;
-        border-radius: 0;
-        outline: none;
-        cursor: pointer;
-      }
-      .ml-slider::-webkit-slider-runnable-track {
-        height: 6px;
-        border-radius: 0;
-        background: repeating-linear-gradient(
-          90deg,
-          #2a3a50 0px, #2a3a50 1px,
-          transparent 1px, transparent 10%
-        ), #1a2a3a;
-      }
-      .ml-slider::-moz-range-track {
-        height: 6px;
-        border-radius: 0;
-        background: repeating-linear-gradient(
-          90deg,
-          #2a3a50 0px, #2a3a50 1px,
-          transparent 1px, transparent 10%
-        ), #1a2a3a;
-      }
-      .ml-slider::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        appearance: none;
-        width: 10px;
-        height: 18px;
-        border-radius: 2px;
-        background: #00d4ff;
-        border: 1px solid #007a99;
-        cursor: grab;
-        margin-top: -6px;
-      }
-      .ml-slider::-moz-range-thumb {
-        width: 10px;
-        height: 18px;
-        border-radius: 2px;
-        background: #00d4ff;
-        border: 1px solid #007a99;
-        cursor: grab;
-      }
-      .ml-slider:active::-webkit-slider-thumb { cursor: grabbing; background: #44eeff; }
-      .ml-slider:active::-moz-range-thumb     { cursor: grabbing; background: #44eeff; }
-    `;
-    document.head.appendChild(st);
-  }
-
   async function showChart(results) {
     if (!Array.isArray(results)) results = [results];
     await loadChartJs();
-    injectSliderCSS();
+    ui.injectSliderCSS();                          // era injectSliderCSS() local
     const old = document.getElementById('ml-chart-panel');
     if (old) old.remove();
 
@@ -255,14 +200,6 @@
       if (ch.buffer.length > maxLen) maxLen = ch.buffer.length;
     });
 
-    function realIvMs(ch) {
-      if (ch.buffer && ch.buffer.length > 1) {
-        const iv = (ch.buffer[ch.buffer.length-1].ts - ch.buffer[0].ts) / (ch.buffer.length - 1);
-        if (iv >= 10 && iv <= 200) return iv;
-      }
-      return ML.INTERVAL_MS;
-    }
-
     const autoOffsetMs = {};
     ML.CHANNELS.forEach(ch => {
       autoOffsetMs[ch.id] = (ML.manualOffsets && typeof ML.manualOffsets[ch.id] === 'number')
@@ -380,7 +317,7 @@
     activeChannels.forEach((ch, idx) => {
       if (idx === 0) return;
 
-      const iv    = realIvMs(ch);
+      const iv    = ui.realIvMs(ch);              // era realIvMs(ch) local
       const range = Math.max(50, Math.round(ch.buffer.length * 1.0));
 
       const row = document.createElement('div');
@@ -452,7 +389,7 @@
       ML.manualOffsets = ML.manualOffsets || {};
       activeChannels.forEach((ch, idx) => {
         if (idx === 0) return;
-        const iv   = realIvMs(ch);
+        const iv   = ui.realIvMs(ch);             // era realIvMs(ch) local
         const fine = fineShiftSamples[ch.id] || 0;
         const totalMs = (autoOffsetMs[ch.id] || 0) + fine * iv;
         ML.manualOffsets[ch.id] = totalMs;
@@ -530,7 +467,7 @@
 
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
-      const iv          = realIvMs(ch);
+      const iv          = ui.realIvMs(ch);        // era realIvMs(ch) local
       const autoSamples = Math.round((autoOffsetMs[ch.id] || 0) / iv);
       if (!manualMode) return autoSamples;
       return autoSamples + (fineShiftSamples[ch.id] || 0);
@@ -710,5 +647,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart atualizado: painel responsivo, default 10 picos, alinhamento visual reforçado.');
+  console.log('[MedLat] 40-chart carregado.');
 })();
