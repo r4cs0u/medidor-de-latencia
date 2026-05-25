@@ -20,6 +20,7 @@
       { id:'ch2', label:'Tela 3',      color:'#44ff88',  active:false, lagPreset:'auto' },
       { id:'ch3', label:'Tela 4',      color:'#ffd700',  active:false, lagPreset:'auto' },
       { id:'ch4', label:'Tela 5',      color:'#ff66ff',  active:false, lagPreset:'auto' },
+      { id:'ch5', label:'Tela 6',      color:'#ff9933',  active:false, lagPreset:'auto' },
     ],
 
     LAG_PRESETS,
@@ -50,5 +51,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. 5 canais, noOverlap=true, MIN_LAG_MS=20000, LAG_PRESETS: auto/lento/normal/rapido.');
+  console.log('[MedLat] 00-core carregado. 6 canais, noOverlap=true, MIN_LAG_MS=20000, LAG_PRESETS: auto/lento/normal/rapido.');
 })();
