@@ -334,8 +334,8 @@
 
     /* ── Seção: Análise ── */
     const secAn = ui.sec('Análise');
-    const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
-    const btnAnalyze = ui.mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
+    const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:1px 3px;font-size:8px;line-height:1.2;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
+    const btnAnalyze = ui.mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:1px 3px;font-size:8px;line-height:1.2;letter-spacing:.04em;color:#ce93d8;opacity:.45');
     btnRec.title     = 'Inicia a captura de luminância';
     btnAnalyze.title = 'Calcula a latência com base nos dados gravados';
 
