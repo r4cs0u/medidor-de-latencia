@@ -101,19 +101,6 @@
     return inp;
   }
 
-  // ── Escala responsiva ────────────────────────────────────────────────────────
-
-  const BASE_W = 340;
-
-  function applyScale(panel, probeGrid, w) {
-    const scale = Math.max(0.7, Math.min(2.5, w / BASE_W));
-    const fs    = Math.max(8, Math.round(11 * scale));
-    panel.style.fontSize = fs + 'px';
-    // Grid de telas: 3 colunas acima de 320px, 2 abaixo de 220px, 1 abaixo de 150px
-    const cols = w >= 320 ? 3 : w >= 220 ? 2 : 1;
-    probeGrid.style.gridTemplateColumns = `repeat(${cols},1fr)`;
-  }
-
   // ── init ────────────────────────────────────────────────────────────────────
 
   function init() {
@@ -127,14 +114,16 @@
 
     function applyPanelStyle() {
       const t = ui.T;
-      // Não sobrescreve width/height se já foram ajustados pelo resize
-      const hasSize = panel.style.width && panel.style.width !== '340px';
+      // Preserva width e height se já foram ajustados pelo resize
+      const hasW = panel.style.width  && panel.style.width  !== '340px';
+      const hasH = panel.style.height && panel.style.height !== '';
       panel.style.cssText = [
         `position:fixed;top:4px;left:4px;z-index:99999`,
         `background:${t.panelBg};border:1px solid ${t.panelBorder}`,
         'border-radius:6px;box-shadow:0 4px 24px #000c',
         `font-family:monospace;font-size:11px;color:${t.textPrimary}`,
-        `user-select:none;width:${hasSize ? panel.style.width : '340px'}`,
+        `user-select:none;width:${hasW ? panel.style.width : '340px'}`,
+        ...(hasH ? [`height:${panel.style.height}`] : []),
         'display:flex;flex-direction:column;overflow:hidden',
       ].join(';');
     }
@@ -558,18 +547,43 @@
 
     panel.appendChild(scrollBody);
 
+    // ── Escala responsiva (dentro de init para acessar secTG e secAn) ────────
+    const BASE_W = 340;
+    const BASE_H = 600;  // altura padrão de referência
+
+    function applyScale(w, h) {
+      // escala por largura (como antes)
+      const scaleW = Math.max(0.7, Math.min(2.5, w / BASE_W));
+      // escala por altura: só sobe acima de 1 quando h > BASE_H; não encolhe abaixo de 1
+      const scaleH = h != null ? Math.max(1.0, Math.min(2.5, h / BASE_H)) : 1;
+      // o menor dos dois limita para não vazar conteúdo
+      const scale  = Math.min(scaleW, scaleH);
+      const fs     = Math.max(8, Math.round(11 * scale));
+      panel.style.fontSize = fs + 'px';
+
+      // colunas do grid por largura
+      const cols = w >= 320 ? 3 : w >= 220 ? 2 : 1;
+      probeGrid.style.gridTemplateColumns = `repeat(${cols},1fr)`;
+
+      // reorganização por altura: oculta seções menos críticas em painéis baixos
+      if (h != null) {
+        secTG.style.display = h < 260 ? 'none' : '';
+        secAn.style.display = h < 200 ? 'none' : '';
+      }
+    }
+
     // ── Resize responsivo ────────────────────────────────────────────────────
     ui.makeResizable(panel, {
       minW: 220,
       minH: 180,
-      onResize: (w) => applyScale(panel, probeGrid, w),
+      onResize: (w, h) => applyScale(w, h),
     });
 
     // ── ResizeObserver como fallback para escala inicial ─────────────────────
     if (window.ResizeObserver) {
       new ResizeObserver(entries => {
-        const w = entries[0].contentRect.width;
-        applyScale(panel, probeGrid, w);
+        const { width: w, height: h } = entries[0].contentRect;
+        applyScale(w, h);
       }).observe(panel);
     }
 
