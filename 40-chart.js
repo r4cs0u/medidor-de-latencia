@@ -106,12 +106,12 @@
     const mainPanel = document.getElementById('ml-panel');
     const mpRect = mainPanel
       ? mainPanel.getBoundingClientRect()
-      : { left: window.innerWidth - 248, top: 8, width: 228, height: 0 };
+      : { left: window.innerWidth - 248, right: window.innerWidth - 20, top: 8, width: 228, height: 0 };
 
     const GAP = 6;
-    const initLeft = GAP;
+    const initLeft = mpRect.right + GAP;
     const initTop  = GAP;
-    const INIT_W = Math.max(320, mpRect.left - initLeft - GAP);
+    const INIT_W = Math.max(320, window.innerWidth - initLeft - GAP);
     const INIT_H = Math.max(260, window.innerHeight - initTop - GAP);
 
     const panel = document.createElement('div');
@@ -226,8 +226,12 @@
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => {
       if (e.target !== hdr && e.target !== htitle) return;
-      pdrag = true; panel.style.right = 'auto';
-      pox = e.clientX - panel.offsetLeft; poy = e.clientY - panel.offsetTop;
+      pdrag = true;
+      const rect = panel.getBoundingClientRect();
+      panel.style.left = rect.left + 'px';
+      panel.style.right = 'auto';
+      pox = e.clientX - rect.left;
+      poy = e.clientY - rect.top;
       e.preventDefault();
     });
     window.addEventListener('mousemove', e => { if (!pdrag) return; panel.style.left = Math.max(0, e.clientX - pox) + 'px'; panel.style.top = Math.max(0, e.clientY - poy) + 'px'; });
