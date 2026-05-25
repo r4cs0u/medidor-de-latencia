@@ -37,7 +37,6 @@
       snapGrid:  true,
       snapSize:  2,
       noOverlap: true,
-      analysisMode: 'legacy',
     },
 
     stop() { this.state.running = false; },
@@ -52,5 +51,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. 6 canais, noOverlap=true, MIN_LAG_MS=20000, LAG_PRESETS: auto/lento/normal/rapido, analysisMode=legacy.');
+  console.log('[MedLat] 00-core carregado. 6 canais, noOverlap=true, MIN_LAG_MS=20000, LAG_PRESETS: auto/lento/normal/rapido.');
 })();

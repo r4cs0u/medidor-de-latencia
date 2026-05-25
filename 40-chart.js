@@ -76,13 +76,6 @@
     };
   }
 
-  function normalizeAnalysisMode(mode) {
-    if (mode === 'legacy' || mode === 'hybrid' || mode === 'compare') return mode;
-    return 'legacy';
-  }
-  function setAnalysisMode(mode) { ML.state.analysisMode = normalizeAnalysisMode(mode); }
-  function getAnalysisMode()     { return normalizeAnalysisMode(ML.state.analysisMode); }
-
   // ── helpers de cor para Chart.js (tema fixo dark) ─────────────────────────
   function gridColor()     { return 'transparent'; }
   function tickColor()     { return '#556688'; }
@@ -147,40 +140,6 @@
     function updateModeBtn() { btnMode.textContent = chartMode === 'parallel' ? '⫴ Paralelo' : '⧉ Sobreposto'; }
     updateModeBtn();
 
-    const modeBar = document.createElement('div');
-    modeBar.style.cssText = 'display:flex;align-items:center;gap:3px;flex-shrink:0;margin-right:4px;';
-    const btnLegacy  = document.createElement('button');
-    const btnHybrid  = document.createElement('button');
-    const btnCompare = document.createElement('button');
-
-    function applyAnalysisBtnBase(btn) {
-      btn.style.cssText = [
-        `background:${ui.T.btnBg};border:1px solid ${ui.T.btnBorder};color:${ui.T.textMuted}`,
-        'border-radius:3px;padding:2px 4px;cursor:pointer;font:bold 8px monospace;white-space:nowrap',
-      ].join(';');
-    }
-    [btnLegacy, btnHybrid, btnCompare].forEach(b => applyAnalysisBtnBase(b));
-    btnLegacy.textContent  = 'Atual';
-    btnHybrid.textContent  = 'Híbrido';
-    btnCompare.textContent = 'Comparar';
-
-    function refreshModeButtons() {
-      const mode = getAnalysisMode();
-      [btnLegacy, btnHybrid, btnCompare].forEach(b => applyAnalysisBtnBase(b));
-      let activeBtn = btnLegacy;
-      if (mode === 'hybrid') activeBtn = btnHybrid;
-      else if (mode === 'compare') activeBtn = btnCompare;
-      activeBtn.style.background   = '#00d4ff22';
-      activeBtn.style.borderColor  = '#00d4ff88';
-      activeBtn.style.color        = '#00d4ff';
-    }
-    refreshModeButtons();
-
-    btnLegacy.onclick  = () => { setAnalysisMode('legacy');  refreshModeButtons(); rebuildCharts(); };
-    btnHybrid.onclick  = () => { setAnalysisMode('hybrid');  refreshModeButtons(); rebuildCharts(); };
-    btnCompare.onclick = () => { setAnalysisMode('compare'); refreshModeButtons(); rebuildCharts(); };
-    modeBar.append(btnLegacy, btnHybrid, btnCompare);
-
     let manualMode = false;
     const btnManual = document.createElement('button');
     function applyManualBtnStyle() {
@@ -206,7 +165,7 @@
     btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnClose.onclick = () => panel.remove();
 
-    hdr.append(htitle, modeBar, btnManual, btnPeaks, btnMode, btnClose);
+    hdr.append(htitle, btnManual, btnPeaks, btnMode, btnClose);
     panel.appendChild(hdr);
 
     let pdrag = false, pox = 0, poy = 0;
@@ -262,25 +221,13 @@
     });
 
     const originalAutoMs = {};
-    const hybridAutoMs   = {};
     const confirmedMs    = {};
-    ML.CHANNELS.forEach(ch => { originalAutoMs[ch.id] = 0; hybridAutoMs[ch.id] = 0; confirmedMs[ch.id] = 0; });
+    ML.CHANNELS.forEach(ch => { originalAutoMs[ch.id] = 0; confirmedMs[ch.id] = 0; });
     results.forEach(r => {
       if (r.isReference || !r.channel || r.error || r.skipped || r.offsetMs == null) return;
       originalAutoMs[r.channel.id] = r.offsetMs;
       confirmedMs[r.channel.id]    = r.offsetMs;
     });
-
-    function computeHybridIfNeeded() {
-      if (!ML.hybridAnalyzer || getAnalysisMode() === 'legacy') return;
-      try {
-        ML.hybridAnalyzer.analyzeBestAll().forEach(r => {
-          if (r.isReference || !r.channel || r.error || r.offsetMs == null) return;
-          hybridAutoMs[r.channel.id] = r.offsetMs;
-        });
-      } catch (e) { console.error('[MedLat] Erro ao calcular híbrido:', e); }
-    }
-    computeHybridIfNeeded();
 
     const fineShiftSamples = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
@@ -547,12 +494,7 @@
 
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
-      const iv   = ui.realIvMs(ch);
-      const mode = getAnalysisMode();
-      if (mode === 'hybrid' || mode === 'compare') {
-        const base = hybridAutoMs[ch.id] || originalAutoMs[ch.id] || 0;
-        return Math.round(base / iv);
-      }
+      const iv = ui.realIvMs(ch);
       return Math.round((confirmedMs[ch.id] || 0) / iv);
     }
 
@@ -734,5 +676,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart carregado. Modo de análise: ' + getAnalysisMode() + '.');
+  console.log('[MedLat] 40-chart carregado.');
 })();
