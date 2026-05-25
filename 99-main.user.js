@@ -4,6 +4,7 @@
 // @version      1.0
 // @description  Mede latência entre múltiplos sinais de vídeo por análise de luminância
 // @match        https://mediamonitor.rj.g.globo/actus5/channels*
+// @match        http://10.3.89.100/gridvision/mosaico*
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
 // @run-at       document-idle
