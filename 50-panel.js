@@ -549,7 +549,7 @@
 
     // ── Escala responsiva (dentro de init para acessar secTG e secAn) ────────
     const BASE_W = 340;
-    const BASE_H = 600;  // altura padrão de referência
+    const BASE_H = 640;  // altura padrão de referência
 
     function applyScale(w, h) {
       // escala por largura (como antes)
