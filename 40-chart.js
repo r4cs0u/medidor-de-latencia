@@ -37,7 +37,6 @@
     ctx.beginPath();
     ctx.moveTo(xPx, yAxis.top);
     ctx.lineTo(xPx, yAxis.bottom);
-
     if (snapDist === 0) {
       ctx.strokeStyle = '#ffffffdd';
       ctx.lineWidth   = 1.5;
@@ -48,7 +47,6 @@
       ctx.strokeStyle = color + '44';
       ctx.lineWidth   = 1;
     }
-
     ctx.stroke();
   }
 
@@ -82,14 +80,20 @@
     if (mode === 'legacy' || mode === 'hybrid' || mode === 'compare') return mode;
     return 'legacy';
   }
+  function setAnalysisMode(mode) { ML.state.analysisMode = normalizeAnalysisMode(mode); }
+  function getAnalysisMode()     { return normalizeAnalysisMode(ML.state.analysisMode); }
 
-  function setAnalysisMode(mode) {
-    ML.state.analysisMode = normalizeAnalysisMode(mode);
-  }
-
-  function getAnalysisMode() {
-    return normalizeAnalysisMode(ML.state.analysisMode);
-  }
+  // ── helpers de cor para Chart.js ─────────────────────────────────────────
+  function gridColor()     { return ui.T.isDark ? '#16162a' : '#e0e0e8'; }
+  function tickColor()     { return ui.T.isDark ? '#556688' : '#888aaa'; }
+  function tickColorFaint(){ return ui.T.isDark ? '#445566' : '#aaaacc'; }
+  function tooltipBg()     { return ui.T.isDark ? '#12121fee' : '#ffffffee'; }
+  function tooltipTitle()  { return ui.T.isDark ? '#00d4ff'   : '#0077aa'; }
+  function tooltipBody()   { return ui.T.isDark ? '#aaaacc'   : '#333355'; }
+  function tooltipBorder() { return ui.T.isDark ? '#2a2a4a'   : '#ccccdd'; }
+  function legendColor()   { return ui.T.isDark ? '#778899'   : '#555577'; }
+  function rowBg(color)    { return color + (ui.T.isDark ? '0d' : '18'); }
+  function rowBorder(color){ return color + (ui.T.isDark ? '22' : '44'); }
 
   async function showChart(results) {
     if (!Array.isArray(results)) results = [results];
@@ -97,7 +101,6 @@
     ui.injectSliderCSS();
     const old = document.getElementById('ml-chart-panel');
     if (old) old.remove();
-
     Object.keys(chartMeta).forEach(k => delete chartMeta[k]);
 
     const mainPanel = document.getElementById('ml-panel');
@@ -113,42 +116,61 @@
 
     const panel = document.createElement('div');
     panel.id = 'ml-chart-panel';
-    panel.style.cssText = [
-      `position:fixed;left:${initLeft}px;top:${initTop}px`,
-      `width:${INIT_W}px;height:${INIT_H}px`,
-      'z-index:99998;min-width:180px;min-height:200px',
-      'background:#0e0e1aee;border:1px solid #2a2a4a',
-      'border-radius:8px;box-shadow:0 4px 24px #000d',
-      'font-family:monospace;font-size:10px;color:#ccc',
-      'user-select:none;overflow:hidden;display:flex;flex-direction:column',
-    ].join(';');
+
+    function applyPanelStyle() {
+      panel.style.cssText = [
+        `position:fixed;left:${initLeft}px;top:${initTop}px`,
+        `width:${INIT_W}px;height:${INIT_H}px`,
+        'z-index:99998;min-width:180px;min-height:200px',
+        `background:${ui.T.panelBg};border:1px solid ${ui.T.panelBorder}`,
+        'border-radius:8px;box-shadow:0 4px 24px #000d',
+        `font-family:monospace;font-size:10px;color:${ui.T.textPrimary}`,
+        'user-select:none;overflow:hidden;display:flex;flex-direction:column',
+      ].join(';');
+    }
+    applyPanelStyle();
+    ui.onThemeChange(() => { if (panel.isConnected) { applyPanelStyle(); rebuildCharts(); } });
 
     const hdr = document.createElement('div');
-    hdr.style.cssText = [
-      'display:flex;align-items:center;gap:5px;padding:5px 8px 4px',
-      'background:#1a1a2e;border-bottom:1px solid #1e1e3a',
-      'border-radius:8px 8px 0 0;cursor:move;flex-shrink:0',
-    ].join(';');
+    function applyHdrStyle() {
+      hdr.style.cssText = [
+        'display:flex;align-items:center;gap:5px;padding:5px 8px 4px',
+        `background:${ui.T.headerBg};border-bottom:1px solid ${ui.T.panelBorder}`,
+        'border-radius:8px 8px 0 0;cursor:move;flex-shrink:0',
+      ].join(';');
+    }
+    applyHdrStyle();
+    ui.onThemeChange(() => { if (hdr.isConnected) applyHdrStyle(); });
+
     const htitle = document.createElement('span');
     htitle.textContent = '📊 Luminância';
     htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 
     let chartMode = 'parallel';
     const btnMode = document.createElement('button');
-    btnMode.style.cssText = 'background:#1e2a3a;border:1px solid #2a3a50;color:#00d4ff;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap';
+    function applyBtnModeStyle() {
+      btnMode.style.cssText = `background:${ui.T.btnBg};border:1px solid ${ui.T.btnBorder};color:#00d4ff;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap`;
+    }
+    applyBtnModeStyle();
+    ui.onThemeChange(() => { if (btnMode.isConnected) applyBtnModeStyle(); });
     function updateModeBtn() { btnMode.textContent = chartMode === 'parallel' ? '⫴ Paralelo' : '⧉ Sobreposto'; }
     updateModeBtn();
 
     const modeBar = document.createElement('div');
     modeBar.style.cssText = 'display:flex;align-items:center;gap:3px;flex-shrink:0;margin-right:4px;';
-    const btnLegacy = document.createElement('button');
-    const btnHybrid = document.createElement('button');
+    const btnLegacy  = document.createElement('button');
+    const btnHybrid  = document.createElement('button');
     const btnCompare = document.createElement('button');
-    [btnLegacy, btnHybrid, btnCompare].forEach(btn => {
+
+    function applyAnalysisBtnBase(btn) {
       btn.style.cssText = [
-        'background:#141420;border:1px solid #2a2a4a;color:#aaa',
+        `background:${ui.T.btnBg};border:1px solid ${ui.T.btnBorder};color:${ui.T.textMuted}`,
         'border-radius:3px;padding:2px 4px;cursor:pointer;font:bold 8px monospace;white-space:nowrap',
       ].join(';');
+    }
+    [btnLegacy, btnHybrid, btnCompare].forEach(b => {
+      applyAnalysisBtnBase(b);
+      ui.onThemeChange(() => { if (b.isConnected) refreshModeButtons(); });
     });
     btnLegacy.textContent  = 'Atual';
     btnHybrid.textContent  = 'Híbrido';
@@ -156,40 +178,40 @@
 
     function refreshModeButtons() {
       const mode = getAnalysisMode();
-      [btnLegacy, btnHybrid, btnCompare].forEach(btn => {
-        btn.style.background = '#141420';
-        btn.style.borderColor = '#2a2a4a';
-        btn.style.color = '#aaa';
-      });
+      [btnLegacy, btnHybrid, btnCompare].forEach(b => applyAnalysisBtnBase(b));
       let activeBtn = btnLegacy;
       if (mode === 'hybrid') activeBtn = btnHybrid;
       else if (mode === 'compare') activeBtn = btnCompare;
-      activeBtn.style.background = '#00d4ff22';
-      activeBtn.style.borderColor = '#00d4ff88';
-      activeBtn.style.color = '#00d4ff';
+      activeBtn.style.background   = '#00d4ff22';
+      activeBtn.style.borderColor  = '#00d4ff88';
+      activeBtn.style.color        = '#00d4ff';
     }
     refreshModeButtons();
 
     btnLegacy.onclick  = () => { setAnalysisMode('legacy');  refreshModeButtons(); rebuildCharts(); };
     btnHybrid.onclick  = () => { setAnalysisMode('hybrid');  refreshModeButtons(); rebuildCharts(); };
     btnCompare.onclick = () => { setAnalysisMode('compare'); refreshModeButtons(); rebuildCharts(); };
-
     modeBar.append(btnLegacy, btnHybrid, btnCompare);
 
     let manualMode = false;
     const btnManual = document.createElement('button');
-    btnManual.style.cssText = 'background:#1a2a1a;border:1px solid #44ff8855;color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap';
-    function updateManualBtn() {
-      btnManual.textContent = manualMode ? '✎ Ajustando' : '✎ Manual';
-      btnManual.style.background  = manualMode ? '#44ff8833' : '#1a2a1a';
-      btnManual.style.borderColor = manualMode ? '#44ff88'   : '#44ff8855';
+    function applyManualBtnStyle() {
+      btnManual.style.cssText = `background:${manualMode ? '#44ff8833' : ui.T.btnBg};border:1px solid ${manualMode ? '#44ff88' : '#44ff8855'};color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap`;
     }
+    applyManualBtnStyle();
+    ui.onThemeChange(() => { if (btnManual.isConnected) applyManualBtnStyle(); });
+    function updateManualBtn() { btnManual.textContent = manualMode ? '✎ Ajustando' : '✎ Manual'; applyManualBtnStyle(); }
     updateManualBtn();
 
     let showPeaks = true;
     const btnPeaks = document.createElement('button');
-    btnPeaks.style.cssText = 'background:#1e2a1a;border:1px solid #44ff8855;color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap';
-    function updatePeaksBtn() { btnPeaks.textContent = showPeaks ? '◼ Picos' : '◻ Picos'; btnPeaks.style.opacity = showPeaks ? '1' : '0.45'; }
+    function applyPeaksBtnStyle() {
+      btnPeaks.style.cssText = `background:${ui.T.btnBg};border:1px solid #44ff8855;color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap`;
+      btnPeaks.style.opacity = showPeaks ? '1' : '0.45';
+    }
+    applyPeaksBtnStyle();
+    ui.onThemeChange(() => { if (btnPeaks.isConnected) applyPeaksBtnStyle(); });
+    function updatePeaksBtn() { btnPeaks.textContent = showPeaks ? '◼ Picos' : '◻ Picos'; applyPeaksBtnStyle(); }
     updatePeaksBtn();
     btnPeaks.onclick = () => { showPeaks = !showPeaks; updatePeaksBtn(); rebuildCharts(); };
 
@@ -222,7 +244,7 @@
       h.appendChild(dot); panel.appendChild(h);
       let rsx=0,rsy=0,rsw=0,rsh=0,rsl=0,rst=0;
       h.addEventListener('mousedown', e => {
-        e.stopPropagation(); e.preventivent();
+        e.stopPropagation(); e.preventDefault();
         rsx=e.clientX; rsy=e.clientY; rsw=panel.offsetWidth; rsh=panel.offsetHeight; rsl=panel.offsetLeft; rst=panel.offsetTop;
         function onMove(ev) {
           const dx=ev.clientX-rsx, dy=ev.clientY-rsy;
@@ -238,7 +260,11 @@
     });
 
     const body = document.createElement('div');
-    body.style.cssText = 'flex:1;overflow-y:auto;padding:4px 8px 6px;display:flex;flex-direction:column;gap:4px;min-height:0';
+    function applyBodyStyle() {
+      body.style.cssText = `flex:1;overflow-y:auto;padding:4px 8px 6px;display:flex;flex-direction:column;gap:4px;min-height:0;color:${ui.T.textPrimary}`;
+    }
+    applyBodyStyle();
+    ui.onThemeChange(() => { if (body.isConnected) applyBodyStyle(); });
     panel.appendChild(body);
 
     const activeChannels = [];
@@ -262,14 +288,11 @@
     function computeHybridIfNeeded() {
       if (!ML.hybridAnalyzer || getAnalysisMode() === 'legacy') return;
       try {
-        const ref = ML.CHANNELS[0];
         ML.hybridAnalyzer.analyzeBestAll().forEach(r => {
           if (r.isReference || !r.channel || r.error || r.offsetMs == null) return;
           hybridAutoMs[r.channel.id] = r.offsetMs;
         });
-      } catch (e) {
-        console.error('[MedLat] Erro ao calcular híbrido:', e);
-      }
+      } catch (e) { console.error('[MedLat] Erro ao calcular híbrido:', e); }
     }
     computeHybridIfNeeded();
 
@@ -292,8 +315,7 @@
       if (!ch.buffer || !ch.buffer.length) { fixedYScale[ch.id] = { min: 0, max: 255 }; return; }
       const lums = ch.buffer.map(p => p.lum).filter(v => v != null);
       if (!lums.length) { fixedYScale[ch.id] = { min: 0, max: 255 }; return; }
-      const lMin = Math.min(...lums);
-      const lMax = Math.max(...lums);
+      const lMin = Math.min(...lums), lMax = Math.max(...lums);
       const rng  = Math.max(1, lMax - lMin);
       fixedYScale[ch.id] = {
         min: Math.max(0,   Math.floor(lMin - rng * 0.10)),
@@ -319,14 +341,14 @@
       results.forEach(r => {
         if (r.isReference || !r.channel) return;
         const ch = r.channel;
-        let autoTxt = '--', autoColor = '#445';
+        let autoTxt = '--', autoColor = ui.T.textMuted;
         if (!r.error && !r.skipped) {
           const s = originalAutoMs[ch.id] / 1000;
           autoTxt   = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
           autoColor = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
         } else {
-          autoTxt = r.error ? 'ERR' : '--';
-          autoColor = r.error ? '#ff4444' : '#445';
+          autoTxt   = r.error ? 'ERR' : '--';
+          autoColor = r.error ? '#ff4444' : ui.T.textMuted;
         }
         const card = mkCardCompact(ch.label, '', ch.color, autoTxt, autoColor);
         cardRefs[ch.id] = { ch, manualEl: card._manualEl, valEl: card._valEl };
@@ -383,27 +405,32 @@
     manualBar.style.cssText = 'display:none;flex-direction:column;gap:4px;padding:4px 0;flex-shrink:0';
 
     const manualHint = document.createElement('div');
-    manualHint.style.cssText = 'color:#ffd700;font-size:8px;text-align:center;opacity:.8';
+    function applyHintStyle() {
+      manualHint.style.cssText = `color:#ffd700;font-size:8px;text-align:center;opacity:.8`;
+    }
+    applyHintStyle();
     manualHint.textContent = '◄ dir = mais atraso  |  esq = menos atraso ►';
     manualBar.appendChild(manualHint);
 
     const btnResetAll = document.createElement('button');
     btnResetAll.textContent = '↺ Reset tudo';
     btnResetAll.title = 'Reseta todos os canais para o valor calculado automaticamente';
-    btnResetAll.style.cssText = [
-      'background:#2a1a1a;border:1px solid #ff884455;color:#ff8844',
-      'border-radius:3px;padding:2px 8px;cursor:pointer;font:bold 8px monospace;width:100%',
-    ].join(';');
+    function applyResetAllStyle() {
+      btnResetAll.style.cssText = [
+        `background:${ui.T.btnBg};border:1px solid #ff884455;color:#ff8844`,
+        'border-radius:3px;padding:2px 8px;cursor:pointer;font:bold 8px monospace;width:100%',
+      ].join(';');
+    }
+    applyResetAllStyle();
+    ui.onThemeChange(() => { if (btnResetAll.isConnected) applyResetAllStyle(); });
 
     const sliderRefs = {};
 
     activeChannels.forEach((ch, idx) => {
       if (idx === 0) return;
-
       const iv    = ui.realIvMs(ch);
       const range = Math.max(50, Math.round(ch.buffer.length * 1.0));
-
-      const row = document.createElement('div');
+      const row   = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:4px';
 
       const lbl = document.createElement('span');
@@ -426,7 +453,11 @@
       btnReset.style.cssText = 'background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px;width:18px;text-align:center';
 
       const valLbl = document.createElement('span');
-      valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
+      function applyValLblStyle() {
+        valLbl.style.cssText = `color:${ui.T.textMuted};font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap`;
+      }
+      applyValLblStyle();
+      ui.onThemeChange(() => { if (valLbl.isConnected) applyValLblStyle(); });
 
       function refreshLabel(fineVal) {
         const totalMs = (confirmedMs[ch.id] || 0) + fineVal * iv;
@@ -467,11 +498,14 @@
 
     const btnConfirm = document.createElement('button');
     btnConfirm.textContent = '✔ Confirmar ajuste';
-    btnConfirm.style.cssText = [
-      'background:#44ff8833;border:1px solid #44ff88;color:#44ff88',
-      'border-radius:3px;padding:3px 8px;cursor:pointer;font:bold 8px monospace',
-      'width:100%;margin-top:1px',
-    ].join(';');
+    function applyConfirmStyle() {
+      btnConfirm.style.cssText = [
+        'background:#44ff8833;border:1px solid #44ff88;color:#44ff88',
+        'border-radius:3px;padding:3px 8px;cursor:pointer;font:bold 8px monospace',
+        'width:100%;margin-top:1px',
+      ].join(';');
+    }
+    applyConfirmStyle();
     btnConfirm.onclick = () => {
       ML.manualOffsets = ML.manualOffsets || {};
       activeChannels.forEach((ch, idx) => {
@@ -534,18 +568,14 @@
       if (!shift) return data;
       const n   = data.length;
       const out = new Array(n).fill(null);
-      if (shift > 0) {
-        for (let i = 0; i < n - shift; i++) out[i] = data[i + shift];
-      } else {
-        const s = -shift;
-        for (let i = s; i < n; i++) out[i] = data[i - s];
-      }
+      if (shift > 0) { for (let i = 0; i < n - shift; i++) out[i] = data[i + shift]; }
+      else           { const s = -shift; for (let i = s; i < n; i++) out[i] = data[i - s]; }
       return out;
     }
 
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
-      const iv = ui.realIvMs(ch);
+      const iv   = ui.realIvMs(ch);
       const mode = getAnalysisMode();
       if (mode === 'hybrid' || mode === 'compare') {
         const base = hybridAutoMs[ch.id] || originalAutoMs[ch.id] || 0;
@@ -554,9 +584,7 @@
       return Math.round((confirmedMs[ch.id] || 0) / iv);
     }
 
-    function getFixedPeaks(ch) {
-      return showPeaks ? (fixedPeaks[ch.id] || []) : [];
-    }
+    function getFixedPeaks(ch) { return showPeaks ? (fixedPeaks[ch.id] || []) : []; }
 
     function registerCanvas(ch, canvas, chart, peaks, chShift) {
       chartMeta[ch.id] = { canvas, chart, peaks, ch, chShift };
@@ -564,9 +592,8 @@
 
     function buildParallel(channels) {
       const totalGap = (channels.length - 1) * 2;
-      const rowH = Math.max(48, Math.floor((chartsArea.offsetHeight - totalGap) / channels.length));
+      const rowH  = Math.max(48, Math.floor((chartsArea.offsetHeight - totalGap) / channels.length));
       const ticks = xMaxTicks();
-
       const refChVisible = channels[0];
       const refShift     = getTotalShift(refChVisible, 0);
       const refPeaks     = getFixedPeaks(refChVisible);
@@ -581,7 +608,7 @@
         const peaksRef = [peaks];
 
         const row = document.createElement('div');
-        row.style.cssText = `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0;padding:2px 3px;border-radius:4px;background:${ch.color}0d;box-shadow:inset 0 0 0 1px ${ch.color}22;overflow:hidden`;
+        row.style.cssText = `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0;padding:2px 3px;border-radius:4px;background:${rowBg(ch.color)};box-shadow:inset 0 0 0 1px ${rowBorder(ch.color)};overflow:hidden`;
         const lblEl = document.createElement('div');
         lblEl.style.cssText = `color:${ch.color};font-weight:bold;font-size:8px;width:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
         lblEl.textContent = (idx === 0 ? '★ ' : '') + ch.label;
@@ -590,8 +617,8 @@
         const cvs = document.createElement('canvas');
         wrap.appendChild(cvs); row.append(lblEl, wrap); chartsArea.appendChild(row);
 
-        const pluginRefPeaks = idx === 0 ? null : refPeaksRef;
-        const capturedShift = shift;
+        const pluginRefPeaks   = idx === 0 ? null : refPeaksRef;
+        const capturedShift    = shift;
         const capturedRefShift = refShift;
 
         const ci = new Chart(cvs, {
@@ -604,13 +631,13 @@
             scales: {
               x: {
                 display: idx === channels.length - 1,
-                ticks: { color: '#556', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks },
-                grid: { color: '#16162a' },
+                ticks: { color: tickColor(), font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks },
+                grid:  { color: gridColor() },
               },
               y: {
                 min: yMin, max: yMax,
-                ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 3 },
-                grid: { color: '#16162a' },
+                ticks: { color: tickColorFaint(), font: { size: 7 }, maxTicksLimit: 3 },
+                grid:  { color: gridColor() },
               },
             },
           },
@@ -635,7 +662,7 @@
       const refShift = refEntry.shift;
 
       const wrap = document.createElement('div');
-      wrap.style.cssText = 'flex:1;min-height:0;overflow:hidden;border-radius:4px;background:#0a0a16;border:1px solid #1a1a30;position:relative';
+      wrap.style.cssText = `flex:1;min-height:0;overflow:hidden;border-radius:4px;background:${ui.T.isDark ? '#0a0a16' : '#f4f4f8'};border:1px solid ${ui.T.panelBorder};position:relative`;
       if (manualMode) {
         const hint = document.createElement('div');
         hint.style.cssText = 'position:absolute;top:2px;left:50%;transform:translateX(-50%);color:#ffd70088;font-size:7px;pointer-events:none;z-index:2;white-space:nowrap';
@@ -646,9 +673,7 @@
       wrap.appendChild(cvs); chartsArea.appendChild(wrap);
 
       const allPeaksMerged = showPeaks
-        ? allLumsShifted.flatMap(({ ch, shift }) =>
-            getFixedPeaks(ch).map(p => ({ ...p, chShift: shift }))
-          )
+        ? allLumsShifted.flatMap(({ ch, shift }) => getFixedPeaks(ch).map(p => ({ ...p, chShift: shift })))
         : [];
 
       const datasets = allLumsShifted.map(({ ch, lums }) => ({
@@ -661,9 +686,7 @@
         id: 'peakLines_overlay',
         afterDraw(chart) {
           if (!allPeaksMerged.length) return;
-          const ctx   = chart.ctx;
-          const xAxis = chart.scales.x;
-          const yAxis = chart.scales.y;
+          const ctx = chart.ctx, xAxis = chart.scales.x, yAxis = chart.scales.y;
           if (!xAxis || !yAxis) return;
           ctx.save();
           allPeaksMerged.forEach(({ xIndex, color, chShift }) => {
@@ -683,10 +706,14 @@
           animation: false, responsive: true, maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
           plugins: {
-            legend: { display: true, position: 'bottom', labels: { color: '#778', font: { size: 8, family: 'monospace' }, boxWidth: 10, padding: 8 } },
+            legend: {
+              display: true, position: 'bottom',
+              labels: { color: legendColor(), font: { size: 8, family: 'monospace' }, boxWidth: 10, padding: 8 },
+            },
             tooltip: {
-              enabled: true, backgroundColor: '#12121fee', titleColor: '#00d4ff',
-              bodyColor: '#aaa', borderColor: '#2a2a4a', borderWidth: 1,
+              enabled: true, backgroundColor: tooltipBg(),
+              titleColor: tooltipTitle(), bodyColor: tooltipBody(),
+              borderColor: tooltipBorder(), borderWidth: 1,
               titleFont: { size: 8, family: 'monospace' }, bodyFont: { size: 8, family: 'monospace' },
               callbacks: {
                 title: items => items[0].label || '',
@@ -696,8 +723,8 @@
           },
           layout: { padding: { top: 2, right: 4, bottom: 0, left: 0 } },
           scales: {
-            x: { ticks: { color: '#556', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks }, grid: { color: '#16162a' } },
-            y: { min: fixedGlobalYMin, max: fixedGlobalYMax, ticks: { color: '#444', font: { size: 7 }, maxTicksLimit: 5 }, grid: { color: '#16162a' } },
+            x: { ticks: { color: tickColor(),      font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks }, grid: { color: gridColor() } },
+            y: { min: fixedGlobalYMin, max: fixedGlobalYMax, ticks: { color: tickColorFaint(), font: { size: 7 }, maxTicksLimit: 5 }, grid: { color: gridColor() } },
           },
         },
         plugins: allPeaksMerged.length ? [overlayPeakPlugin] : [],
@@ -711,11 +738,15 @@
 
   function mkCardCompact(label, prefix, color, autoTxt, autoColor) {
     const card = document.createElement('div');
-    card.style.cssText = [
-      'display:inline-flex;align-items:center;gap:5px;flex-shrink:0',
-      `border:1px solid ${color}55;border-top:2px solid ${color}99`,
-      `background:${color}0d;border-radius:4px;padding:3px 6px`,
-    ].join(';');
+    function applyCardStyle() {
+      card.style.cssText = [
+        'display:inline-flex;align-items:center;gap:5px;flex-shrink:0',
+        `border:1px solid ${color}55;border-top:2px solid ${color}99`,
+        `background:${color + (ui.T.isDark ? '0d' : '18')};border-radius:4px;padding:3px 6px`,
+      ].join(';');
+    }
+    applyCardStyle();
+    ui.onThemeChange(() => { if (card.isConnected) applyCardStyle(); });
     if (prefix) {
       const sp = document.createElement('span');
       sp.textContent = prefix; sp.style.cssText = `color:${color};font-size:9px;flex-shrink:0`;
