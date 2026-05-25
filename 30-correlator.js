@@ -91,26 +91,25 @@
 
   /**
    * effectiveLag: respeita o lagPreset do canal B quando definido.
-   * - 'auto'   → comportamento original (baseado no buffer)
-   * - 'lento'  → busca entre 15s e 30s
-   * - 'normal' → busca entre 5s e 15s
-   * - 'rapido' → busca entre 0 e 5s
+   * - 'auto'   → 15s–30s (mesmo range de 'lento')
+   * - 'lento'  → 15s–30s
+   * - 'normal' → 5s–15s
+   * - 'rapido' → 0s–5s
    */
   function effectiveLag(serA, serB) {
     const chB    = ML.CHANNELS.find(c => c.label === serB.label);
-    const preset = chB && ML.LAG_PRESETS ? ML.LAG_PRESETS[chB.lagPreset || 'auto'] : null;
+    const key    = (chB && chB.lagPreset) || 'auto';
+
+    // 'auto' usa o mesmo range de 'lento' (15s–30s)
+    const presetKey = key === 'auto' ? 'lento' : key;
+    const preset    = ML.LAG_PRESETS ? ML.LAG_PRESETS[presetKey] : null;
 
     if (preset) {
       return { minLagMs: preset.min, maxLagMs: preset.max };
     }
 
-    // Auto: comportamento original
-    const minSamples = Math.min(serA.lum.length, serB.lum.length);
-    const durationMs = minSamples * ML.INTERVAL_MS;
-    const lagMs      = Math.floor(durationMs * 0.8);
-    const minLag     = ML.MIN_LAG_MS || 20000;
-    const maxLag     = (ML.BUFFER_SECONDS || 120) * 1000;
-    return { minLagMs: minLag, maxLagMs: Math.max(minLag, Math.min(lagMs, maxLag)) };
+    // Fallback defensivo
+    return { minLagMs: 15000, maxLagMs: 30000 };
   }
 
   function landmarkOffset(lumA, lumB, maxLagSamples, minLagSamples) {
@@ -158,9 +157,9 @@
     const ivB  = realIntervalMs(serB);
     const ivMs = (ivA + ivB) / 2;
 
-    const lagRange      = effectiveLag(serA, serB);
-    const usedMaxLagMs  = maxLagMs || lagRange.maxLagMs;
-    const usedMinLagMs  = lagRange.minLagMs;
+    const lagRange     = effectiveLag(serA, serB);
+    const usedMaxLagMs = maxLagMs || lagRange.maxLagMs;
+    const usedMinLagMs = lagRange.minLagMs;
 
     const maxLagSamples = Math.ceil(usedMaxLagMs / ivMs);
     const minLagSamples = Math.ceil(usedMinLagMs / ivMs);
@@ -241,5 +240,5 @@
   }
 
   ML.correlator = { analyze, analyzeBest, analyzeBestAll, crossCorrelation, diffSeries, normalize };
-  console.log('[MedLat] 30-correlator carregado. lagPresets: auto/lento(15-30s)/normal(5-15s)/rapido(0-5s).');
+  console.log('[MedLat] 30-correlator carregado. lagPresets: auto/lento(15-30s) | normal(5-15s) | rapido(0-5s).');
 })();
