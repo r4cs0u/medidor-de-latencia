@@ -19,6 +19,7 @@
     '15-ui-utils.js',
     '20-recorder.js',
     '30-correlator.js',
+    '31-hybrid-analyzer.js',
     '40-chart.js',
     '55-help.js',
     '50-panel.js',
