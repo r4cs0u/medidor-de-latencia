@@ -1,7 +1,7 @@
 (function () {
   const ML = window.MedLat;
 
-  // ── Paleta dark (única) ────────────────────────────────────────────────
+  // ── Paleta dark (única, fixa) ──────────────────────────────────────────
 
   const DARK = {
     panelBg:      '#0a0a0a',
@@ -32,65 +32,12 @@
   ML.ui = ML.ui || {};
   ML.ui.T = Object.assign({}, DARK);
 
-  function applyTheme() {
-    ML.state.theme = 'dark';
-    Object.assign(ML.ui.T, DARK);
-
-    injectStyles(true);
-
-    ['ml-panel', 'ml-tips', 'ml-guide', 'ml-chart-overlay'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.setAttribute('data-ml-theme', 'dark');
-    });
-
-    let styleEl = document.getElementById('ml-theme-vars');
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = 'ml-theme-vars';
-      document.head.appendChild(styleEl);
-    }
-    const t = DARK;
-    styleEl.textContent = `
-      [data-ml-theme] {
-        --ml-panel-bg:      ${t.panelBg};
-        --ml-header-bg:     ${t.headerBg};
-        --ml-header-border: ${t.headerBorder};
-        --ml-sec-border:    ${t.sectionBorder};
-        --ml-row-border:    ${t.rowBorder};
-        --ml-input-bg:      ${t.inputBg};
-        --ml-input-border:  ${t.inputBorder};
-        --ml-input-color:   ${t.inputColor};
-        --ml-accent:        ${t.accentColor};
-        --ml-text:          ${t.textPrimary};
-        --ml-muted:         ${t.textMuted};
-        --ml-label:         ${t.textLabel};
-        --ml-sec-text:      ${t.textSection};
-        --ml-select-bg:     ${t.selectBg};
-        --ml-select-border: ${t.selectBorder};
-        --ml-select-color:  ${t.selectColor};
-        --ml-btn-bg:        ${t.btnBg};
-        --ml-btn-border:    ${t.btnBorder};
-        --ml-btn-color:     ${t.btnColor};
-        --ml-status-color:  ${t.statusColor};
-      }
-    `;
-
-    if (ML.ui._themeListeners) {
-      ML.ui._themeListeners.forEach(fn => { try { fn(t, 'dark'); } catch(e) {} });
-    }
-  }
-
-  function onThemeChange(fn) {
-    ML.ui._themeListeners = ML.ui._themeListeners || [];
-    ML.ui._themeListeners.push(fn);
-  }
-
   // ── CSS global injetado ────────────────────────────────────────────────
 
-  function injectStyles(force) {
-    if (!force && document.getElementById('ml-styles')) return;
-    let s = document.getElementById('ml-styles');
-    if (!s) { s = document.createElement('style'); s.id = 'ml-styles'; document.head.appendChild(s); }
+  function injectStyles() {
+    if (document.getElementById('ml-styles')) return;
+    const s = document.createElement('style');
+    s.id = 'ml-styles';
     const t = ML.ui.T;
     s.textContent = `
       @keyframes mlPulse {
@@ -128,6 +75,7 @@
       .ml-resize-se { bottom:-4px;right:-4px;width:12px;height:12px;cursor:se-resize; }
       .ml-resize-sw { bottom:-4px;left:-4px;width:12px;height:12px;cursor:sw-resize; }
     `;
+    document.head.appendChild(s);
   }
 
   // ── CSS do slider ──────────────────────────────────────────────────────
@@ -245,7 +193,6 @@
     const t = ML.ui.T;
     const win = document.createElement('div');
     win.id = id;
-    win.setAttribute('data-ml-theme', 'dark');
     win.style.cssText = [
       'position:fixed;z-index:99998',
       `background:${t.panelBg};border:1px solid ${t.panelBorder}`,
@@ -396,8 +343,6 @@
   // ── Widget minimizado ──────────────────────────────────────────────────
 
   function minimizePanel(panel) {
-    // IDs de todas as janelas secundárias a salvar/restaurar
-    // Inclui ml-chart-panel (novo nome do painel de gráfico do 40-chart.js)
     const secondaryIds = ['ml-tips', 'ml-guide', 'ml-chart-overlay', 'ml-chart-panel'];
     const savedWindows = [];
     secondaryIds.forEach(id => {
@@ -424,13 +369,9 @@
     widget.title = 'Restaurar Analisador de Lat\u00eancia';
     widget.innerHTML = '\ud83d\udd50';
 
-    // Posiciona o widget no mesmo canto do painel principal (esquerda)
     const panelRect = panel.getBoundingClientRect();
-    const widgetLeft = Math.max(4, panelRect.left);
-    const widgetTop  = Math.max(4, panelRect.top);
-
     widget.style.cssText = [
-      `position:fixed;left:${widgetLeft}px;top:${widgetTop}px;z-index:999999`,
+      `position:fixed;left:${Math.max(4, panelRect.left)}px;top:${Math.max(4, panelRect.top)}px;z-index:999999`,
       'width:32px;height:32px;border-radius:8px',
       `background:${t.widgetBg};border:2px solid ${t.widgetBorder}`,
       'display:flex;align-items:center;justify-content:center',
@@ -444,13 +385,14 @@
         widget.style.borderColor = '#c62828';
       } else {
         widget.style.animation = '';
-        widget.style.borderColor = ML.ui.T.widgetBorder;
+        widget.style.borderColor = t.widgetBorder;
       }
     }
     syncPulse();
     const pulseTimer = setInterval(syncPulse, 500);
 
     let wdrag = false, wx = 0, wy = 0;
+
     function onWMove(e) {
       if (!wdrag) return;
       widget.style.right = 'auto';
@@ -458,15 +400,15 @@
       widget.style.left = pos.left + 'px';
       widget.style.top  = pos.top  + 'px';
     }
-    function onWUp() {
+
+    function onWUp(e) {
+      window.removeEventListener('mousemove', onWMove);
+      window.removeEventListener('mouseup', onWUp);
       if (!wdrag) {
+        // clique simples: restaura
         clearInterval(pulseTimer);
-        window.removeEventListener('mousemove', onWMove);
-        window.removeEventListener('mouseup', onWUp);
         widget.remove();
-        // Restaura painel principal
-        panel.style.display = 'block';
-        // Restaura janelas secundárias (inclusive ml-chart-panel)
+        panel.style.display = 'flex';
         savedWindows.forEach(s => {
           const el = document.getElementById(s.id);
           if (!el) return;
@@ -481,20 +423,30 @@
       }
       wdrag = false;
     }
+
     widget.addEventListener('mousedown', e => {
       e.stopPropagation(); e.preventDefault();
       wdrag = false;
       const wrect = widget.getBoundingClientRect();
       wx = e.clientX - wrect.left;
       wy = e.clientY - wrect.top;
-      function onMoveOnce(ev) {
-        if (Math.hypot(ev.clientX - (wrect.left + wx), ev.clientY - (wrect.top + wy)) > 4) wdrag = true;
+      const startX = e.clientX, startY = e.clientY;
+
+      function onMoveDrag(ev) {
+        if (!wdrag && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 4) {
+          wdrag = true;
+        }
+        onWMove(ev);
       }
-      window.addEventListener('mousemove', onMoveOnce, { once: false });
-      widget._onMoveOnce = onMoveOnce;
-      window.addEventListener('mousemove', onWMove);
-      window.addEventListener('mouseup', onWUp, { once: true });
+
+      window.addEventListener('mousemove', onMoveDrag);
+      window.addEventListener('mouseup', function onUp(ev) {
+        window.removeEventListener('mousemove', onMoveDrag);
+        window.removeEventListener('mouseup', onUp);
+        onWUp(ev);
+      });
     });
+
     document.body.appendChild(widget);
   }
 
@@ -523,7 +475,7 @@
     inp.type = 'number'; inp.min = min; inp.max = max; inp.step = step; inp.value = val;
     inp.style.cssText = `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.textPrimary};font:bold 10px monospace;width:${w}px;border-radius:3px;padding:1px 3px;text-align:center;outline:none;-moz-appearance:textfield`;
     inp.addEventListener('focus', () => inp.style.borderColor = t.inputBorder + 'cc');
-    inp.addEventListener('blur',  () => inp.style.borderColor = ML.ui.T.inputBorder);
+    inp.addEventListener('blur',  () => inp.style.borderColor = t.inputBorder);
     return inp;
   }
 
@@ -557,15 +509,12 @@
 
   // ── Init ───────────────────────────────────────────────────────────────
 
-  ML.state.theme = 'dark';
   injectStyles();
 
   // ── Expose ─────────────────────────────────────────────────────────────
 
   Object.assign(ML.ui, {
     DARK,
-    applyTheme,
-    onThemeChange,
     injectStyles,
     clampPos, positionNearPanel,
     makeDraggableWindow,
@@ -578,5 +527,5 @@
     mkIconBtn, mkBtn, mkNum, sec, row, sp,
   });
 
-  console.log('[MedLat] 15-ui-utils carregado (dark only).');
+  console.log('[MedLat] 15-ui-utils carregado (dark fixo).');
 })();
