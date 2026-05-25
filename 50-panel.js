@@ -110,16 +110,14 @@
       const el = document.getElementById(id); if (el) el.remove();
     });
 
-    const panelW = Math.round(Math.max(286, Math.min(390, window.innerWidth * 0.18)));
-
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
     panel.style.cssText = [
       'position:fixed;top:4px;right:4px;z-index:99999',
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
-      'font-family:monospace;font-size:11px;color:#fff',
-      `user-select:none;width:${panelW}px`,
+      'font-family:monospace;font-size:clamp(10px,0.9vw,13px);color:#f5f5ff',
+      'user-select:none;width:min(max(260px,22vw),420px)',
       'display:flex;flex-direction:column;max-height:calc(100vh - 8px);overflow:hidden',
     ].join(';');
 
@@ -133,7 +131,7 @@
     ].join(';');
     const ttl = document.createElement('span');
     ttl.textContent = '\u{1F550} ANALISADOR DE LAT\u00CANCIA';
-    ttl.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
+    ttl.style.cssText = 'color:#00e5ff;font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
     const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medição precisa', '#ffd700');
     const btnGuide = ui.mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
     const btnMin   = ui.mkIconBtn('\u2212', 'Minimizar para widget', '#aaaaaa');
@@ -206,7 +204,7 @@
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
 
     const rowPos = ui.row(4);
-    rowPos.append(ui.sp('PX', 'flex-shrink:0;font-size:8px'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
+    rowPos.append(ui.sp('PX', 'flex-shrink:0;font-size:9px;color:#d0d0ff'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
     secTG.appendChild(rowPos);
     scrollBody.appendChild(secTG);
 
@@ -312,17 +310,17 @@
       ].join(';');
       btnSzP.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) + 2);
 
-      r2.append(ui.sp('px', 'font-size:7px;color:#aaa;flex-shrink:0'), btnSzM, szInp, btnSzP);
+      r2.append(ui.sp('px', 'font-size:9px;color:#d0d0ff;flex-shrink:0'), btnSzM, szInp, btnSzP);
 
       const r3ded = ui.row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
-      r3ded.append(ui.sp('ded', 'font-size:7px;color:#ff9d00;flex-shrink:0'), mkDeductionInput(ch));
+      r3ded.append(ui.sp('ded', 'font-size:9px;color:#ff9d00;flex-shrink:0'), mkDeductionInput(ch));
 
       const rows = [r1, r2, r3ded];
       if (i !== 0) {
         const r4lag = ui.row(2);
         r4lag.style.cssText += ';overflow:hidden;min-width:0';
-        r4lag.append(ui.sp('lag', 'font-size:7px;color:#aaa;flex-shrink:0'), mkLagSelect(ch));
+        r4lag.append(ui.sp('lag', 'font-size:9px;color:#d0d0ff;flex-shrink:0'), mkLagSelect(ch));
         rows.push(r4lag);
       }
       rows.forEach(r => card.appendChild(r));
@@ -442,7 +440,7 @@
     ['Tela', 'Resultado', 'Real'].forEach((h, hi) => {
       const th = document.createElement('th');
       th.textContent = h;
-      th.style.cssText = `color:#aaa;font-weight:bold;padding:1px ${hi === 0 ? '2px' : '4px'};text-align:${hi === 0 ? 'left' : 'center'};border-bottom:1px solid #2a2a4a`;
+      th.style.cssText = `color:#d4d4ff;font-weight:bold;padding:1px ${hi === 0 ? '2px' : '4px'};text-align:${hi === 0 ? 'left' : 'center'};border-bottom:1px solid #2a2a4a`;
       trH.appendChild(th);
     });
     thead.appendChild(trH); tbl.appendChild(thead);
@@ -474,7 +472,7 @@
     const secSt = document.createElement('div');
     secSt.style.cssText = 'padding:3px 8px;flex-shrink:0';
     const statusEl = document.createElement('div');
-    statusEl.style.cssText = 'font-size:8px;color:#aaa;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    statusEl.style.cssText = 'font-size:9px;color:#d4d4ff;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     statusEl.textContent = 'Pronto';
     secSt.appendChild(statusEl);
     scrollBody.appendChild(secSt);
