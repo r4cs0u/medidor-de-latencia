@@ -115,6 +115,18 @@
       #ml-tips ::-webkit-scrollbar-thumb,
       #ml-guide ::-webkit-scrollbar-thumb,
       #ml-chart-overlay ::-webkit-scrollbar-thumb { background:${t.inputBorder};border-radius:2px; }
+
+      .ml-resize-handle {
+        position:absolute;z-index:10;
+      }
+      .ml-resize-n  { top:-4px;left:4px;right:4px;height:8px;cursor:n-resize; }
+      .ml-resize-s  { bottom:-4px;left:4px;right:4px;height:8px;cursor:s-resize; }
+      .ml-resize-e  { right:-4px;top:4px;bottom:4px;width:8px;cursor:e-resize; }
+      .ml-resize-w  { left:-4px;top:4px;bottom:4px;width:8px;cursor:w-resize; }
+      .ml-resize-ne { top:-4px;right:-4px;width:12px;height:12px;cursor:ne-resize; }
+      .ml-resize-nw { top:-4px;left:-4px;width:12px;height:12px;cursor:nw-resize; }
+      .ml-resize-se { bottom:-4px;right:-4px;width:12px;height:12px;cursor:se-resize; }
+      .ml-resize-sw { bottom:-4px;left:-4px;width:12px;height:12px;cursor:sw-resize; }
     `;
   }
 
@@ -172,6 +184,61 @@
     });
   }
 
+  // ── Redimensionamento por handles ──────────────────────────────────────
+
+  function makeResizable(el, { minW = 200, minH = 100, onResize } = {}) {
+    el.style.position = 'fixed';
+
+    const dirs = ['n','s','e','w','ne','nw','se','sw'];
+    dirs.forEach(dir => {
+      const h = document.createElement('div');
+      h.className = `ml-resize-handle ml-resize-${dir}`;
+      el.appendChild(h);
+
+      let startX, startY, startW, startH, startLeft, startTop;
+
+      h.addEventListener('mousedown', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = el.getBoundingClientRect();
+        startX    = e.clientX;
+        startY    = e.clientY;
+        startW    = rect.width;
+        startH    = rect.height;
+        startLeft = rect.left;
+        startTop  = rect.top;
+
+        function onMove(ev) {
+          const dx = ev.clientX - startX;
+          const dy = ev.clientY - startY;
+          let newW = startW, newH = startH, newL = startLeft, newT = startTop;
+
+          if (dir.includes('e')) newW = Math.max(minW, startW + dx);
+          if (dir.includes('s')) newH = Math.max(minH, startH + dy);
+          if (dir.includes('w')) { newW = Math.max(minW, startW - dx); newL = startLeft + (startW - newW); }
+          if (dir.includes('n')) { newH = Math.max(minH, startH - dy); newT = startTop  + (startH - newH); }
+
+          el.style.width  = newW + 'px';
+          el.style.height = newH + 'px';
+          el.style.left   = newL + 'px';
+          el.style.top    = newT + 'px';
+          el.style.right  = 'auto';
+          el.style.bottom = 'auto';
+
+          if (onResize) onResize(newW, newH);
+        }
+
+        function onUp() {
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+        }
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      });
+    });
+  }
+
   // ── Janela arrastável genérica ─────────────────────────────────────────
 
   function makeDraggableWindow(id, titleText, titleColor, width) {
@@ -208,9 +275,16 @@
 
     let drag = false, ox = 0, oy = 0;
     hdr.addEventListener('mousedown', e => {
+      if (e.target === btnClose) return;
       drag = true;
-      ox = e.clientX - win.offsetLeft;
-      oy = e.clientY - win.offsetTop;
+      // captura posição atual do elemento no momento do clique
+      const rect = win.getBoundingClientRect();
+      win.style.left   = rect.left + 'px';
+      win.style.top    = rect.top  + 'px';
+      win.style.right  = 'auto';
+      win.style.bottom = 'auto';
+      ox = e.clientX - rect.left;
+      oy = e.clientY - rect.top;
       e.preventDefault();
     });
     window.addEventListener('mousemove', e => {
@@ -323,7 +397,27 @@
   // ── Widget minimizado ──────────────────────────────────────────────────
 
   function minimizePanel(panel) {
+    // Salva estado de todas as janelas secundárias abertas
+    const secondaryIds = ['ml-tips', 'ml-guide', 'ml-chart-overlay'];
+    const savedWindows = [];
+    secondaryIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.style.display !== 'none') {
+        const rect = el.getBoundingClientRect();
+        savedWindows.push({
+          id,
+          left:    rect.left + 'px',
+          top:     rect.top  + 'px',
+          width:   el.style.width  || '',
+          height:  el.style.height || '',
+          display: el.style.display || 'block',
+        });
+        el.style.display = 'none';
+      }
+    });
+
     panel.style.display = 'none';
+
     const t = ML.ui.T;
     const widget = document.createElement('div');
     widget.id = 'ml-widget';
@@ -364,17 +458,31 @@
         window.removeEventListener('mousemove', onWMove);
         window.removeEventListener('mouseup', onWUp);
         widget.remove();
+        // Restaura painel principal
         panel.style.display = 'block';
+        // Restaura janelas secundárias na posição salva
+        savedWindows.forEach(s => {
+          const el = document.getElementById(s.id);
+          if (!el) return;
+          el.style.left    = s.left;
+          el.style.top     = s.top;
+          el.style.right   = 'auto';
+          el.style.bottom  = 'auto';
+          if (s.width)  el.style.width  = s.width;
+          if (s.height) el.style.height = s.height;
+          el.style.display = s.display;
+        });
       }
       wdrag = false;
     }
     widget.addEventListener('mousedown', e => {
       e.stopPropagation(); e.preventDefault();
       wdrag = false;
-      wx = e.clientX - widget.offsetLeft;
-      wy = e.clientY - widget.offsetTop;
+      const wrect = widget.getBoundingClientRect();
+      wx = e.clientX - wrect.left;
+      wy = e.clientY - wrect.top;
       function onMoveOnce(ev) {
-        if (Math.hypot(ev.clientX - (wx + widget.offsetLeft), ev.clientY - (wy + widget.offsetTop)) > 4) wdrag = true;
+        if (Math.hypot(ev.clientX - (wrect.left + wx), ev.clientY - (wrect.top + wy)) > 4) wdrag = true;
       }
       window.addEventListener('mousemove', onMoveOnce, { once: false });
       widget._onMoveOnce = onMoveOnce;
@@ -455,6 +563,7 @@
     injectStyles,
     clampPos, positionNearPanel,
     makeDraggableWindow,
+    makeResizable,
     injectSliderCSS, realIvMs,
     playDone,
     parseDeductionS, formatDeduction, colorByOffset,
