@@ -23,7 +23,11 @@
       ic.style.cssText = 'font-size:11px;flex-shrink:0;margin-top:1px';
       const tx = document.createElement('span');
       tx.textContent = text;
-      tx.style.cssText = 'font-size:9px;color:#fff';
+      function applyTxStyle() {
+        tx.style.cssText = `font-size:9px;color:${ui.T.textPrimary};font-weight:500`;
+      }
+      applyTxStyle();
+      ui.onThemeChange(() => { if (tx.isConnected) applyTxStyle(); });
       r.append(ic, tx);
       body.appendChild(r);
     });
@@ -59,12 +63,19 @@
     STEPS.forEach(({ section, color, items }) => {
       const secLabel = document.createElement('div');
       secLabel.textContent = section;
-      secLabel.style.cssText = `color:${color};font-size:8px;font-weight:bold;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;padding-bottom:2px;border-bottom:1px solid ${color}33`;
+      function applySecStyle() {
+        secLabel.style.cssText = `color:${color};font-size:8px;font-weight:bold;letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;padding-bottom:2px;border-bottom:1px solid ${color}33`;
+      }
+      applySecStyle();
       body.appendChild(secLabel);
       items.forEach(text => {
         const item = document.createElement('div');
         item.textContent = text;
-        item.style.cssText = 'font-size:9px;color:#ddd;line-height:1.5;padding-left:4px';
+        function applyItemStyle() {
+          item.style.cssText = `font-size:9px;color:${ui.T.textPrimary};line-height:1.5;padding-left:4px;font-weight:500`;
+        }
+        applyItemStyle();
+        ui.onThemeChange(() => { if (item.isConnected) applyItemStyle(); });
         body.appendChild(item);
       });
     });
