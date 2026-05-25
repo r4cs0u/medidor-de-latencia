@@ -84,7 +84,7 @@
   function getAnalysisMode()     { return normalizeAnalysisMode(ML.state.analysisMode); }
 
   // ── helpers de cor para Chart.js ─────────────────────────────────────────
-  function gridColor()     { return ui.T.isDark ? '#16162a' : '#e0e0e8'; }
+  function gridColor()     { return 'transparent'; }
   function tickColor()     { return ui.T.isDark ? '#556688' : '#888aaa'; }
   function tickColorFaint(){ return ui.T.isDark ? '#445566' : '#aaaacc'; }
   function tooltipBg()     { return ui.T.isDark ? '#12121fee' : '#ffffffee'; }
@@ -636,12 +636,12 @@
               x: {
                 display: idx === channels.length - 1,
                 ticks: { color: tickColor(), font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks },
-                grid:  { color: gridColor() },
+                grid:  { color: 'transparent' },
               },
               y: {
                 min: yMin, max: yMax,
                 ticks: { color: tickColorFaint(), font: { size: 7 }, maxTicksLimit: 3 },
-                grid:  { color: gridColor() },
+                grid:  { color: 'transparent' },
               },
             },
           },
@@ -727,8 +727,8 @@
           },
           layout: { padding: { top: 2, right: 4, bottom: 0, left: 0 } },
           scales: {
-            x: { ticks: { color: tickColor(),      font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks }, grid: { color: gridColor() } },
-            y: { min: fixedGlobalYMin, max: fixedGlobalYMax, ticks: { color: tickColorFaint(), font: { size: 7 }, maxTicksLimit: 5 }, grid: { color: gridColor() } },
+            x: { ticks: { color: tickColor(),      font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks }, grid: { color: 'transparent' } },
+            y: { min: fixedGlobalYMin, max: fixedGlobalYMax, ticks: { color: tickColorFaint(), font: { size: 7 }, maxTicksLimit: 5 }, grid: { color: 'transparent' } },
           },
         },
         plugins: allPeaksMerged.length ? [overlayPeakPlugin] : [],
