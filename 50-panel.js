@@ -60,7 +60,6 @@
     }
     sel.addEventListener('change', () => { ch.lagPreset = sel.value; updateSelColor(); });
     applySelStyle();
-    ui.onThemeChange(() => applySelStyle());
     return sel;
   }
 
@@ -96,7 +95,6 @@
       refreshRealColumn();
     });
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
-    ui.onThemeChange(() => applyDedStyle());
     ch._dedInp = inp;
     return inp;
   }
@@ -110,11 +108,9 @@
 
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
-    panel.setAttribute('data-ml-theme', ML.state.theme || 'dark');
 
     function applyPanelStyle() {
       const t = ui.T;
-      // Preserva width e height se já foram ajustados pelo resize
       const hasW = panel.style.width  && panel.style.width  !== '340px';
       const hasH = panel.style.height && panel.style.height !== '';
       panel.style.cssText = [
@@ -128,10 +124,6 @@
       ].join(';');
     }
     applyPanelStyle();
-    ui.onThemeChange(() => {
-      panel.setAttribute('data-ml-theme', ML.state.theme);
-      applyPanelStyle();
-    });
 
     // ── Header ──
     const hdr = document.createElement('div');
@@ -145,15 +137,10 @@
       ].join(';');
     }
     applyHdrStyle();
-    ui.onThemeChange(() => applyHdrStyle());
 
     const ttl = document.createElement('span');
     ttl.textContent = '\u{1F550} ANALISADOR DE LAT\u00CANCIA';
-    function applyTtlStyle() {
-      ttl.style.cssText = `color:${ui.T.textPrimary};font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
-    }
-    applyTtlStyle();
-    ui.onThemeChange(() => applyTtlStyle());
+    ttl.style.cssText = `color:${ui.T.textPrimary};font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
 
     const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medição precisa', '#ffd700');
     const btnGuide = ui.mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
@@ -222,7 +209,6 @@
     }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); };
     updateSnapBtn();
-    ui.onThemeChange(() => updateSnapBtn());
 
     const btnCol = ui.mkBtn('', '#2a1a0d', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box');
     btnCol.title = 'Evita sobreposição entre probes';
@@ -233,7 +219,6 @@
     }
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); };
     updateColBtn();
-    ui.onThemeChange(() => updateColBtn());
 
     const rowPos = ui.row(4);
     rowPos.append(ui.sp('PX', 'flex-shrink:0;font-size:9px'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
@@ -248,21 +233,16 @@
     ML.CHANNELS.forEach((ch, i) => {
       ch.deduction = ch.deduction || 0;
       const card = document.createElement('div');
-      function applyCardStyle() {
-        const isDark = (ML.state.theme || 'dark') === 'dark';
-        card.style.cssText = [
-          'display:flex;flex-direction:column;gap:2px',
-          'padding:3px 4px;border-radius:4px',
-          `border:1px solid ${ch.color}${isDark ? '55' : '99'}`,
-          `background:${ch.color}${isDark ? '0d' : '18'}`,
-          `border-top:2px solid ${ch.color}${isDark ? '99' : 'cc'}`,
-          `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
-          'box-sizing:border-box;min-width:0;overflow:hidden;width:100%',
-        ].join(';');
-      }
-      applyCardStyle();
+      card.style.cssText = [
+        'display:flex;flex-direction:column;gap:2px',
+        'padding:3px 4px;border-radius:4px',
+        `border:1px solid ${ch.color}55`,
+        `background:${ch.color}0d`,
+        `border-top:2px solid ${ch.color}99`,
+        `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
+        'box-sizing:border-box;min-width:0;overflow:hidden;width:100%',
+      ].join(';');
       ch._panelRow = card;
-      ui.onThemeChange(() => applyCardStyle());
 
       const r1 = ui.row(3);
       r1.style.cssText += ';overflow:hidden;min-width:0';
@@ -280,10 +260,7 @@
       const lblInp = document.createElement('input');
       lblInp.value = i === 0 ? 'Referência' : ch.label;
       lblInp.title = 'Clique para renomear a tela';
-      function applyLblStyle() {
-        lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
-      }
-      applyLblStyle();
+      lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
       lblInp.addEventListener('change', () => {
         ch.label = lblInp.value.replace(/^\u2605\s*/, '');
         if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
@@ -321,7 +298,6 @@
       applySzStyle();
       szInp.addEventListener('focus', () => szInp.style.borderColor = ui.T.inputBorder + 'cc');
       szInp.addEventListener('blur',  () => szInp.style.borderColor = ui.T.inputBorder);
-      ui.onThemeChange(() => applySzStyle());
       ch._szInp = szInp;
 
       function applyChanPx(v) {
@@ -337,16 +313,12 @@
       function mkSzBtn(symbol, title2) {
         const b = document.createElement('button');
         b.textContent = symbol; b.title = title2;
-        function applySzBtnStyle() {
-          const t = ui.T;
-          b.style.cssText = [
-            `background:${t.btnBg};border:1px solid ${t.btnBorder};color:${t.textPrimary}`,
-            'font:bold 9px monospace;border-radius:3px;padding:0 3px',
-            'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
-          ].join(';');
-        }
-        applySzBtnStyle();
-        ui.onThemeChange(() => applySzBtnStyle());
+        const t = ui.T;
+        b.style.cssText = [
+          `background:${t.btnBg};border:1px solid ${t.btnBorder};color:${t.textPrimary}`,
+          'font:bold 9px monospace;border-radius:3px;padding:0 3px',
+          'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
+        ].join(';');
         return b;
       }
       const btnSzM = mkSzBtn('\u2212', 'Diminuir probe');
@@ -384,11 +356,7 @@
     const progWrap = document.createElement('div');
     progWrap.style.cssText = 'display:none;flex-direction:column;gap:1px;padding:2px 0';
     const progBarOuter = document.createElement('div');
-    function applyProgStyle() {
-      progBarOuter.style.cssText = `width:100%;height:5px;background:${ui.T.inputBg};border-radius:3px;overflow:hidden`;
-    }
-    applyProgStyle();
-    ui.onThemeChange(() => applyProgStyle());
+    progBarOuter.style.cssText = `width:100%;height:5px;background:${ui.T.inputBg};border-radius:3px;overflow:hidden`;
     const progBarInner = document.createElement('div');
     progBarInner.style.cssText = 'height:100%;width:0%;background:#44ff88;border-radius:3px;transition:width .5s linear';
     progBarOuter.appendChild(progBarInner);
@@ -475,14 +443,10 @@
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
     btnCopyInline.title = 'Copiar tabela de resultados para a área de transferência';
-    function applyCopyBtnStyle() {
-      btnCopyInline.style.cssText = `background:transparent;border:1px solid ${ui.T.accentColor}44;color:${ui.T.accentColor};border-radius:3px;padding:0 4px;cursor:pointer;font-size:10px;line-height:14px`;
-    }
-    applyCopyBtnStyle();
+    btnCopyInline.style.cssText = `background:transparent;border:1px solid ${ui.T.accentColor}44;color:${ui.T.accentColor};border-radius:3px;padding:0 4px;cursor:pointer;font-size:10px;line-height:14px`;
     btnCopyInline.addEventListener('mouseenter', () => btnCopyInline.style.background = ui.T.accentColor + '18');
     btnCopyInline.addEventListener('mouseleave', () => btnCopyInline.style.background = 'transparent');
     btnCopyInline.onclick = () => ui.copyResults(btnCopyInline);
-    ui.onThemeChange(() => applyCopyBtnStyle());
 
     const secRes = ui.sec('Resultados', btnCopyInline);
     const tbl = document.createElement('table');
@@ -492,22 +456,14 @@
     ['Tela', 'Resultado', 'Real'].forEach((h, hi) => {
       const th = document.createElement('th');
       th.textContent = h;
-      function applyThStyle() {
-        th.style.cssText = `color:${ui.T.textSection};font-weight:bold;padding:1px ${hi === 0 ? '2px' : '4px'};text-align:${hi === 0 ? 'left' : 'center'};border-bottom:1px solid ${ui.T.sectionBorder}`;
-      }
-      applyThStyle();
-      ui.onThemeChange(() => applyThStyle());
+      th.style.cssText = `color:${ui.T.textSection};font-weight:bold;padding:1px ${hi === 0 ? '2px' : '4px'};text-align:${hi === 0 ? 'left' : 'center'};border-bottom:1px solid ${ui.T.sectionBorder}`;
       trH.appendChild(th);
     });
     thead.appendChild(trH); tbl.appendChild(thead);
     const tbody = document.createElement('tbody');
     ML.CHANNELS.forEach((ch, i) => {
       const tr = document.createElement('tr');
-      function applyTrStyle() {
-        tr.style.cssText = `border-bottom:1px solid ${ui.T.rowBorder};opacity:${ch.active ? 1 : .4};transition:opacity .2s`;
-      }
-      applyTrStyle();
-      ui.onThemeChange(() => applyTrStyle());
+      tr.style.cssText = `border-bottom:1px solid ${ui.T.rowBorder};opacity:${ch.active ? 1 : .4};transition:opacity .2s`;
       ch._panelTr = tr;
       const tdName = document.createElement('td');
       tdName.textContent = (i === 0 ? '\u2605 ' : '') + (i === 0 ? 'Referência' : ch.label);
@@ -521,10 +477,6 @@
       tdReal.textContent = i === 0 ? '0.000s' : '--';
       tdReal.style.cssText = `color:${i === 0 ? '#44ff88' : ui.T.textPrimary};padding:1px 4px;text-align:center;font-weight:bold`;
       ch.realEl = tdReal;
-      ui.onThemeChange((nt) => {
-        if (tdOff.textContent === '--') tdOff.style.color = nt.textPrimary;
-        if (tdReal.textContent === '--') tdReal.style.color = nt.textPrimary;
-      });
       tr.append(tdName, tdOff, tdReal);
       tbody.appendChild(tr);
     });
@@ -536,50 +488,39 @@
     const secSt = document.createElement('div');
     secSt.style.cssText = 'padding:3px 8px;flex-shrink:0';
     const statusEl = document.createElement('div');
-    function applyStatusStyle() {
-      statusEl.style.cssText = `font-size:9px;color:${ui.T.statusColor};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
-    }
-    applyStatusStyle();
+    statusEl.style.cssText = `font-size:9px;color:${ui.T.statusColor};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
     statusEl.textContent = 'Pronto';
-    ui.onThemeChange(() => applyStatusStyle());
     secSt.appendChild(statusEl);
     scrollBody.appendChild(secSt);
 
     panel.appendChild(scrollBody);
 
-    // ── Escala responsiva (dentro de init para acessar secTG e secAn) ────────
+    // ── Escala responsiva ────────────────────────────────────────────────────
     const BASE_W = 340;
-    const BASE_H = 640;  // altura padrão de referência
+    const BASE_H = 640;
 
     function applyScale(w, h) {
-      // escala por largura (como antes)
       const scaleW = Math.max(0.7, Math.min(2.5, w / BASE_W));
-      // escala por altura: só sobe acima de 1 quando h > BASE_H; não encolhe abaixo de 1
       const scaleH = h != null ? Math.max(1.0, Math.min(2.5, h / BASE_H)) : 1;
-      // o menor dos dois limita para não vazar conteúdo
       const scale  = Math.min(scaleW, scaleH);
       const fs     = Math.max(8, Math.round(11 * scale));
       panel.style.fontSize = fs + 'px';
 
-      // colunas do grid por largura
       const cols = w >= 320 ? 3 : w >= 220 ? 2 : 1;
       probeGrid.style.gridTemplateColumns = `repeat(${cols},1fr)`;
 
-      // reorganização por altura: oculta seções menos críticas em painéis baixos
       if (h != null) {
         secTG.style.display = h < 260 ? 'none' : '';
         secAn.style.display = h < 200 ? 'none' : '';
       }
     }
 
-    // ── Resize responsivo ────────────────────────────────────────────────────
     ui.makeResizable(panel, {
       minW: 220,
       minH: 180,
       onResize: (w, h) => applyScale(w, h),
     });
 
-    // ── ResizeObserver como fallback para escala inicial ─────────────────────
     if (window.ResizeObserver) {
       new ResizeObserver(entries => {
         const { width: w, height: h } = entries[0].contentRect;
@@ -603,7 +544,6 @@
     };
 
     document.body.appendChild(panel);
-    // Posição inicial: canto superior esquerdo
     panel.style.left = '4px';
     panel.style.top  = '4px';
 
