@@ -26,17 +26,18 @@
   let firstPick = null;
   const chartMeta = {};
 
-  function nearestRefDist(peakXIndex, refPeaks) {
+  function nearestRefDist(shiftedIndex, refPeaks, refShift) {
     if (!refPeaks || !refPeaks.length) return Infinity;
     let best = Infinity;
     refPeaks.forEach(rp => {
-      const d = Math.abs(peakXIndex - rp.xIndex);
+      const d = Math.abs(shiftedIndex - (rp.xIndex - refShift));
       if (d < best) best = d;
     });
     return best;
   }
 
-  function makePeakPlugin(ch, peaksRef, refPeaksRef) {
+  // shift: amostras a subtrair do xIndex para obter posição visual
+  function makePeakPlugin(ch, peaksRef, refPeaksRef, getShift, getRefShift) {
     return {
       id: 'peakLines_' + ch.id,
       afterDraw(chart) {
@@ -47,14 +48,17 @@
         const xAxis = chart.scales.x;
         const yAxis = chart.scales.y;
         if (!xAxis || !yAxis) return;
+        const shift    = getShift();
+        const refShift = getRefShift ? getRefShift() : 0;
         ctx.save();
         peaks.forEach(({ xIndex, color }) => {
-          const xPx = xAxis.getPixelForValue(xIndex);
+          const visualX = xIndex - shift;
+          const xPx = xAxis.getPixelForValue(visualX);
           if (xPx < xAxis.left || xPx > xAxis.right) return;
 
           const isSelected = firstPick && firstPick.xIndex === xIndex && firstPick.chId === ch.id;
           const isTarget   = pickMode && pickMode.targetChId === ch.id;
-          const snapDist   = nearestRefDist(xIndex, refPeaks);
+          const snapDist   = nearestRefDist(visualX, refPeaks, refShift);
 
           ctx.beginPath();
           ctx.moveTo(xPx, yAxis.top);
@@ -226,10 +230,12 @@
       if (!xAxis) return;
       const rect   = meta.canvas.getBoundingClientRect();
       const clickX = event.clientX - rect.left;
+      const chShift = meta.chShift || 0;
 
       let bestPeak = null, bestDist = Infinity;
       meta.peaks.forEach(p => {
-        const px = xAxis.getPixelForValue(p.xIndex);
+        // posição visual = xIndex - shift
+        const px = xAxis.getPixelForValue(p.xIndex - chShift);
         const d  = Math.abs(px - clickX);
         if (d < bestDist && d <= PEAK_CLICK_RADIUS) { bestDist = d; bestPeak = p; }
       });
@@ -344,8 +350,7 @@
     const fineShiftSamples = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
 
-    // ── Picos calculados UMA VEZ nos dados brutos (sem shift) ─────────────
-    // Ficam fixos para todos os rebuilds/redimensionamentos.
+    // Picos calculados UMA VEZ nos dados brutos — índices estáveis
     const fixedPeaks = {};
     if (ML.correlator) {
       activeChannels.forEach(ch => {
@@ -641,8 +646,8 @@
       return showPeaks ? (fixedPeaks[ch.id] || []) : [];
     }
 
-    function registerCanvas(ch, canvas, chart, peaks) {
-      chartMeta[ch.id] = { canvas, chart, peaks, ch };
+    function registerCanvas(ch, canvas, chart, peaks, chShift) {
+      chartMeta[ch.id] = { canvas, chart, peaks, ch, chShift };
       if (pickMode) canvas.style.cursor = 'crosshair';
       canvas.addEventListener('click', e => handlePickClick(ch.id, e));
     }
@@ -653,6 +658,7 @@
       const ticks = xMaxTicks();
 
       const refChVisible = channels[0];
+      const refShift     = getTotalShift(refChVisible, 0); // sempre 0 para ref
       const refPeaks     = getFixedPeaks(refChVisible);
       const refPeaksRef  = [refPeaks];
 
@@ -675,6 +681,9 @@
         wrap.appendChild(cvs); row.append(lblEl, wrap); chartsArea.appendChild(row);
 
         const pluginRefPeaks = idx === 0 ? null : refPeaksRef;
+        // captura shift para closure do plugin
+        const capturedShift = shift;
+        const capturedRefShift = refShift;
 
         const ci = new Chart(cvs, {
           type: 'line',
@@ -696,10 +705,10 @@
               },
             },
           },
-          plugins: peaks.length ? [makePeakPlugin(ch, peaksRef, pluginRefPeaks)] : [],
+          plugins: peaks.length ? [makePeakPlugin(ch, peaksRef, pluginRefPeaks, () => capturedShift, () => capturedRefShift)] : [],
         });
         chartInstances.push(ci);
-        registerCanvas(ch, cvs, ci, peaks);
+        registerCanvas(ch, cvs, ci, peaks, capturedShift);
       });
     }
 
@@ -709,11 +718,12 @@
         const raw   = ch.buffer.map(p => p.lum).slice(0, maxLen);
         const shift = getTotalShift(ch, idx);
         const lums  = shiftSeries(raw, shift);
-        return { ch, lums, idx };
+        return { ch, lums, idx, shift };
       });
 
       const refEntry = allLumsShifted[0];
       const refPeaks = getFixedPeaks(refEntry.ch);
+      const refShift = refEntry.shift;
 
       const wrap = document.createElement('div');
       wrap.style.cssText = 'flex:1;min-height:0;overflow:hidden;border-radius:4px;background:#0a0a16;border:1px solid #1a1a30;position:relative';
@@ -726,8 +736,11 @@
       const cvs = document.createElement('canvas');
       wrap.appendChild(cvs); chartsArea.appendChild(wrap);
 
+      // Para overlay: cada pico carrega também o shift do seu canal
       const allPeaksMerged = showPeaks
-        ? channels.flatMap(ch => getFixedPeaks(ch))
+        ? allLumsShifted.flatMap(({ ch, shift }) =>
+            getFixedPeaks(ch).map(p => ({ ...p, chShift: shift }))
+          )
         : [];
 
       const datasets = allLumsShifted.map(({ ch, lums }) => ({
@@ -745,11 +758,12 @@
           const yAxis = chart.scales.y;
           if (!xAxis || !yAxis) return;
           ctx.save();
-          allPeaksMerged.forEach(({ xIndex, color }) => {
-            const xPx = xAxis.getPixelForValue(xIndex);
+          allPeaksMerged.forEach(({ xIndex, color, chShift }) => {
+            const visualX = xIndex - chShift;
+            const xPx = xAxis.getPixelForValue(visualX);
             if (xPx < xAxis.left || xPx > xAxis.right) return;
             const isSelected = firstPick && firstPick.xIndex === xIndex;
-            const snapDist   = nearestRefDist(xIndex, refPeaks);
+            const snapDist   = nearestRefDist(visualX, refPeaks, refShift);
 
             ctx.beginPath();
             ctx.moveTo(xPx, yAxis.top);
@@ -821,16 +835,15 @@
         const rect   = cvs.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         let bestPeak = null, bestDist = Infinity, bestChId = null;
-        channels.forEach(ch => {
-          const peaks = getFixedPeaks(ch);
-          peaks.forEach(p => {
-            const px = xAxis.getPixelForValue(p.xIndex);
+        allLumsShifted.forEach(({ ch, shift }) => {
+          getFixedPeaks(ch).forEach(p => {
+            const px = xAxis.getPixelForValue(p.xIndex - shift);
             const d  = Math.abs(px - clickX);
             if (d < bestDist && d <= PEAK_CLICK_RADIUS) { bestDist = d; bestPeak = p; bestChId = ch.id; }
           });
         });
         if (!bestPeak || !bestChId) return;
-        const fakeMeta = { canvas: cvs, chart: ci, peaks: allPeaksMerged, ch: activeChannels.find(c => c.id === bestChId) };
+        const fakeMeta = { canvas: cvs, chart: ci, peaks: getFixedPeaks(activeChannels.find(c => c.id === bestChId)), ch: activeChannels.find(c => c.id === bestChId), chShift: allLumsShifted.find(e => e.ch.id === bestChId)?.shift || 0 };
         const prevMeta = chartMeta[bestChId];
         chartMeta[bestChId] = fakeMeta;
         handlePickClick(bestChId, e);
