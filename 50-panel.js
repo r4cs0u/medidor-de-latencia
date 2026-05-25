@@ -116,9 +116,9 @@
       'position:fixed;top:4px;right:4px;z-index:99999',
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
-      'font-family:monospace;font-size:clamp(11px,1vw,14px);color:#ffffff',
-      'user-select:none;width:clamp(260px,18vw,320px)',
-      'display:flex;flex-direction:column;height:calc(95vh - 8px);max-height:calc(95vh - 8px);overflow:hidden',
+      'font-family:monospace;font-size:11px;color:#ffffff',
+      'user-select:none;width:340px',
+      'display:flex;flex-direction:column;max-height:calc(95vh - 8px);overflow:hidden',
     ].join(';');
 
     // Header
