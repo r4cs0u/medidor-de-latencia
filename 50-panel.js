@@ -187,7 +187,7 @@
     pxInp.addEventListener('change', () => applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW));
     pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
 
-    const btnSnap = ui.mkBtn('', '#0d4f3c', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1.2');
+    const btnSnap = ui.mkBtn('', '#0d4f3c', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box');
     btnSnap.title = 'Ativa grade magnética para alinhar probes';
     function updateSnapBtn() {
       btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF';
@@ -196,7 +196,7 @@
     }
     btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
 
-    const btnCol = ui.mkBtn('', '#2a1a0d', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1.2');
+    const btnCol = ui.mkBtn('', '#2a1a0d', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box');
     btnCol.title = 'Evita sobreposição entre probes';
     function updateColBtn() {
       btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF';
@@ -334,8 +334,8 @@
 
     /* ── Seção: Análise ── */
     const secAn = ui.sec('Análise');
-    const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:1px 3px;font-size:8px;line-height:1.2;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
-    const btnAnalyze = ui.mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:1px 3px;font-size:8px;line-height:1.2;letter-spacing:.04em;color:#ce93d8;opacity:.45');
+    const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
+    const btnAnalyze = ui.mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;color:#ce93d8;opacity:.45');
     btnRec.title     = 'Inicia a captura de luminância';
     btnAnalyze.title = 'Calcula a latência com base nos dados gravados';
 
