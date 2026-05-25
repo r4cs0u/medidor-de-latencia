@@ -4,7 +4,8 @@
   const ADAPT_FACTOR          = 0.15;
   const DIFF_THRESHOLD_MIN    = 1;
   const LANDMARK_TOP_N        = 20;
-  const LANDMARK_REFINE_RATIO = 0.20;
+  const LANDMARK_TOP_CANDIDATES = 3;   // Opção C: testar os N melhores landmarks
+  const LANDMARK_REFINE_RATIO = 0.25;  // janela de refino ligeiramente maior
 
   function adaptiveThreshold(arr) {
     const n = arr.length;
@@ -97,22 +98,22 @@
    * - 'rapido' → 0s–5s
    */
   function effectiveLag(serA, serB) {
-    const chB    = ML.CHANNELS.find(c => c.label === serB.label);
-    const key    = (chB && chB.lagPreset) || 'auto';
+    const chB = ML.CHANNELS.find(c => c.label === serB.label);
+    const key = (chB && chB.lagPreset) || 'auto';
 
-    // 'auto' usa o mesmo range de 'lento' (15s–30s)
     const presetKey = key === 'auto' ? 'lento' : key;
     const preset    = ML.LAG_PRESETS ? ML.LAG_PRESETS[presetKey] : null;
 
-    if (preset) {
-      return { minLagMs: preset.min, maxLagMs: preset.max };
-    }
-
-    // Fallback defensivo
+    if (preset) return { minLagMs: preset.min, maxLagMs: preset.max };
     return { minLagMs: 15000, maxLagMs: 30000 };
   }
 
-  function landmarkOffset(lumA, lumB, maxLagSamples, minLagSamples) {
+  /**
+   * landmarkCandidates — Opção C
+   * Em vez de retornar 1 delta, retorna os LANDMARK_TOP_CANDIDATES
+   * melhores deltas ordenados por votos (desc). Cada entrada: { delta, votes }.
+   */
+  function landmarkCandidates(lumA, lumB, maxLagSamples, minLagSamples) {
     const diffA = diffSeries(lumA);
     const diffB = diffSeries(lumB);
 
@@ -125,7 +126,7 @@
 
     const peaksA = topPeakIndices(diffA, LANDMARK_TOP_N);
     const peaksB = topPeakIndices(diffB, LANDMARK_TOP_N);
-    if (peaksA.length < 3 || peaksB.length < 3) return null;
+    if (peaksA.length < 3 || peaksB.length < 3) return [];
 
     const votes = {};
     peaksA.forEach(ia => {
@@ -137,14 +138,20 @@
       });
     });
 
-    const best = Object.entries(votes).reduce((top, [k, v]) => {
-      if (v > top.votes || (v === top.votes && Math.abs(+k) < Math.abs(top.delta))) {
-        return { delta: +k, votes: v };
-      }
-      return top;
-    }, { delta: 0, votes: 0 });
+    // Ordena por votos desc, desempata pelo menor |delta|
+    return Object.entries(votes)
+      .map(([k, v]) => ({ delta: +k, votes: v }))
+      .filter(e => e.votes >= 2)
+      .sort((a, b) => b.votes - a.votes || Math.abs(a.delta) - Math.abs(b.delta))
+      .slice(0, LANDMARK_TOP_CANDIDATES);
+  }
 
-    return best.votes >= 2 ? best.delta : null;
+  function shiftArr(arr, shift) {
+    if (!shift) return arr;
+    const n = arr.length, out = new Array(n).fill(0);
+    if (shift > 0) { for (let i = 0; i < n - shift; i++) out[i] = arr[i + shift]; }
+    else           { const s = -shift; for (let i = s; i < n; i++) out[i] = arr[i - s]; }
+    return out;
   }
 
   function analyze(chA, chB, maxLagMs) {
@@ -164,42 +171,50 @@
     const maxLagSamples = Math.ceil(usedMaxLagMs / ivMs);
     const minLagSamples = Math.ceil(usedMinLagMs / ivMs);
 
-    const landmarkSamples = landmarkOffset(serA.lum, serB.lum, maxLagSamples, minLagSamples);
+    const refineSamples = Math.max(30, Math.ceil(maxLagSamples * LANDMARK_REFINE_RATIO));
 
-    const refineSamples = landmarkSamples !== null
-      ? Math.max(30, Math.ceil(maxLagSamples * LANDMARK_REFINE_RATIO))
-      : maxLagSamples;
+    // ── Opção C: testa cada candidato landmark na correlação fina ──
+    const candidates = landmarkCandidates(serA.lum, serB.lum, maxLagSamples, minLagSamples);
 
-    function shiftArr(arr, shift) {
-      if (!shift) return arr;
-      const n = arr.length, out = new Array(n).fill(0);
-      if (shift > 0) { for (let i = 0; i < n - shift; i++) out[i] = arr[i + shift]; }
-      else           { const s = -shift; for (let i = s; i < n; i++) out[i] = arr[i - s]; }
-      return out;
-    }
+    // Se não houver candidatos, roda correlação direta sem landmark
+    const testList = candidates.length > 0
+      ? candidates.map(c => c.delta)
+      : [null];
 
-    const lumBshifted = landmarkSamples !== null ? shiftArr(serB.lum, landmarkSamples) : serB.lum;
-    const corr    = crossCorrelation(serA.lum, lumBshifted, refineSamples);
-    const peak    = selectRobustPeak(corr);
-    const peakIdx = corr.findIndex(c => c.lag === peak.lag);
-    const subFrame = parabolicPeak(corr, peakIdx);
+    let bestResult = null;
 
-    const refineLag = peak.lag + subFrame;
-    const totalLag  = (landmarkSamples !== null ? landmarkSamples : 0) + refineLag;
-    const offsetMs  = totalLag * ivMs;
+    testList.forEach(landmarkSamples => {
+      const lumBshifted = landmarkSamples !== null
+        ? shiftArr(serB.lum, landmarkSamples)
+        : serB.lum;
+
+      const corr    = crossCorrelation(serA.lum, lumBshifted, refineSamples);
+      const peak    = selectRobustPeak(corr);
+      const peakIdx = corr.findIndex(c => c.lag === peak.lag);
+      const subFrame = parabolicPeak(corr, peakIdx);
+
+      const refineLag = peak.lag + subFrame;
+      const totalLag  = (landmarkSamples !== null ? landmarkSamples : 0) + refineLag;
+      const offsetMs  = totalLag * ivMs;
+
+      // Escolhe o candidato com maior r na correlação fina
+      if (!bestResult || peak.r > bestResult.peak.r) {
+        bestResult = { landmarkSamples, corr, peak, subFrame, refineLag, totalLag, offsetMs };
+      }
+    });
 
     const chBobj = ML.CHANNELS.find(c => c.label === serB.label);
 
     return {
-      offsetMs,
-      confidence:      peak.r,
+      offsetMs:        bestResult.offsetMs,
+      confidence:      bestResult.peak.r,
       lagUsedMs:       usedMaxLagMs,
       lagMinMs:        usedMinLagMs,
       intervalMs:      ivMs,
-      subFrame,
-      landmarkSamples,
+      subFrame:        bestResult.subFrame,
+      landmarkSamples: bestResult.landmarkSamples,
       lagPreset:       chBobj ? (chBobj.lagPreset || 'auto') : 'auto',
-      corr, serA, serB,
+      corr: bestResult.corr, serA, serB,
       labelA: serA.label, labelB: serB.label,
     };
   }
@@ -240,5 +255,5 @@
   }
 
   ML.correlator = { analyze, analyzeBest, analyzeBestAll, crossCorrelation, diffSeries, normalize };
-  console.log('[MedLat] 30-correlator carregado. lagPresets: auto/lento(15-30s) | normal(5-15s) | rapido(0-5s).');
+  console.log('[MedLat] 30-correlator carregado. Opção-C: top-3 landmarks testados na correlação fina.');
 })();
