@@ -51,10 +51,10 @@
       'cursor:pointer;outline:none;width:100%;height:18px;box-sizing:border-box',
     ].join(';');
     [
-      { value: 'auto',   label: 'Auto'      },
-      { value: 'lento',  label: 'Lento ≤30s' },
-      { value: 'normal', label: 'Normal ≤15s' },
+      { value: 'auto',   label: 'Auto'       },
       { value: 'rapido', label: 'Rápido ≤5s'  },
+      { value: 'normal', label: 'Normal ≤15s' },
+      { value: 'lento',  label: 'Lento ≤30s'  },
     ].forEach(o => {
       const opt = document.createElement('option');
       opt.value = o.value; opt.textContent = o.label;
@@ -62,8 +62,8 @@
       sel.appendChild(opt);
     });
     function updateSelStyle() {
-      const colors = { auto: '#fff', lento: '#ff8844', normal: '#ffd700', rapido: '#44ff88' };
-      const borders = { auto: '#2a3a50', lento: '#ff884488', normal: '#ffd70088', rapido: '#44ff8888' };
+      const colors  = { auto: '#fff', rapido: '#44ff88', normal: '#ffd700', lento: '#ff8844' };
+      const borders = { auto: '#2a3a50', rapido: '#44ff8888', normal: '#ffd70088', lento: '#ff884488' };
       sel.style.color       = colors[sel.value]  || '#fff';
       sel.style.borderColor = borders[sel.value] || '#2a3a50';
     }
