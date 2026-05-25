@@ -3,9 +3,13 @@
 
   const ADAPT_FACTOR          = 0.15;
   const DIFF_THRESHOLD_MIN    = 1;
-  const LANDMARK_TOP_N        = 20;
-  const LANDMARK_TOP_CANDIDATES = 3;   // Opção C: testar os N melhores landmarks
-  const LANDMARK_REFINE_RATIO = 0.25;  // janela de refino ligeiramente maior
+  const ANCHOR_TOP_N          = 30;   // candidatos iniciais para âncoras
+  const ANCHOR_MIN_ISOLATION  = 30;   // samples mínimos entre âncoras (~1s a 30fps)
+  const ANCHOR_STRENGTH_RATIO = 1.5;  // âncora precisa ser >= 1.5x a mediana dos picos
+  const ANCHOR_CONSENSUS_TOL  = 2;    // tolerância em samples para consenso
+  const REFINE_WINDOW         = 15;   // janela de refino sub-frame em samples
+
+  // ── Primitivas ────────────────────────────────────────────────────────────
 
   function adaptiveThreshold(arr) {
     const n = arr.length;
@@ -90,61 +94,108 @@
     return ML.INTERVAL_MS;
   }
 
-  /**
-   * effectiveLag: respeita o lagPreset do canal B quando definido.
-   * - 'auto'   → 15s–30s (mesmo range de 'lento')
-   * - 'lento'  → 15s–30s
-   * - 'normal' → 5s–15s
-   * - 'rapido' → 0s–5s
-   */
   function effectiveLag(serA, serB) {
     const chB = ML.CHANNELS.find(c => c.label === serB.label);
     const key = (chB && chB.lagPreset) || 'auto';
-
     const presetKey = key === 'auto' ? 'lento' : key;
     const preset    = ML.LAG_PRESETS ? ML.LAG_PRESETS[presetKey] : null;
-
     if (preset) return { minLagMs: preset.min, maxLagMs: preset.max };
     return { minLagMs: 15000, maxLagMs: 30000 };
   }
 
+  // ── Âncoras de cena ────────────────────────────────────────────────────────
+
   /**
-   * landmarkCandidates — Opção C
-   * Em vez de retornar 1 delta, retorna os LANDMARK_TOP_CANDIDATES
-   * melhores deltas ordenados por votos (desc). Cada entrada: { delta, votes }.
+   * Extrai âncoras de cena: picos fortes E isolados, como um humano faria.
+   * - Ordena picos por amplitude desc
+   * - Só aceita se amplitude >= ANCHOR_STRENGTH_RATIO * mediana dos picos
+   * - Só aceita se distância ao último aceito >= ANCHOR_MIN_ISOLATION samples
    */
-  function landmarkCandidates(lumA, lumB, maxLagSamples, minLagSamples) {
-    const diffA = diffSeries(lumA);
-    const diffB = diffSeries(lumB);
+  function extractAnchors(lum) {
+    const diff = diffSeries(lum);
 
-    function topPeakIndices(diff, n) {
-      const candidates = [];
-      diff.forEach((d, i) => { if (d > 0) candidates.push({ i, d }); });
-      candidates.sort((a, b) => b.d - a.d);
-      return candidates.slice(0, n).map(c => c.i);
-    }
+    // Todos os picos não-zero
+    const peaks = [];
+    diff.forEach((d, i) => { if (d > 0) peaks.push({ i, d }); });
+    if (peaks.length < 2) return [];
 
-    const peaksA = topPeakIndices(diffA, LANDMARK_TOP_N);
-    const peaksB = topPeakIndices(diffB, LANDMARK_TOP_N);
-    if (peaksA.length < 3 || peaksB.length < 3) return [];
+    // Mediana das amplitudes
+    const sorted = [...peaks].sort((a, b) => a.d - b.d);
+    const median = sorted[Math.floor(sorted.length / 2)].d;
+    const minAmp = median * ANCHOR_STRENGTH_RATIO;
 
-    const votes = {};
-    peaksA.forEach(ia => {
-      peaksB.forEach(ib => {
-        const delta = ib - ia;
+    // Top-N por amplitude, filtrado por força
+    const strong = peaks
+      .filter(p => p.d >= minAmp)
+      .sort((a, b) => b.d - a.d)
+      .slice(0, ANCHOR_TOP_N);
+
+    // Ordenar por posição e aplicar isolamento
+    strong.sort((a, b) => a.i - b.i);
+    const anchors = [];
+    let lastIdx = -Infinity;
+    strong.forEach(p => {
+      if (p.i - lastIdx >= ANCHOR_MIN_ISOLATION) {
+        anchors.push(p);
+        lastIdx = p.i;
+      }
+    });
+    return anchors;
+  }
+
+  /**
+   * anchorOffset — replica o raciocínio visual humano:
+   * Para cada âncora de A, encontra a âncora mais próxima em B dentro do range.
+   * Valida por consenso: se >= 2 pares concordam com o mesmo delta (±tol), retorna.
+   * Retorna { delta, confidence } ou null se sem consenso.
+   */
+  function anchorOffset(lumA, lumB, maxLagSamples, minLagSamples) {
+    const anchorsA = extractAnchors(lumA);
+    const anchorsB = extractAnchors(lumB);
+    if (anchorsA.length < 2 || anchorsB.length < 2) return null;
+
+    const deltas = [];
+    anchorsA.forEach(a => {
+      // Encontra a âncora em B mais próxima dentro do range de lag
+      let best = null, bestDist = Infinity;
+      anchorsB.forEach(b => {
+        const delta = b.i - a.i;
         if (Math.abs(delta) > maxLagSamples) return;
         if (minLagSamples && Math.abs(delta) < minLagSamples) return;
-        votes[delta] = (votes[delta] || 0) + 1;
+        const dist = Math.abs(delta);
+        if (dist < bestDist) { bestDist = dist; best = { delta, scoreA: a.d, scoreB: b.d }; }
       });
+      if (best) deltas.push(best);
     });
 
-    // Ordena por votos desc, desempata pelo menor |delta|
-    return Object.entries(votes)
-      .map(([k, v]) => ({ delta: +k, votes: v }))
-      .filter(e => e.votes >= 2)
-      .sort((a, b) => b.votes - a.votes || Math.abs(a.delta) - Math.abs(b.delta))
-      .slice(0, LANDMARK_TOP_CANDIDATES);
+    if (deltas.length < 2) return null;
+
+    // Agrupa por consenso com tolerância
+    const groups = [];
+    deltas.forEach(entry => {
+      const g = groups.find(g => Math.abs(g.delta - entry.delta) <= ANCHOR_CONSENSUS_TOL);
+      if (g) {
+        g.count++;
+        g.totalScore += entry.scoreA + entry.scoreB;
+        // Recalcula delta como média ponderada pelo score
+        g.delta = Math.round(
+          (g.delta * (g.count - 1) + entry.delta) / g.count
+        );
+      } else {
+        groups.push({ delta: entry.delta, count: 1, totalScore: entry.scoreA + entry.scoreB });
+      }
+    });
+
+    // Melhor grupo: maior count, desempata por maior totalScore
+    const best = groups
+      .filter(g => g.count >= 2)
+      .sort((a, b) => b.count - a.count || b.totalScore - a.totalScore)[0];
+
+    if (!best) return null;
+    return { delta: best.delta, confidence: best.count / deltas.length };
   }
+
+  // ── shiftArr ────────────────────────────────────────────────────────────
 
   function shiftArr(arr, shift) {
     if (!shift) return arr;
@@ -153,6 +204,8 @@
     else           { const s = -shift; for (let i = s; i < n; i++) out[i] = arr[i - s]; }
     return out;
   }
+
+  // ── analyze ────────────────────────────────────────────────────────────
 
   function analyze(chA, chB, maxLagMs) {
     const serA = ML.recorder.getSeries(chA);
@@ -164,57 +217,47 @@
     const ivB  = realIntervalMs(serB);
     const ivMs = (ivA + ivB) / 2;
 
-    const lagRange     = effectiveLag(serA, serB);
-    const usedMaxLagMs = maxLagMs || lagRange.maxLagMs;
-    const usedMinLagMs = lagRange.minLagMs;
-
+    const lagRange      = effectiveLag(serA, serB);
+    const usedMaxLagMs  = maxLagMs || lagRange.maxLagMs;
+    const usedMinLagMs  = lagRange.minLagMs;
     const maxLagSamples = Math.ceil(usedMaxLagMs / ivMs);
     const minLagSamples = Math.ceil(usedMinLagMs / ivMs);
 
-    const refineSamples = Math.max(30, Math.ceil(maxLagSamples * LANDMARK_REFINE_RATIO));
+    // ─ Passo 1: âncoras de cena (raciocínio visual) ─
+    const anchor = anchorOffset(serA.lum, serB.lum, maxLagSamples, minLagSamples);
+    const anchorSamples = anchor ? anchor.delta : null;
 
-    // ── Opção C: testa cada candidato landmark na correlação fina ──
-    const candidates = landmarkCandidates(serA.lum, serB.lum, maxLagSamples, minLagSamples);
+    // ─ Passo 2: correlação fina ao redor da âncora ─
+    const lumBshifted = anchorSamples !== null
+      ? shiftArr(serB.lum, anchorSamples)
+      : serB.lum;
 
-    // Se não houver candidatos, roda correlação direta sem landmark
-    const testList = candidates.length > 0
-      ? candidates.map(c => c.delta)
-      : [null];
+    const refineWindow = anchorSamples !== null
+      ? REFINE_WINDOW
+      : maxLagSamples;  // sem âncora: correlação global como fallback
 
-    let bestResult = null;
+    const corr     = crossCorrelation(serA.lum, lumBshifted, refineWindow);
+    const peak     = selectRobustPeak(corr);
+    const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
+    const subFrame = parabolicPeak(corr, peakIdx);
 
-    testList.forEach(landmarkSamples => {
-      const lumBshifted = landmarkSamples !== null
-        ? shiftArr(serB.lum, landmarkSamples)
-        : serB.lum;
-
-      const corr    = crossCorrelation(serA.lum, lumBshifted, refineSamples);
-      const peak    = selectRobustPeak(corr);
-      const peakIdx = corr.findIndex(c => c.lag === peak.lag);
-      const subFrame = parabolicPeak(corr, peakIdx);
-
-      const refineLag = peak.lag + subFrame;
-      const totalLag  = (landmarkSamples !== null ? landmarkSamples : 0) + refineLag;
-      const offsetMs  = totalLag * ivMs;
-
-      // Escolhe o candidato com maior r na correlação fina
-      if (!bestResult || peak.r > bestResult.peak.r) {
-        bestResult = { landmarkSamples, corr, peak, subFrame, refineLag, totalLag, offsetMs };
-      }
-    });
+    const refineLag = peak.lag + subFrame;
+    const totalLag  = (anchorSamples !== null ? anchorSamples : 0) + refineLag;
+    const offsetMs  = totalLag * ivMs;
 
     const chBobj = ML.CHANNELS.find(c => c.label === serB.label);
 
     return {
-      offsetMs:        bestResult.offsetMs,
-      confidence:      bestResult.peak.r,
+      offsetMs,
+      confidence:      peak.r,
+      anchorConfidence: anchor ? anchor.confidence : null,
       lagUsedMs:       usedMaxLagMs,
       lagMinMs:        usedMinLagMs,
       intervalMs:      ivMs,
-      subFrame:        bestResult.subFrame,
-      landmarkSamples: bestResult.landmarkSamples,
+      subFrame,
+      landmarkSamples: anchorSamples,
       lagPreset:       chBobj ? (chBobj.lagPreset || 'auto') : 'auto',
-      corr: bestResult.corr, serA, serB,
+      corr, serA, serB,
       labelA: serA.label, labelB: serB.label,
     };
   }
@@ -255,5 +298,5 @@
   }
 
   ML.correlator = { analyze, analyzeBest, analyzeBestAll, crossCorrelation, diffSeries, normalize };
-  console.log('[MedLat] 30-correlator carregado. Opção-C: top-3 landmarks testados na correlação fina.');
+  console.log('[MedLat] 30-correlator carregado. Método: âncoras de cena + refino sub-frame.');
 })();
