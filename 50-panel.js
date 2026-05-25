@@ -122,7 +122,7 @@
         'border-radius:6px;box-shadow:0 4px 24px #000c',
         `font-family:monospace;font-size:11px;color:${t.textPrimary}`,
         'user-select:none;width:340px',
-        'display:flex;flex-direction:column;height:calc(100vh - 8px);overflow:hidden',
+        'display:flex;flex-direction:column;overflow:hidden',
       ].join(';');
     }
     applyPanelStyle();
@@ -153,22 +153,6 @@
     }
     applyTtlStyle();
     ui.onThemeChange(() => applyTtlStyle());
-
-    // Botão tema ☀️/🌙
-    const btnTheme = document.createElement('button');
-    function updateThemeBtn() {
-      const isDark = (ML.state.theme || 'dark') === 'dark';
-      btnTheme.textContent = isDark ? '☀️' : '🌙';
-      btnTheme.title = isDark ? 'Alternar para tema claro' : 'Alternar para tema escuro';
-      btnTheme.style.cssText = `background:transparent;border:1px solid ${ui.T.inputBorder};color:${ui.T.textPrimary};border-radius:3px;padding:0 5px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0`;
-    }
-    updateThemeBtn();
-    btnTheme.onclick = () => {
-      const goLight = (ML.state.theme || 'dark') === 'dark';
-      ui.applyTheme(!goLight);
-      updateThemeBtn();
-    };
-    ui.onThemeChange(() => updateThemeBtn());
 
     const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medição precisa', '#ffd700');
     const btnGuide = ui.mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
