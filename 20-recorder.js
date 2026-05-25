@@ -31,11 +31,16 @@
   }
 
   // ── Alvo de pontos por canal ───────────────────────────────────────────
+  // Hierarquia por preset (telas ativas):
+  //   auto  ou lento  (≤30s) → 120s (4×30s)
+  //   normal          (≤15s) →  60s (4×15s)
+  //   rapido          (≤5s)  →  20s (4×5s)
 
   function getTargetPts(ch) {
-    return (ch.lagPreset === 'rapido')
-      ? Math.ceil(20000 / ML.INTERVAL_MS)
-      : Math.ceil(120000 / ML.INTERVAL_MS);
+    const preset = ch.lagPreset || 'auto';
+    if (preset === 'auto' || preset === 'lento')  return Math.ceil(120000 / ML.INTERVAL_MS);
+    if (preset === 'normal')                       return Math.ceil(60000  / ML.INTERVAL_MS);
+    /* rapido */                                   return Math.ceil(20000  / ML.INTERVAL_MS);
   }
 
   function getGlobalTarget() {
@@ -80,5 +85,5 @@
     getGlobalTarget,
   };
 
-  console.log('[MedLat] 20-recorder carregado.');
+  console.log('[MedLat] 20-recorder carregado. Hierarquia: auto/lento→120s, normal→60s, rapido→20s.');
 })();

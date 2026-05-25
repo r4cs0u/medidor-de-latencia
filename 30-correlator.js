@@ -91,9 +91,10 @@
 
   /**
    * effectiveLag: respeita o lagPreset do canal B quando definido.
-   * - 'auto'     → comportamento original (baseado no buffer)
-   * - 'rapido'   → busca entre 0 e 5s
-   * - 'internet' → busca entre 15s e 30s
+   * - 'auto'   → comportamento original (baseado no buffer)
+   * - 'lento'  → busca entre 15s e 30s
+   * - 'normal' → busca entre 5s e 15s
+   * - 'rapido' → busca entre 0 e 5s
    */
   function effectiveLag(serA, serB) {
     const chB    = ML.CHANNELS.find(c => c.label === serB.label);
@@ -131,7 +132,6 @@
     peaksA.forEach(ia => {
       peaksB.forEach(ib => {
         const delta = ib - ia;
-        // respeita faixa [minLag, maxLag] em samples
         if (Math.abs(delta) > maxLagSamples) return;
         if (minLagSamples && Math.abs(delta) < minLagSamples) return;
         votes[delta] = (votes[delta] || 0) + 1;
@@ -165,10 +165,8 @@
     const maxLagSamples = Math.ceil(usedMaxLagMs / ivMs);
     const minLagSamples = Math.ceil(usedMinLagMs / ivMs);
 
-    // 1. Landmark com faixa restrita
     const landmarkSamples = landmarkOffset(serA.lum, serB.lum, maxLagSamples, minLagSamples);
 
-    // 2. Janela de refinamento
     const refineSamples = landmarkSamples !== null
       ? Math.max(30, Math.ceil(maxLagSamples * LANDMARK_REFINE_RATIO))
       : maxLagSamples;
@@ -243,5 +241,5 @@
   }
 
   ML.correlator = { analyze, analyzeBest, analyzeBestAll, crossCorrelation, diffSeries, normalize };
-  console.log('[MedLat] 30-correlator: landmark+correlação, lagPreset por canal, refinamento ±20%.');
+  console.log('[MedLat] 30-correlator carregado. lagPresets: auto/lento(15-30s)/normal(5-15s)/rapido(0-5s).');
 })();

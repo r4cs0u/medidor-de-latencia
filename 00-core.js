@@ -7,9 +7,10 @@
   document.querySelectorAll('[id^="ml-probe-"]').forEach(e => e.remove());
 
   const LAG_PRESETS = {
-    auto:     null,
-    rapido:   { min: 0,     max: 5000  },
-    internet: { min: 15000, max: 30000 },
+    auto:   null,
+    lento:  { min: 15000, max: 30000 },
+    normal: { min: 5000,  max: 15000 },
+    rapido: { min: 0,     max: 5000  },
   };
 
   window.MedLat = {
@@ -49,5 +50,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. 5 canais, noOverlap=true, MIN_LAG_MS=20000, LAG_PRESETS disponíveis.');
+  console.log('[MedLat] 00-core carregado. 5 canais, noOverlap=true, MIN_LAG_MS=20000, LAG_PRESETS: auto/lento/normal/rapido.');
 })();

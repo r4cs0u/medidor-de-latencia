@@ -2,7 +2,7 @@
   const ML = window.MedLat;
   const ui = ML.ui;
 
-  // ── CSS específico do painel ──────────────────────────────────────────
+  // ── CSS específico do painel ──────────────────────────────────────────────
 
   (function injectStyles() {
     if (document.getElementById('ml-styles')) return;
@@ -22,7 +22,7 @@
     document.head.appendChild(s);
   })();
 
-  // ── Resultados ────────────────────────────────────────────────────────
+  // ── Resultados ──────────────────────────────────────────────────────────────
 
   function refreshRealColumn() {
     const refDed = ML.CHANNELS[0].deduction || 0;
@@ -40,7 +40,7 @@
     });
   }
 
-  // ── Inputs de canal ───────────────────────────────────────────────────
+  // ── Inputs de canal ──────────────────────────────────────────────────────────
 
   function mkLagSelect(ch) {
     const sel = document.createElement('select');
@@ -50,16 +50,22 @@
       'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
       'cursor:pointer;outline:none;width:100%;height:18px;box-sizing:border-box',
     ].join(';');
-    [{ value: 'auto', label: 'Auto' }, { value: 'rapido', label: '\u22645s' }, { value: 'internet', label: '\u226430s' }]
-      .forEach(o => {
-        const opt = document.createElement('option');
-        opt.value = o.value; opt.textContent = o.label;
-        if ((ch.lagPreset || 'auto') === o.value) opt.selected = true;
-        sel.appendChild(opt);
-      });
+    [
+      { value: 'auto',   label: 'Auto'      },
+      { value: 'lento',  label: 'Lento ≤30s' },
+      { value: 'normal', label: 'Normal ≤15s' },
+      { value: 'rapido', label: 'Rápido ≤5s'  },
+    ].forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o.value; opt.textContent = o.label;
+      if ((ch.lagPreset || 'auto') === o.value) opt.selected = true;
+      sel.appendChild(opt);
+    });
     function updateSelStyle() {
-      sel.style.borderColor = sel.value === 'auto' ? '#2a3a50' : '#ffd70088';
-      sel.style.color       = sel.value === 'auto' ? '#fff'    : '#ffd700';
+      const colors = { auto: '#fff', lento: '#ff8844', normal: '#ffd700', rapido: '#44ff88' };
+      const borders = { auto: '#2a3a50', lento: '#ff884488', normal: '#ffd70088', rapido: '#44ff8888' };
+      sel.style.color       = colors[sel.value]  || '#fff';
+      sel.style.borderColor = borders[sel.value] || '#2a3a50';
     }
     sel.addEventListener('change', () => { ch.lagPreset = sel.value; updateSelStyle(); });
     updateSelStyle();
@@ -97,7 +103,7 @@
     return inp;
   }
 
-  // ── init ──────────────────────────────────────────────────────────────
+  // ── init ────────────────────────────────────────────────────────────────────
 
   function init() {
     ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-guide', 'ml-widget'].forEach(id => {
@@ -327,7 +333,7 @@
     scrollBody.appendChild(secDet);
 
     /* ── Seção: Análise ── */
-    const secAn = ui.sec('An\u00e1lise');
+    const secAn = ui.sec('Análise');
     const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = ui.mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:2px 0;font-size:9px;letter-spacing:.04em;color:#ce93d8;opacity:.45');
     btnRec.title     = 'Inicia a captura de luminância';
@@ -402,7 +408,7 @@
         const errs = results.filter(r => r.error);
         statusEl.textContent = errs.length
           ? errs.map(r => r.label + ': ' + r.error).join(' | ')
-          : 'An\u00e1lise conclu\u00edda';
+          : 'Análise concluída';
         statusEl.style.color = errs.length ? '#ff8844' : '#44ff88';
       }, 30);
     };
@@ -479,25 +485,6 @@
     panel.style.top   = '4px';
 
     ui.minimizePanel(panel);
-
-    // ── Expõe refreshOffsets para o 40-chart.js ──────────────────────────
-    // Chamado por ML.panel.refreshOffsets(ML.manualOffsets) após confirmar
-    // ajuste manual. Atualiza a coluna "Resultado" de cada canal e recalcula
-    // a coluna "Real" para refletir o valor confirmado na janela de gráficos.
-    ML.panel = {
-      refreshOffsets(offsets) {
-        if (!offsets) return;
-        ML.CHANNELS.forEach((ch, i) => {
-          if (i === 0 || !ch.offsetEl) return;
-          const ms = offsets[ch.id];
-          if (ms == null) return;
-          const s = ms / 1000;
-          ch.offsetEl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
-          ch.offsetEl.style.color = ui.colorByOffset(Math.abs(s));
-        });
-        refreshRealColumn();
-      },
-    };
 
     /* ── Timers ── */
     setInterval(() => {
