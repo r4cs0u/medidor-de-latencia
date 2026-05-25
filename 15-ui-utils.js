@@ -1,88 +1,55 @@
 (function () {
   const ML = window.MedLat;
 
-  // ── Paletas de tema ────────────────────────────────────────────────
+  // ── Paleta dark (única) ────────────────────────────────────────────────
 
-  const THEMES = {
-    dark: {
-      panelBg:      '#0a0a0a',
-      panelBorder:  '#2a2a2a',
-      headerBg:     '#111111',
-      headerBorder: '#1e1e1e',
-      sectionBorder:'#222222',
-      rowBorder:    '#1e1e1e',
-      inputBg:      '#141414',
-      inputBorder:  '#333333',
-      inputColor:   '#f0f0f0',
-      accentColor:  '#00d4ff',
-      textPrimary:  '#f0f0f0',
-      textMuted:    '#b0b0b0',
-      textLabel:    '#d0d0d0',
-      textSection:  '#ffffff',
-      selectBg:     '#141414',
-      selectBorder: '#333333',
-      selectColor:  '#f0f0f0',
-      btnBg:        '#1e1e1e',
-      btnBorder:    '#333333',
-      btnColor:     '#00d4ff',
-      widgetBg:     '#0a0a0a',
-      widgetBorder: '#00d4ff',
-      statusColor:  '#f0f0f0',
-    },
-    light: {
-      panelBg:      '#f9f9f9',
-      panelBorder:  '#cccccc',
-      headerBg:     '#f0f0f0',
-      headerBorder: '#dddddd',
-      sectionBorder:'#e0e0e0',
-      rowBorder:    '#eeeeee',
-      inputBg:      '#ffffff',
-      inputBorder:  '#bbbbbb',
-      inputColor:   '#1a1a1a',
-      accentColor:  '#0077aa',
-      textPrimary:  '#1a1a1a',
-      textMuted:    '#444444',
-      textLabel:    '#222222',
-      textSection:  '#111111',
-      selectBg:     '#ffffff',
-      selectBorder: '#bbbbbb',
-      selectColor:  '#1a1a1a',
-      btnBg:        '#e8e8e8',
-      btnBorder:    '#bbbbbb',
-      btnColor:     '#0077aa',
-      widgetBg:     '#f9f9f9',
-      widgetBorder: '#0077aa',
-      statusColor:  '#1a1a1a',
-    },
+  const DARK = {
+    panelBg:      '#0a0a0a',
+    panelBorder:  '#2a2a2a',
+    headerBg:     '#111111',
+    headerBorder: '#1e1e1e',
+    sectionBorder:'#222222',
+    rowBorder:    '#1e1e1e',
+    inputBg:      '#141414',
+    inputBorder:  '#333333',
+    inputColor:   '#f0f0f0',
+    accentColor:  '#00d4ff',
+    textPrimary:  '#f0f0f0',
+    textMuted:    '#b0b0b0',
+    textLabel:    '#d0d0d0',
+    textSection:  '#ffffff',
+    selectBg:     '#141414',
+    selectBorder: '#333333',
+    selectColor:  '#f0f0f0',
+    btnBg:        '#1e1e1e',
+    btnBorder:    '#333333',
+    btnColor:     '#00d4ff',
+    widgetBg:     '#0a0a0a',
+    widgetBorder: '#00d4ff',
+    statusColor:  '#f0f0f0',
   };
 
-  // T = paleta ativa (referência viva, atualizada por applyTheme)
   ML.ui = ML.ui || {};
-  ML.ui.T = Object.assign({}, THEMES.dark);
+  ML.ui.T = Object.assign({}, DARK);
 
-  function applyTheme(isDark) {
-    ML.state.theme = isDark ? 'dark' : 'light';
-    const t = THEMES[ML.state.theme];
-    Object.assign(ML.ui.T, t);
+  function applyTheme() {
+    ML.state.theme = 'dark';
+    Object.assign(ML.ui.T, DARK);
 
-    // Atualiza CSS injetado
     injectStyles(true);
 
-    // Propaga para todos os painéis abertos
-    const ids = ['ml-panel', 'ml-tips', 'ml-guide', 'ml-chart-overlay'];
-    ids.forEach(id => {
+    ['ml-panel', 'ml-tips', 'ml-guide', 'ml-chart-overlay'].forEach(id => {
       const el = document.getElementById(id);
-      if (!el) return;
-      el.setAttribute('data-ml-theme', ML.state.theme);
+      if (el) el.setAttribute('data-ml-theme', 'dark');
     });
 
-    // Atualiza variáveis CSS no :root do shadow
     let styleEl = document.getElementById('ml-theme-vars');
     if (!styleEl) {
       styleEl = document.createElement('style');
       styleEl.id = 'ml-theme-vars';
       document.head.appendChild(styleEl);
     }
+    const t = DARK;
     styleEl.textContent = `
       [data-ml-theme] {
         --ml-panel-bg:      ${t.panelBg};
@@ -108,9 +75,8 @@
       }
     `;
 
-    // Notifica módulos que se registraram
     if (ML.ui._themeListeners) {
-      ML.ui._themeListeners.forEach(fn => { try { fn(t, ML.state.theme); } catch(e) {} });
+      ML.ui._themeListeners.forEach(fn => { try { fn(t, 'dark'); } catch(e) {} });
     }
   }
 
@@ -137,7 +103,6 @@
       .ml-sz-inp::-webkit-inner-spin-button,
       .ml-sz-inp::-webkit-outer-spin-button { display:none; }
 
-      /* Scrollbar temática nos painéis */
       #ml-panel ::-webkit-scrollbar,
       #ml-tips ::-webkit-scrollbar,
       #ml-guide ::-webkit-scrollbar,
@@ -213,7 +178,7 @@
     const t = ML.ui.T;
     const win = document.createElement('div');
     win.id = id;
-    win.setAttribute('data-ml-theme', ML.state.theme || 'dark');
+    win.setAttribute('data-ml-theme', 'dark');
     win.style.cssText = [
       'position:fixed;z-index:99998',
       `background:${t.panelBg};border:1px solid ${t.panelBorder}`,
@@ -255,16 +220,6 @@
       win.style.top  = pos.top  + 'px';
     });
     window.addEventListener('mouseup', () => drag = false);
-
-    // Atualiza cores quando o tema muda
-    onThemeChange((nt) => {
-      if (!win.isConnected) return;
-      win.style.background = nt.panelBg;
-      win.style.borderColor = nt.panelBorder;
-      win.style.color = nt.textPrimary;
-      hdr.style.background = nt.headerBg;
-      hdr.style.borderBottomColor = nt.headerBorder;
-    });
 
     return { win, hdr };
   }
@@ -395,12 +350,6 @@
     syncPulse();
     const pulseTimer = setInterval(syncPulse, 500);
 
-    onThemeChange((nt) => {
-      if (!widget.isConnected) return;
-      widget.style.background = nt.widgetBg;
-      if (!ML.state.recording) widget.style.borderColor = nt.widgetBorder;
-    });
-
     let wdrag = false, wx = 0, wy = 0;
     function onWMove(e) {
       if (!wdrag) return;
@@ -461,12 +410,6 @@
     inp.style.cssText = `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.textPrimary};font:bold 10px monospace;width:${w}px;border-radius:3px;padding:1px 3px;text-align:center;outline:none;-moz-appearance:textfield`;
     inp.addEventListener('focus', () => inp.style.borderColor = t.inputBorder + 'cc');
     inp.addEventListener('blur',  () => inp.style.borderColor = ML.ui.T.inputBorder);
-    onThemeChange((nt) => {
-      if (!inp.isConnected) return;
-      inp.style.background = nt.inputBg;
-      inp.style.borderColor = nt.inputBorder;
-      inp.style.color = nt.textPrimary;
-    });
     return inp;
   }
 
@@ -481,12 +424,6 @@
     lh.appendChild(lhText);
     if (extraContent) lh.appendChild(extraContent);
     wrap.appendChild(lh);
-    onThemeChange((nt) => {
-      if (!wrap.isConnected) return;
-      wrap.style.borderBottomColor = nt.sectionBorder;
-      lh.style.color = nt.textSection;
-      lh.style.borderBottomColor = nt.sectionBorder;
-    });
     return wrap;
   }
 
@@ -501,23 +438,18 @@
     const s = document.createElement('span');
     s.textContent = txt;
     s.style.cssText = `font-size:9px;color:${t.textLabel};white-space:nowrap;` + (extra || '');
-    onThemeChange((nt) => {
-      if (!s.isConnected) return;
-      if (!extra || !extra.includes('color:')) s.style.color = nt.textLabel;
-    });
     return s;
   }
 
   // ── Init ───────────────────────────────────────────────────────────────
 
-  // Aplica tema inicial (dark por padrão)
-  ML.state.theme = ML.state.theme || 'dark';
+  ML.state.theme = 'dark';
   injectStyles();
 
   // ── Expose ─────────────────────────────────────────────────────────────
 
   Object.assign(ML.ui, {
-    THEMES,
+    DARK,
     applyTheme,
     onThemeChange,
     injectStyles,
@@ -531,5 +463,5 @@
     mkIconBtn, mkBtn, mkNum, sec, row, sp,
   });
 
-  console.log('[MedLat] 15-ui-utils carregado (tema: ' + ML.state.theme + ').');
+  console.log('[MedLat] 15-ui-utils carregado (dark only).');
 })();
