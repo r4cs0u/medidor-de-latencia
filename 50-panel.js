@@ -17,10 +17,10 @@
       const t = ui.T;
       if (i === 0) { ch.realEl.textContent = '0.000s'; ch.realEl.style.color = '#44ff88'; return; }
       if (!ch.offsetEl || ch.offsetEl.textContent === '--' || ch.offsetEl.textContent === 'ERRO') {
-        ch.realEl.textContent = '--'; ch.realEl.style.color = t.textPrimary; return;
+        ch.realEl.textContent = '--'; ch.realEl.style.color = '#aaaacc'; return;
       }
       const offsetS = parseFloat(ch.offsetEl.textContent.replace('s', '').replace(',', '.'));
-      if (isNaN(offsetS)) { ch.realEl.textContent = '--'; ch.realEl.style.color = t.textPrimary; return; }
+      if (isNaN(offsetS)) { ch.realEl.textContent = '--'; ch.realEl.style.color = '#aaaacc'; return; }
       const realS = offsetS + (ch.deduction || 0) - refDed;
       ch.realEl.textContent = (realS > 0 ? '+' : '') + realS.toFixed(3) + 's';
       ch.realEl.style.color = ui.colorByOffset(Math.abs(realS));
@@ -392,15 +392,15 @@
           ch._prevPts = 0; ch._stableCnt = 0;
           if (ch.ptsEl) { ch.ptsEl.textContent = '0pt'; ch.ptsEl.style.color = '#fff'; }
           if (i !== 0) {
-            if (ch.offsetEl) { ch.offsetEl.textContent = '--'; ch.offsetEl.style.color = ui.T.textPrimary; }
-            if (ch.realEl)   { ch.realEl.textContent   = '--'; ch.realEl.style.color   = ui.T.textPrimary; }
+            if (ch.offsetEl) { ch.offsetEl.textContent = '--'; ch.offsetEl.style.color = '#aaaacc'; }
+            if (ch.realEl)   { ch.realEl.textContent   = '--'; ch.realEl.style.color   = '#aaaacc'; }
           }
         });
       } else { doStop(); }
     };
 
     btnAnalyze.onclick = () => {
-      statusEl.textContent = 'Calculando...'; statusEl.style.color = ui.T.textPrimary;
+      statusEl.textContent = 'Calculando...'; statusEl.style.color = '#aaaacc';
       setTimeout(() => {
         const results = ML.correlator.analyzeBestAll();
         results.forEach(r => {
@@ -409,7 +409,7 @@
           if (ch.offsetEl) {
             if (r.skipped || r.error) {
               ch.offsetEl.textContent = r.error ? 'ERRO' : '--';
-              ch.offsetEl.style.color = r.error ? '#ff4444' : ui.T.textPrimary;
+              ch.offsetEl.style.color = r.error ? '#ff4444' : '#aaaacc';
             } else {
               const s = r.offsetMs / 1000;
               ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
@@ -463,7 +463,7 @@
     const tbody = document.createElement('tbody');
     ML.CHANNELS.forEach((ch, i) => {
       const tr = document.createElement('tr');
-      tr.style.cssText = `border-bottom:1px solid ${ui.T.rowBorder};opacity:${ch.active ? 1 : .4};transition:opacity .2s`;
+      tr.style.cssText = `border-bottom:1px solid ${ui.T.rowBorder}`;
       ch._panelTr = tr;
       const tdName = document.createElement('td');
       tdName.textContent = (i === 0 ? '\u2605 ' : '') + (i === 0 ? 'Referência' : ch.label);
@@ -471,11 +471,11 @@
       ch._tdName = tdName;
       const tdOff = document.createElement('td');
       tdOff.textContent = i === 0 ? '0.000s' : '--';
-      tdOff.style.cssText = `color:${i === 0 ? '#44ff88' : ui.T.textPrimary};padding:1px 4px;text-align:center;font-weight:bold`;
+      tdOff.style.cssText = `color:${i === 0 ? '#44ff88' : '#aaaacc'};padding:1px 4px;text-align:center;font-weight:bold`;
       ch.offsetEl = tdOff;
       const tdReal = document.createElement('td');
       tdReal.textContent = i === 0 ? '0.000s' : '--';
-      tdReal.style.cssText = `color:${i === 0 ? '#44ff88' : ui.T.textPrimary};padding:1px 4px;text-align:center;font-weight:bold`;
+      tdReal.style.cssText = `color:${i === 0 ? '#44ff88' : '#aaaacc'};padding:1px 4px;text-align:center;font-weight:bold`;
       ch.realEl = tdReal;
       tr.append(tdName, tdOff, tdReal);
       tbody.appendChild(tr);
