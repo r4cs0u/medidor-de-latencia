@@ -116,9 +116,9 @@
       'position:fixed;top:4px;right:4px;z-index:99999',
       'background:#12121fee;border:1px solid #2a2a4a',
       'border-radius:6px;box-shadow:0 4px 24px #000c',
-      'font-family:monospace;font-size:clamp(10px,0.9vw,13px);color:#f5f5ff',
-      'user-select:none;width:min(max(260px,22vw),420px)',
-      'display:flex;flex-direction:column;max-height:calc(100vh - 8px);overflow:hidden',
+      'font-family:monospace;font-size:clamp(11px,1vw,14px);color:#ffffff',
+      'user-select:none;width:clamp(260px,18vw,320px)',
+      'display:flex;flex-direction:column;height:calc(95vh - 8px);max-height:calc(95vh - 8px);overflow:hidden',
     ].join(';');
 
     // Header
@@ -204,7 +204,7 @@
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
 
     const rowPos = ui.row(4);
-    rowPos.append(ui.sp('PX', 'flex-shrink:0;font-size:9px;color:#d0d0ff'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
+    rowPos.append(ui.sp('PX', 'flex-shrink:0;font-size:9px;color:#f0f0ff'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
     secTG.appendChild(rowPos);
     scrollBody.appendChild(secTG);
 
@@ -310,7 +310,7 @@
       ].join(';');
       btnSzP.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) + 2);
 
-      r2.append(ui.sp('px', 'font-size:9px;color:#d0d0ff;flex-shrink:0'), btnSzM, szInp, btnSzP);
+      r2.append(ui.sp('px', 'font-size:9px;color:#f0f0ff;flex-shrink:0'), btnSzM, szInp, btnSzP);
 
       const r3ded = ui.row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
@@ -320,7 +320,7 @@
       if (i !== 0) {
         const r4lag = ui.row(2);
         r4lag.style.cssText += ';overflow:hidden;min-width:0';
-        r4lag.append(ui.sp('lag', 'font-size:9px;color:#d0d0ff;flex-shrink:0'), mkLagSelect(ch));
+        r4lag.append(ui.sp('lag', 'font-size:9px;color:#f0f0ff;flex-shrink:0'), mkLagSelect(ch));
         rows.push(r4lag);
       }
       rows.forEach(r => card.appendChild(r));
@@ -440,7 +440,7 @@
     ['Tela', 'Resultado', 'Real'].forEach((h, hi) => {
       const th = document.createElement('th');
       th.textContent = h;
-      th.style.cssText = `color:#d4d4ff;font-weight:bold;padding:1px ${hi === 0 ? '2px' : '4px'};text-align:${hi === 0 ? 'left' : 'center'};border-bottom:1px solid #2a2a4a`;
+      th.style.cssText = `color:#ffffff;font-weight:bold;padding:1px ${hi === 0 ? '2px' : '4px'};text-align:${hi === 0 ? 'left' : 'center'};border-bottom:1px solid #2a2a4a`;
       trH.appendChild(th);
     });
     thead.appendChild(trH); tbl.appendChild(thead);
@@ -472,7 +472,7 @@
     const secSt = document.createElement('div');
     secSt.style.cssText = 'padding:3px 8px;flex-shrink:0';
     const statusEl = document.createElement('div');
-    statusEl.style.cssText = 'font-size:9px;color:#d4d4ff;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    statusEl.style.cssText = 'font-size:9px;color:#ffffff;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
     statusEl.textContent = 'Pronto';
     secSt.appendChild(statusEl);
     scrollBody.appendChild(secSt);
