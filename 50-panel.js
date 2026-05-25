@@ -30,7 +30,6 @@
   // ── Inputs de canal ──────────────────────────────────────────────────────────
 
   function mkLagSelect(ch) {
-    const t = ui.T;
     const sel = document.createElement('select');
     sel.title = 'Faixa de atraso esperada em relação à referência';
     function applySelStyle() {
@@ -72,7 +71,6 @@
     inp.title = 'Offset fixo do multiviewer. Ex: 3 → -3.000s  +1.5 → +1.500s';
     function applyDedStyle() {
       const t = ui.T;
-      // cor: laranja apenas se já tem valor preenchido, senão textPrimary
       const hasVal = inp.value && inp.value !== '' && inp.value !== '0.000s';
       inp.style.cssText = [
         `background:${t.inputBg};border:1px solid ${t.inputBorder}88;color:${hasVal ? '#ff9d00' : t.textPrimary}`,
@@ -103,6 +101,19 @@
     return inp;
   }
 
+  // ── Escala responsiva ────────────────────────────────────────────────────────
+
+  const BASE_W = 340;
+
+  function applyScale(panel, probeGrid, w) {
+    const scale = Math.max(0.7, Math.min(2.5, w / BASE_W));
+    const fs    = Math.max(8, Math.round(11 * scale));
+    panel.style.fontSize = fs + 'px';
+    // Grid de telas: 3 colunas acima de 320px, 2 abaixo de 220px, 1 abaixo de 150px
+    const cols = w >= 320 ? 3 : w >= 220 ? 2 : 1;
+    probeGrid.style.gridTemplateColumns = `repeat(${cols},1fr)`;
+  }
+
   // ── init ────────────────────────────────────────────────────────────────────
 
   function init() {
@@ -116,12 +127,14 @@
 
     function applyPanelStyle() {
       const t = ui.T;
+      // Não sobrescreve width/height se já foram ajustados pelo resize
+      const hasSize = panel.style.width && panel.style.width !== '340px';
       panel.style.cssText = [
-        'position:fixed;top:4px;right:4px;z-index:99999',
+        `position:fixed;top:4px;left:4px;z-index:99999`,
         `background:${t.panelBg};border:1px solid ${t.panelBorder}`,
         'border-radius:6px;box-shadow:0 4px 24px #000c',
         `font-family:monospace;font-size:11px;color:${t.textPrimary}`,
-        'user-select:none;width:340px',
+        `user-select:none;width:${hasSize ? panel.style.width : '340px'}`,
         'display:flex;flex-direction:column;overflow:hidden',
       ].join(';');
     }
@@ -148,7 +161,6 @@
     const ttl = document.createElement('span');
     ttl.textContent = '\u{1F550} ANALISADOR DE LAT\u00CANCIA';
     function applyTtlStyle() {
-      // Título neutro — usa textPrimary em vez de accentColor
       ttl.style.cssText = `color:${ui.T.textPrimary};font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
     }
     applyTtlStyle();
@@ -164,16 +176,21 @@
     btnTips.onclick  = () => ML.help.toggleTips(panel);
     btnGuide.onclick = () => ML.help.toggleGuide(panel);
     btnMin.onclick   = () => ui.minimizePanel(panel);
-    hdr.append(ttl, btnTheme, btnTips, btnGuide, btnMin, btnX);
+    hdr.append(ttl, btnTips, btnGuide, btnMin, btnX);
     panel.appendChild(hdr);
 
     // ── Drag ──
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => {
       if (e.target !== hdr && e.target !== ttl) return;
-      pdrag = true; panel.style.right = 'auto';
-      pox = e.clientX - panel.offsetLeft;
-      poy = e.clientY - panel.offsetTop;
+      pdrag = true;
+      const rect = panel.getBoundingClientRect();
+      panel.style.left   = rect.left + 'px';
+      panel.style.top    = rect.top  + 'px';
+      panel.style.right  = 'auto';
+      panel.style.bottom = 'auto';
+      pox = e.clientX - rect.left;
+      poy = e.clientY - rect.top;
     });
     window.addEventListener('mousemove', e => {
       if (!pdrag) return;
@@ -275,7 +292,6 @@
       lblInp.value = i === 0 ? 'Referência' : ch.label;
       lblInp.title = 'Clique para renomear a tela';
       function applyLblStyle() {
-        // Nome da tela mantém a cor do canal — é identificação visual
         lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
       }
       applyLblStyle();
@@ -296,7 +312,6 @@
 
       r1.append(tog, lblInp, lumEl, ptsEl);
 
-      // Row px individual
       const r2 = ui.row(2);
       r2.style.cssText += ';overflow:hidden;min-width:0;align-items:center';
 
@@ -308,7 +323,6 @@
       function applySzStyle() {
         const t = ui.T;
         szInp.style.cssText = [
-          // px individual: cor neutra (textPrimary) em vez de accentColor
           `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.textPrimary}`,
           'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
           'text-align:center;outline:none;box-sizing:border-box',
@@ -337,7 +351,6 @@
         function applySzBtnStyle() {
           const t = ui.T;
           b.style.cssText = [
-            // botões de tamanho: cor neutra (textPrimary)
             `background:${t.btnBg};border:1px solid ${t.btnBorder};color:${t.textPrimary}`,
             'font:bold 9px monospace;border-radius:3px;padding:0 3px',
             'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
@@ -356,7 +369,6 @@
 
       const r3ded = ui.row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
-      // label "ded" neutro — sem cor laranja hardcoded
       r3ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
 
       const rows = [r1, r2, r3ded];
@@ -510,7 +522,6 @@
       ch._panelTr = tr;
       const tdName = document.createElement('td');
       tdName.textContent = (i === 0 ? '\u2605 ' : '') + (i === 0 ? 'Referência' : ch.label);
-      // Nome na tabela mantém cor do canal — identificação visual
       tdName.style.cssText = `color:${ch.color};padding:1px 2px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px`;
       ch._tdName = tdName;
       const tdOff = document.createElement('td');
@@ -547,6 +558,21 @@
 
     panel.appendChild(scrollBody);
 
+    // ── Resize responsivo ────────────────────────────────────────────────────
+    ui.makeResizable(panel, {
+      minW: 220,
+      minH: 180,
+      onResize: (w) => applyScale(panel, probeGrid, w),
+    });
+
+    // ── ResizeObserver como fallback para escala inicial ─────────────────────
+    if (window.ResizeObserver) {
+      new ResizeObserver(entries => {
+        const w = entries[0].contentRect.width;
+        applyScale(panel, probeGrid, w);
+      }).observe(panel);
+    }
+
     // ── Expõe ML.panel ──────────────────────────────────────────────────────
     ML.panel = {
       refreshOffsets(offsets) {
@@ -563,8 +589,9 @@
     };
 
     document.body.appendChild(panel);
-    panel.style.right = '4px';
-    panel.style.top   = '4px';
+    // Posição inicial: canto superior esquerdo
+    panel.style.left = '4px';
+    panel.style.top  = '4px';
 
     ui.minimizePanel(panel);
 
