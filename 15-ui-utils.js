@@ -1,33 +1,33 @@
 (function () {
   const ML = window.MedLat;
 
-  // ── Paletas de tema ────────────────────────────────────────────────────
+  // ── Paletas de tema ────────────────────────────────────────────────
 
   const THEMES = {
     dark: {
-      panelBg:      '#111827',
-      panelBorder:  '#2a2a4a',
-      headerBg:     '#1a1a2e',
-      headerBorder: '#1e1e3a',
-      sectionBorder:'#1a1a30',
-      rowBorder:    '#1a1a2a',
-      inputBg:      '#1e2535',
-      inputBorder:  '#2a3a50',
-      inputColor:   '#e0e0e0',
+      panelBg:      '#0a0a0a',
+      panelBorder:  '#2a2a2a',
+      headerBg:     '#111111',
+      headerBorder: '#1e1e1e',
+      sectionBorder:'#222222',
+      rowBorder:    '#1e1e1e',
+      inputBg:      '#141414',
+      inputBorder:  '#333333',
+      inputColor:   '#f0f0f0',
       accentColor:  '#00d4ff',
-      textPrimary:  '#e0e0e0',
-      textMuted:    '#a0aec0',
-      textLabel:    '#cbd5e0',
+      textPrimary:  '#f0f0f0',
+      textMuted:    '#b0b0b0',
+      textLabel:    '#d0d0d0',
       textSection:  '#ffffff',
-      selectBg:     '#1e2535',
-      selectBorder: '#2a3a50',
-      selectColor:  '#e0e0e0',
-      btnBg:        '#1e2a3a',
-      btnBorder:    '#2a3a50',
+      selectBg:     '#141414',
+      selectBorder: '#333333',
+      selectColor:  '#f0f0f0',
+      btnBg:        '#1e1e1e',
+      btnBorder:    '#333333',
       btnColor:     '#00d4ff',
-      widgetBg:     '#111827',
+      widgetBg:     '#0a0a0a',
       widgetBorder: '#00d4ff',
-      statusColor:  '#e0e0e0',
+      statusColor:  '#f0f0f0',
     },
     light: {
       panelBg:      '#f9f9f9',
@@ -458,14 +458,14 @@
     const t = ML.ui.T;
     const inp = document.createElement('input');
     inp.type = 'number'; inp.min = min; inp.max = max; inp.step = step; inp.value = val;
-    inp.style.cssText = `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.accentColor};font:bold 10px monospace;width:${w}px;border-radius:3px;padding:1px 3px;text-align:center;outline:none;-moz-appearance:textfield`;
-    inp.addEventListener('focus', () => inp.style.borderColor = t.accentColor + '88');
+    inp.style.cssText = `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.textPrimary};font:bold 10px monospace;width:${w}px;border-radius:3px;padding:1px 3px;text-align:center;outline:none;-moz-appearance:textfield`;
+    inp.addEventListener('focus', () => inp.style.borderColor = t.inputBorder + 'cc');
     inp.addEventListener('blur',  () => inp.style.borderColor = ML.ui.T.inputBorder);
     onThemeChange((nt) => {
       if (!inp.isConnected) return;
       inp.style.background = nt.inputBg;
       inp.style.borderColor = nt.inputBorder;
-      inp.style.color = nt.accentColor;
+      inp.style.color = nt.textPrimary;
     });
     return inp;
   }
@@ -503,7 +503,6 @@
     s.style.cssText = `font-size:9px;color:${t.textLabel};white-space:nowrap;` + (extra || '');
     onThemeChange((nt) => {
       if (!s.isConnected) return;
-      // Preserva overrides de cor passados via `extra`
       if (!extra || !extra.includes('color:')) s.style.color = nt.textLabel;
     });
     return s;
