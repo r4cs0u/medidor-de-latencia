@@ -480,6 +480,22 @@
     scrollBody.appendChild(secSt);
 
     panel.appendChild(scrollBody);
+
+    // ── Expõe ML.panel para comunicação com 40-chart.js ──────────────────
+    ML.panel = {
+      refreshOffsets(offsets) {
+        ML.CHANNELS.forEach((ch, i) => {
+          if (i === 0 || !ch.offsetEl) return;
+          const totalMs = offsets[ch.id];
+          if (totalMs == null) return;
+          const s = totalMs / 1000;
+          ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
+          ch.offsetEl.style.color = ui.colorByOffset(Math.abs(s));
+        });
+        refreshRealColumn();
+      },
+    };
+
     document.body.appendChild(panel);
     panel.style.right = '4px';
     panel.style.top   = '4px';
