@@ -5,21 +5,7 @@
   // ── CSS específico do painel ──────────────────────────────────────────────
 
   (function injectStyles() {
-    if (document.getElementById('ml-styles')) return;
-    const s = document.createElement('style');
-    s.id = 'ml-styles';
-    s.textContent = `
-      @keyframes mlPulse {
-        0%,100% { box-shadow: 0 0 6px #c62828aa; border-color: #c62828; }
-        50%      { box-shadow: 0 0 14px #ff0000cc; border-color: #ff4444; }
-      }
-      #ml-widget { transition: transform .1s; }
-      #ml-widget:hover { transform: scale(1.1); }
-      .ml-sz-inp { -moz-appearance: textfield; }
-      .ml-sz-inp::-webkit-inner-spin-button,
-      .ml-sz-inp::-webkit-outer-spin-button { display:none; }
-    `;
-    document.head.appendChild(s);
+    ui.injectStyles();
   })();
 
   // ── Resultados ──────────────────────────────────────────────────────────────
@@ -28,12 +14,13 @@
     const refDed = ML.CHANNELS[0].deduction || 0;
     ML.CHANNELS.forEach((ch, i) => {
       if (!ch.realEl) return;
+      const t = ui.T;
       if (i === 0) { ch.realEl.textContent = '0.000s'; ch.realEl.style.color = '#44ff88'; return; }
       if (!ch.offsetEl || ch.offsetEl.textContent === '--' || ch.offsetEl.textContent === 'ERRO') {
-        ch.realEl.textContent = '--'; ch.realEl.style.color = '#fff'; return;
+        ch.realEl.textContent = '--'; ch.realEl.style.color = t.textPrimary; return;
       }
       const offsetS = parseFloat(ch.offsetEl.textContent.replace('s', '').replace(',', '.'));
-      if (isNaN(offsetS)) { ch.realEl.textContent = '--'; ch.realEl.style.color = '#fff'; return; }
+      if (isNaN(offsetS)) { ch.realEl.textContent = '--'; ch.realEl.style.color = t.textPrimary; return; }
       const realS = offsetS + (ch.deduction || 0) - refDed;
       ch.realEl.textContent = (realS > 0 ? '+' : '') + realS.toFixed(3) + 's';
       ch.realEl.style.color = ui.colorByOffset(Math.abs(realS));
@@ -43,13 +30,18 @@
   // ── Inputs de canal ──────────────────────────────────────────────────────────
 
   function mkLagSelect(ch) {
+    const t = ui.T;
     const sel = document.createElement('select');
     sel.title = 'Faixa de atraso esperada em relação à referência';
-    sel.style.cssText = [
-      'background:#111827;border:1px solid #2a3a50;color:#fff',
-      'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
-      'cursor:pointer;outline:none;width:100%;height:18px;box-sizing:border-box',
-    ].join(';');
+    function applySelStyle() {
+      const tt = ui.T;
+      sel.style.cssText = [
+        `background:${tt.selectBg};border:1px solid ${tt.selectBorder};color:${tt.selectColor}`,
+        'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
+        'cursor:pointer;outline:none;width:100%;height:18px;box-sizing:border-box',
+      ].join(';');
+      updateSelColor();
+    }
     [
       { value: 'auto',   label: 'Auto'       },
       { value: 'rapido', label: 'Rápido ≤5s'  },
@@ -61,14 +53,15 @@
       if ((ch.lagPreset || 'auto') === o.value) opt.selected = true;
       sel.appendChild(opt);
     });
-    function updateSelStyle() {
-      const colors  = { auto: '#fff', rapido: '#44ff88', normal: '#ffd700', lento: '#ff8844' };
-      const borders = { auto: '#2a3a50', rapido: '#44ff8888', normal: '#ffd70088', lento: '#ff884488' };
-      sel.style.color       = colors[sel.value]  || '#fff';
-      sel.style.borderColor = borders[sel.value] || '#2a3a50';
+    function updateSelColor() {
+      const colors  = { auto: ui.T.selectColor, rapido: '#44ff88', normal: '#ffd700', lento: '#ff8844' };
+      const borders = { auto: ui.T.selectBorder, rapido: '#44ff8888', normal: '#ffd70088', lento: '#ff884488' };
+      sel.style.color       = colors[sel.value]  || ui.T.selectColor;
+      sel.style.borderColor = borders[sel.value] || ui.T.selectBorder;
     }
-    sel.addEventListener('change', () => { ch.lagPreset = sel.value; updateSelStyle(); });
-    updateSelStyle();
+    sel.addEventListener('change', () => { ch.lagPreset = sel.value; updateSelColor(); });
+    applySelStyle();
+    ui.onThemeChange(() => applySelStyle());
     return sel;
   }
 
@@ -77,28 +70,33 @@
     inp.type = 'text'; inp.placeholder = '0.000s';
     inp.value = ch.deduction ? ui.formatDeduction(ch.deduction) : '';
     inp.title = 'Offset fixo do multiviewer. Ex: 3 → -3.000s  +1.5 → +1.500s';
-    inp.style.cssText = [
-      'background:#111827;border:1px solid #2a3a5088;color:#ff9d00',
-      'font:bold 8px monospace;width:100%;box-sizing:border-box;border-radius:3px',
-      'padding:1px 3px;text-align:center;outline:none;height:18px',
-    ].join(';');
+    function applyDedStyle() {
+      const t = ui.T;
+      inp.style.cssText = [
+        `background:${t.inputBg};border:1px solid ${t.inputBorder}88;color:#ff9d00`,
+        'font:bold 8px monospace;width:100%;box-sizing:border-box;border-radius:3px',
+        'padding:1px 3px;text-align:center;outline:none;height:18px',
+      ].join(';');
+    }
+    applyDedStyle();
     inp.addEventListener('focus', () => inp.style.borderColor = '#ff9d0088');
     inp.addEventListener('blur',  () => {
-      inp.style.borderColor = '#2a3a5088';
+      inp.style.borderColor = ui.T.inputBorder + '88';
       const raw = inp.value.trim();
       if (raw === '' || raw === '0' || raw === '0.000s') {
-        ch.deduction = 0; inp.value = ''; inp.style.color = '#fff';
+        ch.deduction = 0; inp.value = ''; inp.style.color = ui.T.textPrimary;
       } else {
         const v = ui.parseDeductionS(raw);
         if (v !== null) {
           ch.deduction = v;
           inp.value = ui.formatDeduction(v);
-          inp.style.color = v !== 0 ? '#ff9d00' : '#fff';
+          inp.style.color = v !== 0 ? '#ff9d00' : ui.T.textPrimary;
         }
       }
       refreshRealColumn();
     });
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+    ui.onThemeChange(() => applyDedStyle());
     ch._dedInp = inp;
     return inp;
   }
@@ -112,26 +110,63 @@
 
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
-    panel.style.cssText = [
-      'position:fixed;top:4px;right:4px;z-index:99999',
-      'background:#12121fee;border:1px solid #2a2a4a',
-      'border-radius:6px;box-shadow:0 4px 24px #000c',
-      'font-family:monospace;font-size:11px;color:#ffffff',
-      'user-select:none;width:340px',
-      'display:flex;flex-direction:column;max-height:calc(95vh - 8px);overflow:hidden',
-    ].join(';');
+    panel.setAttribute('data-ml-theme', ML.state.theme || 'dark');
 
-    // Header
+    function applyPanelStyle() {
+      const t = ui.T;
+      panel.style.cssText = [
+        'position:fixed;top:4px;right:4px;z-index:99999',
+        `background:${t.panelBg};border:1px solid ${t.panelBorder}`,
+        'border-radius:6px;box-shadow:0 4px 24px #000c',
+        `font-family:monospace;font-size:11px;color:${t.textPrimary}`,
+        'user-select:none;width:340px',
+        'display:flex;flex-direction:column;height:calc(100vh - 8px);overflow:hidden',
+      ].join(';');
+    }
+    applyPanelStyle();
+    ui.onThemeChange(() => {
+      panel.setAttribute('data-ml-theme', ML.state.theme);
+      applyPanelStyle();
+    });
+
+    // ── Header ──
     const hdr = document.createElement('div');
-    hdr.style.cssText = [
-      'display:flex;align-items:center;gap:4px;overflow:hidden',
-      'padding:4px 8px;cursor:move',
-      'border-bottom:1px solid #1e1e3a',
-      'background:#1a1a2e;border-radius:6px 6px 0 0;flex-shrink:0',
-    ].join(';');
+    function applyHdrStyle() {
+      const t = ui.T;
+      hdr.style.cssText = [
+        'display:flex;align-items:center;gap:4px;overflow:hidden',
+        'padding:4px 8px;cursor:move',
+        `border-bottom:1px solid ${t.headerBorder}`,
+        `background:${t.headerBg};border-radius:6px 6px 0 0;flex-shrink:0`,
+      ].join(';');
+    }
+    applyHdrStyle();
+    ui.onThemeChange(() => applyHdrStyle());
+
     const ttl = document.createElement('span');
     ttl.textContent = '\u{1F550} ANALISADOR DE LAT\u00CANCIA';
-    ttl.style.cssText = 'color:#00e5ff;font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0';
+    function applyTtlStyle() {
+      ttl.style.cssText = `color:${ui.T.accentColor};font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
+    }
+    applyTtlStyle();
+    ui.onThemeChange(() => applyTtlStyle());
+
+    // Botão tema ☀️/🌙
+    const btnTheme = document.createElement('button');
+    function updateThemeBtn() {
+      const isDark = (ML.state.theme || 'dark') === 'dark';
+      btnTheme.textContent = isDark ? '☀️' : '🌙';
+      btnTheme.title = isDark ? 'Alternar para tema claro' : 'Alternar para tema escuro';
+      btnTheme.style.cssText = `background:transparent;border:1px solid ${ui.T.inputBorder};color:${ui.T.textPrimary};border-radius:3px;padding:0 5px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0`;
+    }
+    updateThemeBtn();
+    btnTheme.onclick = () => {
+      const goLight = (ML.state.theme || 'dark') === 'dark';
+      ui.applyTheme(!goLight);
+      updateThemeBtn();
+    };
+    ui.onThemeChange(() => updateThemeBtn());
+
     const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medição precisa', '#ffd700');
     const btnGuide = ui.mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
     const btnMin   = ui.mkIconBtn('\u2212', 'Minimizar para widget', '#aaaaaa');
@@ -142,10 +177,10 @@
     btnTips.onclick  = () => ML.help.toggleTips(panel);
     btnGuide.onclick = () => ML.help.toggleGuide(panel);
     btnMin.onclick   = () => ui.minimizePanel(panel);
-    hdr.append(ttl, btnTips, btnGuide, btnMin, btnX);
+    hdr.append(ttl, btnTheme, btnTips, btnGuide, btnMin, btnX);
     panel.appendChild(hdr);
 
-    // Drag do painel principal
+    // ── Drag ──
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => {
       if (e.target !== hdr && e.target !== ttl) return;
@@ -161,7 +196,7 @@
     });
     window.addEventListener('mouseup', () => pdrag = false);
 
-    // Wrapper de conteúdo scrollável
+    // ── Scroll body ──
     const scrollBody = document.createElement('div');
     scrollBody.style.cssText = 'flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column';
 
@@ -189,22 +224,26 @@
     btnSnap.title = 'Ativa grade magnética para alinhar probes';
     function updateSnapBtn() {
       btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF';
-      btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : '#1e1e2e';
-      btnSnap.style.color      = ML.state.snapGrid ? '#44ff88' : '#fff';
+      btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : ui.T.btnBg;
+      btnSnap.style.color      = ML.state.snapGrid ? '#44ff88' : ui.T.btnColor;
     }
-    btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); }; updateSnapBtn();
+    btnSnap.onclick = () => { ML.state.snapGrid = !ML.state.snapGrid; updateSnapBtn(); };
+    updateSnapBtn();
+    ui.onThemeChange(() => updateSnapBtn());
 
     const btnCol = ui.mkBtn('', '#2a1a0d', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box');
     btnCol.title = 'Evita sobreposição entre probes';
     function updateColBtn() {
       btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF';
-      btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : '#1e1e2e';
-      btnCol.style.color      = ML.state.noOverlap ? '#ff8844' : '#fff';
+      btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : ui.T.btnBg;
+      btnCol.style.color      = ML.state.noOverlap ? '#ff8844' : ui.T.btnColor;
     }
-    btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); }; updateColBtn();
+    btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); };
+    updateColBtn();
+    ui.onThemeChange(() => updateColBtn());
 
     const rowPos = ui.row(4);
-    rowPos.append(ui.sp('PX', 'flex-shrink:0;font-size:9px;color:#f0f0ff'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
+    rowPos.append(ui.sp('PX', 'flex-shrink:0;font-size:9px'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
     secTG.appendChild(rowPos);
     scrollBody.appendChild(secTG);
 
@@ -216,16 +255,21 @@
     ML.CHANNELS.forEach((ch, i) => {
       ch.deduction = ch.deduction || 0;
       const card = document.createElement('div');
-      card.style.cssText = [
-        'display:flex;flex-direction:column;gap:2px',
-        'padding:3px 4px;border-radius:4px',
-        `border:1px solid ${ch.color}55`,
-        `background:${ch.color}0d`,
-        `border-top:2px solid ${ch.color}99`,
-        `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
-        'box-sizing:border-box;min-width:0;overflow:hidden;width:100%',
-      ].join(';');
+      function applyCardStyle() {
+        const isDark = (ML.state.theme || 'dark') === 'dark';
+        card.style.cssText = [
+          'display:flex;flex-direction:column;gap:2px',
+          'padding:3px 4px;border-radius:4px',
+          `border:1px solid ${ch.color}${isDark ? '55' : '99'}`,
+          `background:${ch.color}${isDark ? '0d' : '18'}`,
+          `border-top:2px solid ${ch.color}${isDark ? '99' : 'cc'}`,
+          `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
+          'box-sizing:border-box;min-width:0;overflow:hidden;width:100%',
+        ].join(';');
+      }
+      applyCardStyle();
       ch._panelRow = card;
+      ui.onThemeChange(() => applyCardStyle());
 
       const r1 = ui.row(3);
       r1.style.cssText += ';overflow:hidden;min-width:0';
@@ -243,7 +287,10 @@
       const lblInp = document.createElement('input');
       lblInp.value = i === 0 ? 'Referência' : ch.label;
       lblInp.title = 'Clique para renomear a tela';
-      lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
+      function applyLblStyle() {
+        lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
+      }
+      applyLblStyle();
       lblInp.addEventListener('change', () => {
         ch.label = lblInp.value.replace(/^\u2605\s*/, '');
         if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
@@ -261,7 +308,7 @@
 
       r1.append(tog, lblInp, lumEl, ptsEl);
 
-      // Row px individual com botões - e +
+      // Row px individual
       const r2 = ui.row(2);
       r2.style.cssText += ';overflow:hidden;min-width:0;align-items:center';
 
@@ -270,14 +317,19 @@
       szInp.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
       szInp.className = 'ml-sz-inp';
       szInp.title = 'Tamanho desta probe em pixels';
-      szInp.style.cssText = [
-        'background:#111827;border:1px solid #2a3a50;color:#00d4ff',
-        'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
-        'text-align:center;outline:none;box-sizing:border-box',
-        'height:18px;width:28px;flex-shrink:0;min-width:0',
-      ].join(';');
-      szInp.addEventListener('focus', () => szInp.style.borderColor = '#00d4ff88');
-      szInp.addEventListener('blur',  () => szInp.style.borderColor = '#2a3a50');
+      function applySzStyle() {
+        const t = ui.T;
+        szInp.style.cssText = [
+          `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.accentColor}`,
+          'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
+          'text-align:center;outline:none;box-sizing:border-box',
+          'height:18px;width:28px;flex-shrink:0;min-width:0',
+        ].join(';');
+      }
+      applySzStyle();
+      szInp.addEventListener('focus', () => szInp.style.borderColor = ui.T.accentColor + '88');
+      szInp.addEventListener('blur',  () => szInp.style.borderColor = ui.T.inputBorder);
+      ui.onThemeChange(() => applySzStyle());
       ch._szInp = szInp;
 
       function applyChanPx(v) {
@@ -290,27 +342,27 @@
         if (e.key === 'Enter') { e.preventDefault(); applyChanPx(parseInt(szInp.value) || ML.state.probeW); szInp.blur(); }
       });
 
-      const btnSzM = document.createElement('button');
-      btnSzM.textContent = '\u2212';
-      btnSzM.title = 'Diminuir probe';
-      btnSzM.style.cssText = [
-        'background:#1e2a3a;border:1px solid #2a3a50;color:#00d4ff',
-        'font:bold 9px monospace;border-radius:3px;padding:0 3px',
-        'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
-      ].join(';');
+      function mkSzBtn(symbol, title2) {
+        const b = document.createElement('button');
+        b.textContent = symbol; b.title = title2;
+        function applySzBtnStyle() {
+          const t = ui.T;
+          b.style.cssText = [
+            `background:${t.btnBg};border:1px solid ${t.btnBorder};color:${t.accentColor}`,
+            'font:bold 9px monospace;border-radius:3px;padding:0 3px',
+            'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
+          ].join(';');
+        }
+        applySzBtnStyle();
+        ui.onThemeChange(() => applySzBtnStyle());
+        return b;
+      }
+      const btnSzM = mkSzBtn('\u2212', 'Diminuir probe');
+      const btnSzP = mkSzBtn('+', 'Aumentar probe');
       btnSzM.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) - 2);
-
-      const btnSzP = document.createElement('button');
-      btnSzP.textContent = '+';
-      btnSzP.title = 'Aumentar probe';
-      btnSzP.style.cssText = [
-        'background:#1e2a3a;border:1px solid #2a3a50;color:#00d4ff',
-        'font:bold 9px monospace;border-radius:3px;padding:0 3px',
-        'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
-      ].join(';');
       btnSzP.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) + 2);
 
-      r2.append(ui.sp('px', 'font-size:9px;color:#f0f0ff;flex-shrink:0'), btnSzM, szInp, btnSzP);
+      r2.append(ui.sp('px', 'font-size:9px;flex-shrink:0'), btnSzM, szInp, btnSzP);
 
       const r3ded = ui.row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
@@ -320,7 +372,7 @@
       if (i !== 0) {
         const r4lag = ui.row(2);
         r4lag.style.cssText += ';overflow:hidden;min-width:0';
-        r4lag.append(ui.sp('lag', 'font-size:9px;color:#f0f0ff;flex-shrink:0'), mkLagSelect(ch));
+        r4lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
         rows.push(r4lag);
       }
       rows.forEach(r => card.appendChild(r));
@@ -340,7 +392,11 @@
     const progWrap = document.createElement('div');
     progWrap.style.cssText = 'display:none;flex-direction:column;gap:1px;padding:2px 0';
     const progBarOuter = document.createElement('div');
-    progBarOuter.style.cssText = 'width:100%;height:5px;background:#1e2a3a;border-radius:3px;overflow:hidden';
+    function applyProgStyle() {
+      progBarOuter.style.cssText = `width:100%;height:5px;background:${ui.T.inputBg};border-radius:3px;overflow:hidden`;
+    }
+    applyProgStyle();
+    ui.onThemeChange(() => applyProgStyle());
     const progBarInner = document.createElement('div');
     progBarInner.style.cssText = 'height:100%;width:0%;background:#44ff88;border-radius:3px;transition:width .5s linear';
     progBarOuter.appendChild(progBarInner);
@@ -376,15 +432,15 @@
           ch._prevPts = 0; ch._stableCnt = 0;
           if (ch.ptsEl) { ch.ptsEl.textContent = '0pt'; ch.ptsEl.style.color = '#fff'; }
           if (i !== 0) {
-            if (ch.offsetEl) { ch.offsetEl.textContent = '--'; ch.offsetEl.style.color = '#fff'; }
-            if (ch.realEl)   { ch.realEl.textContent   = '--'; ch.realEl.style.color   = '#fff'; }
+            if (ch.offsetEl) { ch.offsetEl.textContent = '--'; ch.offsetEl.style.color = ui.T.textPrimary; }
+            if (ch.realEl)   { ch.realEl.textContent   = '--'; ch.realEl.style.color   = ui.T.textPrimary; }
           }
         });
       } else { doStop(); }
     };
 
     btnAnalyze.onclick = () => {
-      statusEl.textContent = 'Calculando...'; statusEl.style.color = '#fff';
+      statusEl.textContent = 'Calculando...'; statusEl.style.color = ui.T.textPrimary;
       setTimeout(() => {
         const results = ML.correlator.analyzeBestAll();
         results.forEach(r => {
@@ -393,7 +449,7 @@
           if (ch.offsetEl) {
             if (r.skipped || r.error) {
               ch.offsetEl.textContent = r.error ? 'ERRO' : '--';
-              ch.offsetEl.style.color = r.error ? '#ff4444' : '#fff';
+              ch.offsetEl.style.color = r.error ? '#ff4444' : ui.T.textPrimary;
             } else {
               const s = r.offsetMs / 1000;
               ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
@@ -427,10 +483,14 @@
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
     btnCopyInline.title = 'Copiar tabela de resultados para a área de transferência';
-    btnCopyInline.style.cssText = 'background:transparent;border:1px solid #00d4ff44;color:#00d4ff;border-radius:3px;padding:0 4px;cursor:pointer;font-size:10px;line-height:14px';
-    btnCopyInline.addEventListener('mouseenter', () => btnCopyInline.style.background = '#00d4ff18');
+    function applyCopyBtnStyle() {
+      btnCopyInline.style.cssText = `background:transparent;border:1px solid ${ui.T.accentColor}44;color:${ui.T.accentColor};border-radius:3px;padding:0 4px;cursor:pointer;font-size:10px;line-height:14px`;
+    }
+    applyCopyBtnStyle();
+    btnCopyInline.addEventListener('mouseenter', () => btnCopyInline.style.background = ui.T.accentColor + '18');
     btnCopyInline.addEventListener('mouseleave', () => btnCopyInline.style.background = 'transparent');
     btnCopyInline.onclick = () => ui.copyResults(btnCopyInline);
+    ui.onThemeChange(() => applyCopyBtnStyle());
 
     const secRes = ui.sec('Resultados', btnCopyInline);
     const tbl = document.createElement('table');
@@ -440,14 +500,22 @@
     ['Tela', 'Resultado', 'Real'].forEach((h, hi) => {
       const th = document.createElement('th');
       th.textContent = h;
-      th.style.cssText = `color:#ffffff;font-weight:bold;padding:1px ${hi === 0 ? '2px' : '4px'};text-align:${hi === 0 ? 'left' : 'center'};border-bottom:1px solid #2a2a4a`;
+      function applyThStyle() {
+        th.style.cssText = `color:${ui.T.textSection};font-weight:bold;padding:1px ${hi === 0 ? '2px' : '4px'};text-align:${hi === 0 ? 'left' : 'center'};border-bottom:1px solid ${ui.T.sectionBorder}`;
+      }
+      applyThStyle();
+      ui.onThemeChange(() => applyThStyle());
       trH.appendChild(th);
     });
     thead.appendChild(trH); tbl.appendChild(thead);
     const tbody = document.createElement('tbody');
     ML.CHANNELS.forEach((ch, i) => {
       const tr = document.createElement('tr');
-      tr.style.cssText = `border-bottom:1px solid #1a1a2a;opacity:${ch.active ? 1 : .4};transition:opacity .2s`;
+      function applyTrStyle() {
+        tr.style.cssText = `border-bottom:1px solid ${ui.T.rowBorder};opacity:${ch.active ? 1 : .4};transition:opacity .2s`;
+      }
+      applyTrStyle();
+      ui.onThemeChange(() => applyTrStyle());
       ch._panelTr = tr;
       const tdName = document.createElement('td');
       tdName.textContent = (i === 0 ? '\u2605 ' : '') + (i === 0 ? 'Referência' : ch.label);
@@ -455,12 +523,16 @@
       ch._tdName = tdName;
       const tdOff = document.createElement('td');
       tdOff.textContent = i === 0 ? '0.000s' : '--';
-      tdOff.style.cssText = `color:${i === 0 ? '#44ff88' : '#fff'};padding:1px 4px;text-align:center;font-weight:bold`;
+      tdOff.style.cssText = `color:${i === 0 ? '#44ff88' : ui.T.textPrimary};padding:1px 4px;text-align:center;font-weight:bold`;
       ch.offsetEl = tdOff;
       const tdReal = document.createElement('td');
       tdReal.textContent = i === 0 ? '0.000s' : '--';
-      tdReal.style.cssText = `color:${i === 0 ? '#44ff88' : '#fff'};padding:1px 4px;text-align:center;font-weight:bold`;
+      tdReal.style.cssText = `color:${i === 0 ? '#44ff88' : ui.T.textPrimary};padding:1px 4px;text-align:center;font-weight:bold`;
       ch.realEl = tdReal;
+      ui.onThemeChange((nt) => {
+        if (tdOff.textContent === '--') tdOff.style.color = nt.textPrimary;
+        if (tdReal.textContent === '--') tdReal.style.color = nt.textPrimary;
+      });
       tr.append(tdName, tdOff, tdReal);
       tbody.appendChild(tr);
     });
@@ -472,14 +544,18 @@
     const secSt = document.createElement('div');
     secSt.style.cssText = 'padding:3px 8px;flex-shrink:0';
     const statusEl = document.createElement('div');
-    statusEl.style.cssText = 'font-size:9px;color:#ffffff;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    function applyStatusStyle() {
+      statusEl.style.cssText = `font-size:9px;color:${ui.T.statusColor};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+    }
+    applyStatusStyle();
     statusEl.textContent = 'Pronto';
+    ui.onThemeChange(() => applyStatusStyle());
     secSt.appendChild(statusEl);
     scrollBody.appendChild(secSt);
 
     panel.appendChild(scrollBody);
 
-    // ── Expõe ML.panel para comunicação com 40-chart.js ──────────────────
+    // ── Expõe ML.panel ──────────────────────────────────────────────────────
     ML.panel = {
       refreshOffsets(offsets) {
         ML.CHANNELS.forEach((ch, i) => {
