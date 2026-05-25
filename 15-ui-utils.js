@@ -277,7 +277,6 @@
     hdr.addEventListener('mousedown', e => {
       if (e.target === btnClose) return;
       drag = true;
-      // captura posição atual do elemento no momento do clique
       const rect = win.getBoundingClientRect();
       win.style.left   = rect.left + 'px';
       win.style.top    = rect.top  + 'px';
@@ -397,8 +396,9 @@
   // ── Widget minimizado ──────────────────────────────────────────────────
 
   function minimizePanel(panel) {
-    // Salva estado de todas as janelas secundárias abertas
-    const secondaryIds = ['ml-tips', 'ml-guide', 'ml-chart-overlay'];
+    // IDs de todas as janelas secundárias a salvar/restaurar
+    // Inclui ml-chart-panel (novo nome do painel de gráfico do 40-chart.js)
+    const secondaryIds = ['ml-tips', 'ml-guide', 'ml-chart-overlay', 'ml-chart-panel'];
     const savedWindows = [];
     secondaryIds.forEach(id => {
       const el = document.getElementById(id);
@@ -423,8 +423,14 @@
     widget.id = 'ml-widget';
     widget.title = 'Restaurar Analisador de Lat\u00eancia';
     widget.innerHTML = '\ud83d\udd50';
+
+    // Posiciona o widget no mesmo canto do painel principal (esquerda)
+    const panelRect = panel.getBoundingClientRect();
+    const widgetLeft = Math.max(4, panelRect.left);
+    const widgetTop  = Math.max(4, panelRect.top);
+
     widget.style.cssText = [
-      'position:fixed;top:8px;right:8px;z-index:999999',
+      `position:fixed;left:${widgetLeft}px;top:${widgetTop}px;z-index:999999`,
       'width:32px;height:32px;border-radius:8px',
       `background:${t.widgetBg};border:2px solid ${t.widgetBorder}`,
       'display:flex;align-items:center;justify-content:center',
@@ -460,7 +466,7 @@
         widget.remove();
         // Restaura painel principal
         panel.style.display = 'block';
-        // Restaura janelas secundárias na posição salva
+        // Restaura janelas secundárias (inclusive ml-chart-panel)
         savedWindows.forEach(s => {
           const el = document.getElementById(s.id);
           if (!el) return;
