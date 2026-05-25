@@ -83,17 +83,17 @@
   function setAnalysisMode(mode) { ML.state.analysisMode = normalizeAnalysisMode(mode); }
   function getAnalysisMode()     { return normalizeAnalysisMode(ML.state.analysisMode); }
 
-  // ── helpers de cor para Chart.js ─────────────────────────────────────────
+  // ── helpers de cor para Chart.js (tema fixo dark) ─────────────────────────
   function gridColor()     { return 'transparent'; }
-  function tickColor()     { return ui.T.isDark ? '#556688' : '#888aaa'; }
-  function tickColorFaint(){ return ui.T.isDark ? '#445566' : '#aaaacc'; }
-  function tooltipBg()     { return ui.T.isDark ? '#12121fee' : '#ffffffee'; }
-  function tooltipTitle()  { return ui.T.isDark ? '#00d4ff'   : '#0077aa'; }
-  function tooltipBody()   { return ui.T.isDark ? '#aaaacc'   : '#333355'; }
-  function tooltipBorder() { return ui.T.isDark ? '#2a2a4a'   : '#ccccdd'; }
-  function legendColor()   { return ui.T.isDark ? '#778899'   : '#555577'; }
-  function rowBg(color)    { return color + (ui.T.isDark ? '0d' : '18'); }
-  function rowBorder(color){ return color + (ui.T.isDark ? '22' : '44'); }
+  function tickColor()     { return '#556688'; }
+  function tickColorFaint(){ return '#445566'; }
+  function tooltipBg()     { return '#12121fee'; }
+  function tooltipTitle()  { return '#00d4ff'; }
+  function tooltipBody()   { return '#aaaacc'; }
+  function tooltipBorder() { return '#2a2a4a'; }
+  function legendColor()   { return '#778899'; }
+  function rowBg(color)    { return color + '0d'; }
+  function rowBorder(color){ return color + '22'; }
 
   async function showChart(results) {
     if (!Array.isArray(results)) results = [results];
@@ -129,18 +129,13 @@
       ].join(';');
     }
     applyPanelStyle();
-    ui.onThemeChange(() => { if (panel.isConnected) { applyPanelStyle(); rebuildCharts(); } });
 
     const hdr = document.createElement('div');
-    function applyHdrStyle() {
-      hdr.style.cssText = [
-        'display:flex;align-items:center;gap:5px;padding:5px 8px 4px',
-        `background:${ui.T.headerBg};border-bottom:1px solid ${ui.T.panelBorder}`,
-        'border-radius:8px 8px 0 0;cursor:move;flex-shrink:0',
-      ].join(';');
-    }
-    applyHdrStyle();
-    ui.onThemeChange(() => { if (hdr.isConnected) applyHdrStyle(); });
+    hdr.style.cssText = [
+      'display:flex;align-items:center;gap:5px;padding:5px 8px 4px',
+      `background:${ui.T.headerBg};border-bottom:1px solid ${ui.T.panelBorder}`,
+      'border-radius:8px 8px 0 0;cursor:move;flex-shrink:0',
+    ].join(';');
 
     const htitle = document.createElement('span');
     htitle.textContent = '📊 Luminância';
@@ -148,11 +143,7 @@
 
     let chartMode = 'parallel';
     const btnMode = document.createElement('button');
-    function applyBtnModeStyle() {
-      btnMode.style.cssText = `background:${ui.T.btnBg};border:1px solid ${ui.T.btnBorder};color:#00d4ff;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap`;
-    }
-    applyBtnModeStyle();
-    ui.onThemeChange(() => { if (btnMode.isConnected) applyBtnModeStyle(); });
+    btnMode.style.cssText = `background:${ui.T.btnBg};border:1px solid ${ui.T.btnBorder};color:#00d4ff;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap`;
     function updateModeBtn() { btnMode.textContent = chartMode === 'parallel' ? '⫴ Paralelo' : '⧉ Sobreposto'; }
     updateModeBtn();
 
@@ -168,10 +159,7 @@
         'border-radius:3px;padding:2px 4px;cursor:pointer;font:bold 8px monospace;white-space:nowrap',
       ].join(';');
     }
-    [btnLegacy, btnHybrid, btnCompare].forEach(b => {
-      applyAnalysisBtnBase(b);
-      ui.onThemeChange(() => { if (b.isConnected) refreshModeButtons(); });
-    });
+    [btnLegacy, btnHybrid, btnCompare].forEach(b => applyAnalysisBtnBase(b));
     btnLegacy.textContent  = 'Atual';
     btnHybrid.textContent  = 'Híbrido';
     btnCompare.textContent = 'Comparar';
@@ -199,7 +187,6 @@
       btnManual.style.cssText = `background:${manualMode ? '#44ff8833' : ui.T.btnBg};border:1px solid ${manualMode ? '#44ff88' : '#44ff8855'};color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap`;
     }
     applyManualBtnStyle();
-    ui.onThemeChange(() => { if (btnManual.isConnected) applyManualBtnStyle(); });
     function updateManualBtn() { btnManual.textContent = manualMode ? '✎ Ajustando' : '✎ Manual'; applyManualBtnStyle(); }
     updateManualBtn();
 
@@ -210,7 +197,6 @@
       btnPeaks.style.opacity = showPeaks ? '1' : '0.45';
     }
     applyPeaksBtnStyle();
-    ui.onThemeChange(() => { if (btnPeaks.isConnected) applyPeaksBtnStyle(); });
     function updatePeaksBtn() { btnPeaks.textContent = showPeaks ? '◼ Picos' : '◻ Picos'; applyPeaksBtnStyle(); }
     updatePeaksBtn();
     btnPeaks.onclick = () => { showPeaks = !showPeaks; updatePeaksBtn(); rebuildCharts(); };
@@ -264,11 +250,7 @@
     });
 
     const body = document.createElement('div');
-    function applyBodyStyle() {
-      body.style.cssText = `flex:1;overflow-y:auto;padding:4px 8px 6px;display:flex;flex-direction:column;gap:4px;min-height:0;color:${ui.T.textPrimary}`;
-    }
-    applyBodyStyle();
-    ui.onThemeChange(() => { if (body.isConnected) applyBodyStyle(); });
+    body.style.cssText = `flex:1;overflow-y:auto;padding:4px 8px 6px;display:flex;flex-direction:column;gap:4px;min-height:0;color:${ui.T.textPrimary}`;
     panel.appendChild(body);
 
     const activeChannels = [];
@@ -409,24 +391,17 @@
     manualBar.style.cssText = 'display:none;flex-direction:column;gap:4px;padding:4px 0;flex-shrink:0';
 
     const manualHint = document.createElement('div');
-    function applyHintStyle() {
-      manualHint.style.cssText = `color:#ffd700;font-size:8px;text-align:center;opacity:.8`;
-    }
-    applyHintStyle();
+    manualHint.style.cssText = 'color:#ffd700;font-size:8px;text-align:center;opacity:.8';
     manualHint.textContent = '◄ dir = mais atraso  |  esq = menos atraso ►';
     manualBar.appendChild(manualHint);
 
     const btnResetAll = document.createElement('button');
     btnResetAll.textContent = '↺ Reset tudo';
     btnResetAll.title = 'Reseta todos os canais para o valor calculado automaticamente';
-    function applyResetAllStyle() {
-      btnResetAll.style.cssText = [
-        `background:${ui.T.btnBg};border:1px solid #ff884455;color:#ff8844`,
-        'border-radius:3px;padding:2px 8px;cursor:pointer;font:bold 8px monospace;width:100%',
-      ].join(';');
-    }
-    applyResetAllStyle();
-    ui.onThemeChange(() => { if (btnResetAll.isConnected) applyResetAllStyle(); });
+    btnResetAll.style.cssText = [
+      `background:${ui.T.btnBg};border:1px solid #ff884455;color:#ff8844`,
+      'border-radius:3px;padding:2px 8px;cursor:pointer;font:bold 8px monospace;width:100%',
+    ].join(';');
 
     const sliderRefs = {};
 
@@ -457,11 +432,7 @@
       btnReset.style.cssText = 'background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px;width:18px;text-align:center';
 
       const valLbl = document.createElement('span');
-      function applyValLblStyle() {
-        valLbl.style.cssText = `color:${ui.T.textMuted};font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap`;
-      }
-      applyValLblStyle();
-      ui.onThemeChange(() => { if (valLbl.isConnected) applyValLblStyle(); });
+      valLbl.style.cssText = `color:${ui.T.textMuted};font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap`;
 
       function refreshLabel(fineVal) {
         const totalMs = (confirmedMs[ch.id] || 0) + fineVal * iv;
@@ -502,14 +473,11 @@
 
     const btnConfirm = document.createElement('button');
     btnConfirm.textContent = '✔ Confirmar ajuste';
-    function applyConfirmStyle() {
-      btnConfirm.style.cssText = [
-        'background:#44ff8833;border:1px solid #44ff88;color:#44ff88',
-        'border-radius:3px;padding:3px 8px;cursor:pointer;font:bold 8px monospace',
-        'width:100%;margin-top:1px',
-      ].join(';');
-    }
-    applyConfirmStyle();
+    btnConfirm.style.cssText = [
+      'background:#44ff8833;border:1px solid #44ff88;color:#44ff88',
+      'border-radius:3px;padding:3px 8px;cursor:pointer;font:bold 8px monospace',
+      'width:100%;margin-top:1px',
+    ].join(';');
     btnConfirm.onclick = () => {
       ML.manualOffsets = ML.manualOffsets || {};
       activeChannels.forEach((ch, idx) => {
@@ -666,7 +634,7 @@
       const refShift = refEntry.shift;
 
       const wrap = document.createElement('div');
-      wrap.style.cssText = `flex:1;min-height:0;overflow:hidden;border-radius:4px;background:${ui.T.isDark ? '#0a0a16' : '#f4f4f8'};border:1px solid ${ui.T.panelBorder};position:relative`;
+      wrap.style.cssText = `flex:1;min-height:0;overflow:hidden;border-radius:4px;background:#0a0a16;border:1px solid ${ui.T.panelBorder};position:relative`;
       if (manualMode) {
         const hint = document.createElement('div');
         hint.style.cssText = 'position:absolute;top:2px;left:50%;transform:translateX(-50%);color:#ffd70088;font-size:7px;pointer-events:none;z-index:2;white-space:nowrap';
@@ -742,15 +710,11 @@
 
   function mkCardCompact(label, prefix, color, autoTxt, autoColor) {
     const card = document.createElement('div');
-    function applyCardStyle() {
-      card.style.cssText = [
-        'display:inline-flex;align-items:center;gap:5px;flex-shrink:0',
-        `border:1px solid ${color}55;border-top:2px solid ${color}99`,
-        `background:${color + (ui.T.isDark ? '0d' : '18')};border-radius:4px;padding:3px 6px`,
-      ].join(';');
-    }
-    applyCardStyle();
-    ui.onThemeChange(() => { if (card.isConnected) applyCardStyle(); });
+    card.style.cssText = [
+      'display:inline-flex;align-items:center;gap:5px;flex-shrink:0',
+      `border:1px solid ${color}55;border-top:2px solid ${color}99`,
+      `background:${color}0d;border-radius:4px;padding:3px 6px`,
+    ].join(';');
     if (prefix) {
       const sp = document.createElement('span');
       sp.textContent = prefix; sp.style.cssText = `color:${color};font-size:9px;flex-shrink:0`;
