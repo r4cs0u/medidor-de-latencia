@@ -2,7 +2,6 @@
   const ML = window.MedLat;
   const ui = ML.ui;
   const MAX_PEAKS = 15;
-  const PEAK_CLICK_RADIUS = 12;
   const SNAP_RADIUS = 5;
 
   function loadChartJs() {
@@ -22,8 +21,6 @@
     return candidates.slice(0, n).map(({ xIndex, color }) => ({ xIndex, color }));
   }
 
-  let pickMode  = null;
-  let firstPick = null;
   const chartMeta = {};
 
   function nearestRefDist(shiftedIndex, refPeaks, refShift) {
@@ -36,7 +33,25 @@
     return best;
   }
 
-  // shift: amostras a subtrair do xIndex para obter posição visual
+  function drawPeakLine(ctx, xPx, yAxis, color, snapDist) {
+    ctx.beginPath();
+    ctx.moveTo(xPx, yAxis.top);
+    ctx.lineTo(xPx, yAxis.bottom);
+
+    if (snapDist === 0) {
+      ctx.strokeStyle = '#ffffffdd';
+      ctx.lineWidth   = 1.5;
+    } else if (snapDist <= SNAP_RADIUS) {
+      ctx.strokeStyle = '#66666688';
+      ctx.lineWidth   = 1;
+    } else {
+      ctx.strokeStyle = color + '44';
+      ctx.lineWidth   = 1;
+    }
+
+    ctx.stroke();
+  }
+
   function makePeakPlugin(ch, peaksRef, refPeaksRef, getShift, getRefShift) {
     return {
       id: 'peakLines_' + ch.id,
@@ -55,46 +70,8 @@
           const visualX = xIndex - shift;
           const xPx = xAxis.getPixelForValue(visualX);
           if (xPx < xAxis.left || xPx > xAxis.right) return;
-
-          const isSelected = firstPick && firstPick.xIndex === xIndex && firstPick.chId === ch.id;
-          const isTarget   = pickMode && pickMode.targetChId === ch.id;
-          const snapDist   = nearestRefDist(visualX, refPeaks, refShift);
-
-          ctx.beginPath();
-          ctx.moveTo(xPx, yAxis.top);
-          ctx.lineTo(xPx, yAxis.bottom);
-
-          if (isSelected) {
-            ctx.strokeStyle = '#ffd700ee';
-            ctx.lineWidth   = 3;
-            ctx.setLineDash([4, 3]);
-          } else if (pickMode && isTarget) {
-            ctx.strokeStyle = color + 'cc';
-            ctx.lineWidth   = 2;
-            ctx.setLineDash([]);
-          } else if (pickMode) {
-            ctx.strokeStyle = color + '99';
-            ctx.lineWidth   = 1.5;
-            ctx.setLineDash([]);
-          } else if (snapDist === 0) {
-            ctx.strokeStyle = '#ffffffcc';
-            ctx.lineWidth   = 3;
-            ctx.setLineDash([5, 3]);
-          } else if (snapDist === 1) {
-            ctx.strokeStyle = '#88888888';
-            ctx.lineWidth   = 1.5;
-            ctx.setLineDash([]);
-          } else if (snapDist <= SNAP_RADIUS) {
-            ctx.strokeStyle = '#55555544';
-            ctx.lineWidth   = 1;
-            ctx.setLineDash([]);
-          } else {
-            ctx.strokeStyle = color + '55';
-            ctx.lineWidth   = 1;
-            ctx.setLineDash([]);
-          }
-          ctx.stroke();
-          ctx.setLineDash([]);
+          const snapDist = nearestRefDist(visualX, refPeaks, refShift);
+          drawPeakLine(ctx, xPx, yAxis, color, snapDist);
         });
         ctx.restore();
       },
@@ -108,8 +85,6 @@
     const old = document.getElementById('ml-chart-panel');
     if (old) old.remove();
 
-    pickMode  = null;
-    firstPick = null;
     Object.keys(chartMeta).forEach(k => delete chartMeta[k]);
 
     const mainPanel = document.getElementById('ml-panel');
@@ -142,20 +117,20 @@
       'border-radius:8px 8px 0 0;cursor:move;flex-shrink:0',
     ].join(';');
     const htitle = document.createElement('span');
-    htitle.textContent = '\uD83D\uDCCA Lumin\u00e2ncia';
+    htitle.textContent = '📊 Luminância';
     htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 
     let chartMode = 'parallel';
     const btnMode = document.createElement('button');
     btnMode.style.cssText = 'background:#1e2a3a;border:1px solid #2a3a50;color:#00d4ff;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap';
-    function updateModeBtn() { btnMode.textContent = chartMode === 'parallel' ? '\u2af4 Paralelo' : '\u29c9 Sobreposto'; }
+    function updateModeBtn() { btnMode.textContent = chartMode === 'parallel' ? '⫴ Paralelo' : '⧉ Sobreposto'; }
     updateModeBtn();
 
     let manualMode = false;
     const btnManual = document.createElement('button');
     btnManual.style.cssText = 'background:#1a2a1a;border:1px solid #44ff8855;color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap';
     function updateManualBtn() {
-      btnManual.textContent = manualMode ? '\u270e Ajustando' : '\u270e Manual';
+      btnManual.textContent = manualMode ? '✎ Ajustando' : '✎ Manual';
       btnManual.style.background  = manualMode ? '#44ff8833' : '#1a2a1a';
       btnManual.style.borderColor = manualMode ? '#44ff88'   : '#44ff8855';
     }
@@ -164,132 +139,17 @@
     let showPeaks = true;
     const btnPeaks = document.createElement('button');
     btnPeaks.style.cssText = 'background:#1e2a1a;border:1px solid #44ff8855;color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap';
-    function updatePeaksBtn() { btnPeaks.textContent = showPeaks ? '\u25fc Picos' : '\u25fb Picos'; btnPeaks.style.opacity = showPeaks ? '1' : '0.45'; }
+    function updatePeaksBtn() { btnPeaks.textContent = showPeaks ? '◼ Picos' : '◻ Picos'; btnPeaks.style.opacity = showPeaks ? '1' : '0.45'; }
     updatePeaksBtn();
     btnPeaks.onclick = () => { showPeaks = !showPeaks; updatePeaksBtn(); rebuildCharts(); };
 
     const btnClose = document.createElement('button');
-    btnClose.textContent = '\u2715';
+    btnClose.textContent = '✕';
     btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnClose.onclick = () => panel.remove();
 
     hdr.append(htitle, btnManual, btnPeaks, btnMode, btnClose);
     panel.appendChild(hdr);
-
-    const pickStatusBar = document.createElement('div');
-    pickStatusBar.style.cssText = [
-      'display:none;align-items:center;justify-content:space-between',
-      'padding:3px 8px;background:#1a1a0a;border-bottom:1px solid #ffd70033',
-      'flex-shrink:0;gap:6px',
-    ].join(';');
-    const pickStatusTxt = document.createElement('span');
-    pickStatusTxt.style.cssText = 'color:#ffd700;font-size:8px;flex:1';
-    const btnPickCancel = document.createElement('button');
-    btnPickCancel.textContent = '\u2715 Cancelar';
-    btnPickCancel.style.cssText = 'background:#2a1a00;border:1px solid #ffd70044;color:#ffd700;border-radius:3px;padding:1px 5px;cursor:pointer;font:bold 8px monospace;flex-shrink:0';
-    btnPickCancel.onclick = () => cancelPickMode();
-    pickStatusBar.append(pickStatusTxt, btnPickCancel);
-    panel.appendChild(pickStatusBar);
-
-    function updatePickStatus() {
-      if (!pickMode) { pickStatusBar.style.display = 'none'; return; }
-      pickStatusBar.style.display = 'flex';
-      const targetCh = activeChannels.find(c => c.id === pickMode.targetChId);
-      const tName = targetCh ? targetCh.label : '?';
-      if (!firstPick) {
-        pickStatusTxt.textContent = `\uD83C\uDFAF Clique num pico em QUALQUER gr\u00e1fico para alinhar com [${tName}]`;
-      } else {
-        const srcCh = activeChannels.find(c => c.id === firstPick.chId);
-        const sName = srcCh ? srcCh.label : '?';
-        pickStatusTxt.textContent = `\u2139\uFE0F Pico de [${sName}] selecionado \u2014 agora clique num pico do outro gr\u00e1fico`;
-      }
-    }
-
-    function cancelPickMode() {
-      pickMode  = null;
-      firstPick = null;
-      Object.values(chartMeta).forEach(m => { if (m.canvas) m.canvas.style.cursor = ''; });
-      updatePickStatus();
-      redrawPeaks();
-      if (alignBtnRefs) Object.values(alignBtnRefs).forEach(b => {
-        b.style.background  = '#1a1a2e';
-        b.style.borderColor = '#ffd70055';
-        b.textContent = '\uD83C\uDFAF';
-      });
-    }
-
-    function redrawPeaks() {
-      Object.values(chartMeta).forEach(m => { if (m.chart) { try { m.chart.update('none'); } catch(e){} } });
-    }
-
-    function handlePickClick(chId, event) {
-      if (!pickMode) return;
-      const meta = chartMeta[chId];
-      if (!meta || !meta.chart || !meta.peaks) return;
-      const xAxis = meta.chart.scales.x;
-      if (!xAxis) return;
-      const rect   = meta.canvas.getBoundingClientRect();
-      const clickX = event.clientX - rect.left;
-      const chShift = meta.chShift || 0;
-
-      let bestPeak = null, bestDist = Infinity;
-      meta.peaks.forEach(p => {
-        // posição visual = xIndex - shift
-        const px = xAxis.getPixelForValue(p.xIndex - chShift);
-        const d  = Math.abs(px - clickX);
-        if (d < bestDist && d <= PEAK_CLICK_RADIUS) { bestDist = d; bestPeak = p; }
-      });
-      if (!bestPeak) return;
-
-      if (!firstPick) {
-        firstPick = { chId, xIndex: bestPeak.xIndex };
-        updatePickStatus();
-        redrawPeaks();
-        return;
-      }
-
-      if (firstPick.chId === chId) {
-        firstPick = { chId, xIndex: bestPeak.xIndex };
-        updatePickStatus();
-        redrawPeaks();
-        return;
-      }
-
-      applyPeakAlignment(firstPick, { chId, xIndex: bestPeak.xIndex });
-    }
-
-    function applyPeakAlignment(pickA, pickB) {
-      const targetChId = pickMode.targetChId;
-      let refPick, tgtPick;
-      if (pickA.chId === targetChId)      { tgtPick = pickA; refPick = pickB; }
-      else if (pickB.chId === targetChId) { tgtPick = pickB; refPick = pickA; }
-      else {
-        firstPick = pickB;
-        updatePickStatus();
-        redrawPeaks();
-        return;
-      }
-
-      const ch = activeChannels.find(c => c.id === targetChId);
-      if (!ch) { cancelPickMode(); return; }
-
-      const iv = ui.realIvMs(ch);
-      const deltaSamples = tgtPick.xIndex - refPick.xIndex;
-      confirmedMs[targetChId] = (confirmedMs[targetChId] || 0) + deltaSamples * iv;
-      fineShiftSamples[targetChId] = 0;
-
-      const sr = sliderRefs[targetChId];
-      if (sr) {
-        const newSamp = Math.round(confirmedMs[targetChId] / iv);
-        const clampedSamp = Math.max(parseInt(sr.slider.min), Math.min(parseInt(sr.slider.max), newSamp));
-        sr.slider.value = clampedSamp;
-        sr.refreshLabel(0);
-      }
-      updateCardManual(targetChId, confirmedMs[targetChId]);
-
-      cancelPickMode();
-      rebuildCharts();
-    }
 
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => {
@@ -350,7 +210,6 @@
     const fineShiftSamples = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
 
-    // Picos calculados UMA VEZ nos dados brutos — índices estáveis
     const fixedPeaks = {};
     if (ML.correlator) {
       activeChannels.forEach(ch => {
@@ -390,7 +249,7 @@
       const bar = document.createElement('div');
       bar.style.cssText = 'display:flex;flex-wrap:nowrap;gap:4px;flex-shrink:0;overflow-x:auto;padding-bottom:2px';
       const ref = ML.CHANNELS[0];
-      bar.appendChild(mkCardCompact(ref.label, '\u2605', ref.color, '0.000s', ref.color));
+      bar.appendChild(mkCardCompact(ref.label, '★', ref.color, '0.000s', ref.color));
       results.forEach(r => {
         if (r.isReference || !r.channel) return;
         const ch = r.channel;
@@ -424,7 +283,7 @@
       const el = ref.manualEl;
       const s  = totalMs / 1000;
       el.style.display = 'inline';
-      el.textContent   = ' \u2192 ' + (s>=0?'+':'') + s.toFixed(3) + 's';
+      el.textContent   = ' → ' + (s>=0?'+':'') + s.toFixed(3) + 's';
       el.style.color   = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#00d4ff';
     }
     function hideCardManual(chId) {
@@ -448,7 +307,7 @@
         `background:${ch.color}22;border:1px solid ${ch.color}88;color:${ch.color}`,
         'border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;transition:opacity .15s',
       ].join(';');
-      btn.textContent = (idx === 0 ? '\u2605 ' : '') + ch.label;
+      btn.textContent = (idx === 0 ? '★ ' : '') + ch.label;
       btn.onclick = () => { const on=btn.dataset.active==='1'; btn.dataset.active=on?'0':'1'; btn.style.opacity=on?'0.35':'1'; rebuildCharts(); };
       toggleBar.appendChild(btn);
     });
@@ -459,19 +318,18 @@
 
     const manualHint = document.createElement('div');
     manualHint.style.cssText = 'color:#ffd700;font-size:8px;text-align:center;opacity:.8';
-    manualHint.textContent = '\u25c4 dir = mais atraso  |  esq = menos atraso \u25ba   \uD83C\uDFAF = alinhar por pico';
+    manualHint.textContent = '◄ dir = mais atraso  |  esq = menos atraso ►';
     manualBar.appendChild(manualHint);
 
     const btnResetAll = document.createElement('button');
-    btnResetAll.textContent = '\u21ba Reset tudo';
+    btnResetAll.textContent = '↺ Reset tudo';
     btnResetAll.title = 'Reseta todos os canais para o valor calculado automaticamente';
     btnResetAll.style.cssText = [
       'background:#2a1a1a;border:1px solid #ff884455;color:#ff8844',
       'border-radius:3px;padding:2px 8px;cursor:pointer;font:bold 8px monospace;width:100%',
     ].join(';');
 
-    const sliderRefs   = {};
-    const alignBtnRefs = {};
+    const sliderRefs = {};
 
     activeChannels.forEach((ch, idx) => {
       if (idx === 0) return;
@@ -497,26 +355,9 @@
       slider.style.cssText = `flex:1;accent-color:${ch.color}`;
 
       const btnReset = document.createElement('button');
-      btnReset.textContent = '\u21ba';
-      btnReset.title = 'Reset \u2014 volta ' + ch.label + ' para o valor calculado automaticamente';
+      btnReset.textContent = '↺';
+      btnReset.title = 'Reset — volta ' + ch.label + ' para o valor calculado automaticamente';
       btnReset.style.cssText = 'background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px;width:18px;text-align:center';
-
-      const btnAlign = document.createElement('button');
-      btnAlign.textContent = '\uD83C\uDFAF';
-      btnAlign.title = 'Alinhar ' + ch.label + ' clicando em picos nos gr\u00e1ficos';
-      btnAlign.style.cssText = 'background:#1a1a2e;border:1px solid #ffd70055;color:#ffd700;border-radius:3px;padding:0;cursor:pointer;font:11px monospace;flex-shrink:0;line-height:14px;width:20px;height:16px;text-align:center;overflow:hidden';
-      alignBtnRefs[ch.id] = btnAlign;
-      btnAlign.onclick = () => {
-        if (pickMode && pickMode.targetChId === ch.id) { cancelPickMode(); return; }
-        cancelPickMode();
-        pickMode  = { targetChId: ch.id };
-        firstPick = null;
-        btnAlign.style.background  = '#ffd70033';
-        btnAlign.style.borderColor = '#ffd700';
-        btnAlign.textContent = '\u23F3';
-        updatePickStatus();
-        Object.values(chartMeta).forEach(m => { if (m.canvas) m.canvas.style.cursor = 'crosshair'; });
-      };
 
       const valLbl = document.createElement('span');
       valLbl.style.cssText = 'color:#aaa;font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap';
@@ -551,7 +392,7 @@
       });
 
       sliderRefs[ch.id] = { slider, valLbl, range, doReset, refreshLabel };
-      row.append(lbl, slider, btnReset, btnAlign, valLbl);
+      row.append(lbl, slider, btnReset, valLbl);
       manualBar.appendChild(row);
     });
 
@@ -559,7 +400,7 @@
     manualBar.appendChild(btnResetAll);
 
     const btnConfirm = document.createElement('button');
-    btnConfirm.textContent = '\u2714 Confirmar ajuste';
+    btnConfirm.textContent = '✔ Confirmar ajuste';
     btnConfirm.style.cssText = [
       'background:#44ff8833;border:1px solid #44ff88;color:#44ff88',
       'border-radius:3px;padding:3px 8px;cursor:pointer;font:bold 8px monospace',
@@ -577,8 +418,8 @@
       });
       if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
       rebuildCharts();
-      btnConfirm.textContent = '\u2714 Salvo!';
-      setTimeout(() => { btnConfirm.textContent = '\u2714 Confirmar ajuste'; }, 1500);
+      btnConfirm.textContent = '✔ Salvo!';
+      setTimeout(() => { btnConfirm.textContent = '✔ Confirmar ajuste'; }, 1500);
     };
     manualBar.appendChild(btnConfirm);
     body.appendChild(manualBar);
@@ -587,7 +428,7 @@
       manualMode = !manualMode;
       updateManualBtn();
       manualBar.style.display = manualMode ? 'flex' : 'none';
-      if (!manualMode) { activeChannels.forEach(ch => hideCardManual(ch.id)); cancelPickMode(); }
+      if (!manualMode) { activeChannels.forEach(ch => hideCardManual(ch.id)); }
       rebuildCharts();
     };
     btnMode.onclick = () => { chartMode = chartMode === 'parallel' ? 'overlay' : 'parallel'; updateModeBtn(); rebuildCharts(); };
@@ -648,8 +489,6 @@
 
     function registerCanvas(ch, canvas, chart, peaks, chShift) {
       chartMeta[ch.id] = { canvas, chart, peaks, ch, chShift };
-      if (pickMode) canvas.style.cursor = 'crosshair';
-      canvas.addEventListener('click', e => handlePickClick(ch.id, e));
     }
 
     function buildParallel(channels) {
@@ -658,7 +497,7 @@
       const ticks = xMaxTicks();
 
       const refChVisible = channels[0];
-      const refShift     = getTotalShift(refChVisible, 0); // sempre 0 para ref
+      const refShift     = getTotalShift(refChVisible, 0);
       const refPeaks     = getFixedPeaks(refChVisible);
       const refPeaksRef  = [refPeaks];
 
@@ -674,14 +513,13 @@
         row.style.cssText = `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0;padding:2px 3px;border-radius:4px;background:${ch.color}0d;box-shadow:inset 0 0 0 1px ${ch.color}22;overflow:hidden`;
         const lblEl = document.createElement('div');
         lblEl.style.cssText = `color:${ch.color};font-weight:bold;font-size:8px;width:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
-        lblEl.textContent = (idx === 0 ? '\u2605 ' : '') + ch.label;
+        lblEl.textContent = (idx === 0 ? '★ ' : '') + ch.label;
         const wrap = document.createElement('div');
         wrap.style.cssText = 'flex:1;min-width:0;overflow:hidden';
         const cvs = document.createElement('canvas');
         wrap.appendChild(cvs); row.append(lblEl, wrap); chartsArea.appendChild(row);
 
         const pluginRefPeaks = idx === 0 ? null : refPeaksRef;
-        // captura shift para closure do plugin
         const capturedShift = shift;
         const capturedRefShift = refShift;
 
@@ -730,13 +568,12 @@
       if (manualMode) {
         const hint = document.createElement('div');
         hint.style.cssText = 'position:absolute;top:2px;left:50%;transform:translateX(-50%);color:#ffd70088;font-size:7px;pointer-events:none;z-index:2;white-space:nowrap';
-        hint.textContent = '\u25b6 Ajuste fino pelas r\u00e9guas abaixo';
+        hint.textContent = '▶ Ajuste fino pelas réguas abaixo';
         wrap.appendChild(hint);
       }
       const cvs = document.createElement('canvas');
       wrap.appendChild(cvs); chartsArea.appendChild(wrap);
 
-      // Para overlay: cada pico carrega também o shift do seu canal
       const allPeaksMerged = showPeaks
         ? allLumsShifted.flatMap(({ ch, shift }) =>
             getFixedPeaks(ch).map(p => ({ ...p, chShift: shift }))
@@ -762,40 +599,8 @@
             const visualX = xIndex - chShift;
             const xPx = xAxis.getPixelForValue(visualX);
             if (xPx < xAxis.left || xPx > xAxis.right) return;
-            const isSelected = firstPick && firstPick.xIndex === xIndex;
-            const snapDist   = nearestRefDist(visualX, refPeaks, refShift);
-
-            ctx.beginPath();
-            ctx.moveTo(xPx, yAxis.top);
-            ctx.lineTo(xPx, yAxis.bottom);
-
-            if (isSelected) {
-              ctx.strokeStyle = '#ffd700ee';
-              ctx.lineWidth   = 3;
-              ctx.setLineDash([4, 3]);
-            } else if (pickMode) {
-              ctx.strokeStyle = color + 'aa';
-              ctx.lineWidth   = 1.5;
-              ctx.setLineDash([]);
-            } else if (snapDist === 0) {
-              ctx.strokeStyle = '#ffffffcc';
-              ctx.lineWidth   = 3;
-              ctx.setLineDash([5, 3]);
-            } else if (snapDist === 1) {
-              ctx.strokeStyle = '#88888888';
-              ctx.lineWidth   = 1.5;
-              ctx.setLineDash([]);
-            } else if (snapDist <= SNAP_RADIUS) {
-              ctx.strokeStyle = '#55555544';
-              ctx.lineWidth   = 1;
-              ctx.setLineDash([]);
-            } else {
-              ctx.strokeStyle = color + '55';
-              ctx.lineWidth   = 1;
-              ctx.setLineDash([]);
-            }
-            ctx.stroke();
-            ctx.setLineDash([]);
+            const snapDist = nearestRefDist(visualX, refPeaks, refShift);
+            drawPeakLine(ctx, xPx, yAxis, color, snapDist);
           });
           ctx.restore();
         },
@@ -827,30 +632,6 @@
         plugins: allPeaksMerged.length ? [overlayPeakPlugin] : [],
       });
       chartInstances.push(ci);
-
-      cvs.addEventListener('click', e => {
-        if (!pickMode) return;
-        const xAxis = ci.scales.x;
-        if (!xAxis) return;
-        const rect   = cvs.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        let bestPeak = null, bestDist = Infinity, bestChId = null;
-        allLumsShifted.forEach(({ ch, shift }) => {
-          getFixedPeaks(ch).forEach(p => {
-            const px = xAxis.getPixelForValue(p.xIndex - shift);
-            const d  = Math.abs(px - clickX);
-            if (d < bestDist && d <= PEAK_CLICK_RADIUS) { bestDist = d; bestPeak = p; bestChId = ch.id; }
-          });
-        });
-        if (!bestPeak || !bestChId) return;
-        const fakeMeta = { canvas: cvs, chart: ci, peaks: getFixedPeaks(activeChannels.find(c => c.id === bestChId)), ch: activeChannels.find(c => c.id === bestChId), chShift: allLumsShifted.find(e => e.ch.id === bestChId)?.shift || 0 };
-        const prevMeta = chartMeta[bestChId];
-        chartMeta[bestChId] = fakeMeta;
-        handlePickClick(bestChId, e);
-        chartMeta[bestChId] = prevMeta || fakeMeta;
-        ci.update('none');
-      });
-      if (pickMode) cvs.style.cursor = 'crosshair';
     }
 
     document.body.appendChild(panel);
