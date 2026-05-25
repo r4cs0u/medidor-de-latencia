@@ -78,6 +78,19 @@
     };
   }
 
+  function normalizeAnalysisMode(mode) {
+    if (mode === 'legacy' || mode === 'hybrid' || mode === 'compare') return mode;
+    return 'legacy';
+  }
+
+  function setAnalysisMode(mode) {
+    ML.state.analysisMode = normalizeAnalysisMode(mode);
+  }
+
+  function getAnalysisMode() {
+    return normalizeAnalysisMode(ML.state.analysisMode);
+  }
+
   async function showChart(results) {
     if (!Array.isArray(results)) results = [results];
     await loadChartJs();
@@ -126,6 +139,43 @@
     function updateModeBtn() { btnMode.textContent = chartMode === 'parallel' ? '⫴ Paralelo' : '⧉ Sobreposto'; }
     updateModeBtn();
 
+    const modeBar = document.createElement('div');
+    modeBar.style.cssText = 'display:flex;align-items:center;gap:3px;flex-shrink:0;margin-right:4px;';
+    const btnLegacy = document.createElement('button');
+    const btnHybrid = document.createElement('button');
+    const btnCompare = document.createElement('button');
+    [btnLegacy, btnHybrid, btnCompare].forEach(btn => {
+      btn.style.cssText = [
+        'background:#141420;border:1px solid #2a2a4a;color:#aaa',
+        'border-radius:3px;padding:2px 4px;cursor:pointer;font:bold 8px monospace;white-space:nowrap',
+      ].join(';');
+    });
+    btnLegacy.textContent  = 'Atual';
+    btnHybrid.textContent  = 'Híbrido';
+    btnCompare.textContent = 'Comparar';
+
+    function refreshModeButtons() {
+      const mode = getAnalysisMode();
+      [btnLegacy, btnHybrid, btnCompare].forEach(btn => {
+        btn.style.background = '#141420';
+        btn.style.borderColor = '#2a2a4a';
+        btn.style.color = '#aaa';
+      });
+      let activeBtn = btnLegacy;
+      if (mode === 'hybrid') activeBtn = btnHybrid;
+      else if (mode === 'compare') activeBtn = btnCompare;
+      activeBtn.style.background = '#00d4ff22';
+      activeBtn.style.borderColor = '#00d4ff88';
+      activeBtn.style.color = '#00d4ff';
+    }
+    refreshModeButtons();
+
+    btnLegacy.onclick  = () => { setAnalysisMode('legacy');  refreshModeButtons(); rebuildCharts(); };
+    btnHybrid.onclick  = () => { setAnalysisMode('hybrid');  refreshModeButtons(); rebuildCharts(); };
+    btnCompare.onclick = () => { setAnalysisMode('compare'); refreshModeButtons(); rebuildCharts(); };
+
+    modeBar.append(btnLegacy, btnHybrid, btnCompare);
+
     let manualMode = false;
     const btnManual = document.createElement('button');
     btnManual.style.cssText = 'background:#1a2a1a;border:1px solid #44ff8855;color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap';
@@ -148,7 +198,7 @@
     btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnClose.onclick = () => panel.remove();
 
-    hdr.append(htitle, btnManual, btnPeaks, btnMode, btnClose);
+    hdr.append(htitle, modeBar, btnManual, btnPeaks, btnMode, btnClose);
     panel.appendChild(hdr);
 
     let pdrag = false, pox = 0, poy = 0;
@@ -172,7 +222,7 @@
       h.appendChild(dot); panel.appendChild(h);
       let rsx=0,rsy=0,rsw=0,rsh=0,rsl=0,rst=0;
       h.addEventListener('mousedown', e => {
-        e.stopPropagation(); e.preventDefault();
+        e.stopPropagation(); e.preventivent();
         rsx=e.clientX; rsy=e.clientY; rsw=panel.offsetWidth; rsh=panel.offsetHeight; rsl=panel.offsetLeft; rst=panel.offsetTop;
         function onMove(ev) {
           const dx=ev.clientX-rsx, dy=ev.clientY-rsy;
@@ -200,13 +250,29 @@
     });
 
     const originalAutoMs = {};
+    const hybridAutoMs   = {};
     const confirmedMs    = {};
-    ML.CHANNELS.forEach(ch => { originalAutoMs[ch.id] = 0; confirmedMs[ch.id] = 0; });
+    ML.CHANNELS.forEach(ch => { originalAutoMs[ch.id] = 0; hybridAutoMs[ch.id] = 0; confirmedMs[ch.id] = 0; });
     results.forEach(r => {
       if (r.isReference || !r.channel || r.error || r.skipped || r.offsetMs == null) return;
       originalAutoMs[r.channel.id] = r.offsetMs;
       confirmedMs[r.channel.id]    = r.offsetMs;
     });
+
+    function computeHybridIfNeeded() {
+      if (!ML.hybridAnalyzer || getAnalysisMode() === 'legacy') return;
+      try {
+        const ref = ML.CHANNELS[0];
+        ML.hybridAnalyzer.analyzeBestAll().forEach(r => {
+          if (r.isReference || !r.channel || r.error || r.offsetMs == null) return;
+          hybridAutoMs[r.channel.id] = r.offsetMs;
+        });
+      } catch (e) {
+        console.error('[MedLat] Erro ao calcular híbrido:', e);
+      }
+    }
+    computeHybridIfNeeded();
+
     const fineShiftSamples = {};
     ML.CHANNELS.forEach(ch => { fineShiftSamples[ch.id] = 0; });
 
@@ -480,6 +546,11 @@
     function getTotalShift(ch, idx) {
       if (idx === 0) return 0;
       const iv = ui.realIvMs(ch);
+      const mode = getAnalysisMode();
+      if (mode === 'hybrid' || mode === 'compare') {
+        const base = hybridAutoMs[ch.id] || originalAutoMs[ch.id] || 0;
+        return Math.round(base / iv);
+      }
       return Math.round((confirmedMs[ch.id] || 0) / iv);
     }
 
@@ -664,5 +735,5 @@
   }
 
   ML.chart = { show: showChart };
-  console.log('[MedLat] 40-chart carregado.');
+  console.log('[MedLat] 40-chart carregado. Modo de análise: ' + getAnalysisMode() + '.');
 })();
