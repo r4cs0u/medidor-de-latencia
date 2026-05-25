@@ -72,14 +72,16 @@
     inp.title = 'Offset fixo do multiviewer. Ex: 3 → -3.000s  +1.5 → +1.500s';
     function applyDedStyle() {
       const t = ui.T;
+      // cor: laranja apenas se já tem valor preenchido, senão textPrimary
+      const hasVal = inp.value && inp.value !== '' && inp.value !== '0.000s';
       inp.style.cssText = [
-        `background:${t.inputBg};border:1px solid ${t.inputBorder}88;color:#ff9d00`,
+        `background:${t.inputBg};border:1px solid ${t.inputBorder}88;color:${hasVal ? '#ff9d00' : t.textPrimary}`,
         'font:bold 8px monospace;width:100%;box-sizing:border-box;border-radius:3px',
         'padding:1px 3px;text-align:center;outline:none;height:18px',
       ].join(';');
     }
     applyDedStyle();
-    inp.addEventListener('focus', () => inp.style.borderColor = '#ff9d0088');
+    inp.addEventListener('focus', () => inp.style.borderColor = ui.T.inputBorder + 'cc');
     inp.addEventListener('blur',  () => {
       inp.style.borderColor = ui.T.inputBorder + '88';
       const raw = inp.value.trim();
@@ -146,7 +148,8 @@
     const ttl = document.createElement('span');
     ttl.textContent = '\u{1F550} ANALISADOR DE LAT\u00CANCIA';
     function applyTtlStyle() {
-      ttl.style.cssText = `color:${ui.T.accentColor};font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
+      // Título neutro — usa textPrimary em vez de accentColor
+      ttl.style.cssText = `color:${ui.T.textPrimary};font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
     }
     applyTtlStyle();
     ui.onThemeChange(() => applyTtlStyle());
@@ -288,6 +291,7 @@
       lblInp.value = i === 0 ? 'Referência' : ch.label;
       lblInp.title = 'Clique para renomear a tela';
       function applyLblStyle() {
+        // Nome da tela mantém a cor do canal — é identificação visual
         lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
       }
       applyLblStyle();
@@ -320,14 +324,15 @@
       function applySzStyle() {
         const t = ui.T;
         szInp.style.cssText = [
-          `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.accentColor}`,
+          // px individual: cor neutra (textPrimary) em vez de accentColor
+          `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.textPrimary}`,
           'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
           'text-align:center;outline:none;box-sizing:border-box',
           'height:18px;width:28px;flex-shrink:0;min-width:0',
         ].join(';');
       }
       applySzStyle();
-      szInp.addEventListener('focus', () => szInp.style.borderColor = ui.T.accentColor + '88');
+      szInp.addEventListener('focus', () => szInp.style.borderColor = ui.T.inputBorder + 'cc');
       szInp.addEventListener('blur',  () => szInp.style.borderColor = ui.T.inputBorder);
       ui.onThemeChange(() => applySzStyle());
       ch._szInp = szInp;
@@ -348,7 +353,8 @@
         function applySzBtnStyle() {
           const t = ui.T;
           b.style.cssText = [
-            `background:${t.btnBg};border:1px solid ${t.btnBorder};color:${t.accentColor}`,
+            // botões de tamanho: cor neutra (textPrimary)
+            `background:${t.btnBg};border:1px solid ${t.btnBorder};color:${t.textPrimary}`,
             'font:bold 9px monospace;border-radius:3px;padding:0 3px',
             'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
           ].join(';');
@@ -366,7 +372,8 @@
 
       const r3ded = ui.row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
-      r3ded.append(ui.sp('ded', 'font-size:9px;color:#ff9d00;flex-shrink:0'), mkDeductionInput(ch));
+      // label "ded" neutro — sem cor laranja hardcoded
+      r3ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
 
       const rows = [r1, r2, r3ded];
       if (i !== 0) {
@@ -519,6 +526,7 @@
       ch._panelTr = tr;
       const tdName = document.createElement('td');
       tdName.textContent = (i === 0 ? '\u2605 ' : '') + (i === 0 ? 'Referência' : ch.label);
+      // Nome na tabela mantém cor do canal — identificação visual
       tdName.style.cssText = `color:${ch.color};padding:1px 2px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px`;
       ch._tdName = tdName;
       const tdOff = document.createElement('td');
