@@ -269,40 +269,28 @@
 
   // ── correlateRolling (modo RT) ────────────────────────────────────────────
   //
-  // Estratégia em dois níveis:
-  //
-  // 1. BUFFER LONGO (rtUseLongBuffer=true, padrão):
-  //    Usa ch.buffer acumulado para encontrar âncoras de cena — o mesmo
-  //    usado pelo modo LOG. Isso cobre delays de 5–35s com precisão.
-  //    O lagPreset do canal define o range de busca (min/max em samples).
-  //    Após achar anchorSamples, refina com crossCorrelation de janela curta.
-  //
-  // 2. FALLBACK ROLLING:
-  //    Usado quando buffer < 60 amostras ou rtUseLongBuffer=false.
-  //    Opera só sobre rollingBuffer — funciona bem para delays ≤ rtWindowMs/2.
-  //
-  // Suavização exponencial:
-  //    Se confidence < rtConfThreshold, o offsetMs retornado é uma média
-  //    ponderada entre o valor bruto e o último valor válido (ch._rtSmooth),
-  //    com peso rtSmoothAlpha. O caller (50-panel) usa ch._rtSmooth para
-  //    exibir o valor persistente em cinza.
+  // Sempre usa ch.buffer (acumulado continuamente pelo recorder no modo RT).
+  // A cada tick, se a correlação for confiante (>= rtConfThreshold), o
+  // rawOffsetMs é adicionado a ch._rtHistory (sem limite de tamanho —
+  // o buffer tem no máximo 2 min, portanto o histórico é proporcional).
+  // O valor exibido pelo panel é a MEDIANA de ch._rtHistory.
+  // Sem suavização exponencial (EMA removida).
+
+  function median(arr) {
+    if (!arr.length) return null;
+    const s = [...arr].sort((a, b) => a - b);
+    const m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
 
   function correlateRolling(chA, chB) {
-    const cfg          = ML.config;
-    const useLongBuf   = cfg.rtUseLongBuffer !== false;
-    const smoothAlpha  = cfg.rtSmoothAlpha   !== undefined ? cfg.rtSmoothAlpha : 0.3;
-    const confThresh   = cfg.rtConfThreshold !== undefined ? cfg.rtConfThreshold : 0.70;
+    const confThresh = (ML.config && ML.config.rtConfThreshold !== undefined)
+      ? ML.config.rtConfThreshold : 0.70;
 
-    // Decide qual buffer usar para âncoras
-    const longBufA = chA.buffer || [];
-    const longBufB = chB.buffer || [];
-    const MIN_LONG = 60;
-    const useActuallyLong = useLongBuf && longBufA.length >= MIN_LONG && longBufB.length >= MIN_LONG;
+    const bufA = chA.buffer || [];
+    const bufB = chB.buffer || [];
 
-    const bufA = useActuallyLong ? longBufA : (chA.rollingBuffer || []);
-    const bufB = useActuallyLong ? longBufB : (chB.rollingBuffer || []);
-
-    const MIN_SAMPLES = 20;
+    const MIN_SAMPLES = 60;
     if (bufA.length < MIN_SAMPLES || bufB.length < MIN_SAMPLES) {
       return { error: 'Aguardando amostras (' + Math.min(bufA.length, bufB.length) + '/' + MIN_SAMPLES + ')' };
     }
@@ -311,20 +299,11 @@
     const lumB = bufB.map(p => p.lum);
     const ivMs = (realIntervalMsFromBuf(bufA) + realIntervalMsFromBuf(bufB)) / 2;
 
-    // Range de lag: usa lagPreset do canal B quando buffer longo disponível
-    let maxLagSamples, minLagSamples;
-    if (useActuallyLong) {
-      const lagRange  = effectiveLag({ label: chA.label }, { label: chB.label });
-      maxLagSamples   = Math.ceil(lagRange.maxLagMs / ivMs);
-      minLagSamples   = Math.ceil(lagRange.minLagMs / ivMs);
-      // Nunca extrapolar além do buffer disponível
-      maxLagSamples   = Math.min(maxLagSamples, Math.floor(Math.min(lumA.length, lumB.length) * 0.8));
-    } else {
-      maxLagSamples   = Math.floor(Math.min(lumA.length, lumB.length) / 2);
-      minLagSamples   = 0;
-    }
+    const lagRange    = effectiveLag({ label: chA.label }, { label: chB.label });
+    let maxLagSamples = Math.ceil(lagRange.maxLagMs / ivMs);
+    const minLagSamples = Math.ceil(lagRange.minLagMs / ivMs);
+    maxLagSamples = Math.min(maxLagSamples, Math.floor(Math.min(lumA.length, lumB.length) * 0.8));
 
-    // Âncoras de cena sobre o buffer completo
     const anchor        = anchorOffset(lumA, lumB, maxLagSamples, minLagSamples);
     const anchorSamples = anchor ? anchor.delta : null;
 
@@ -336,34 +315,27 @@
     const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
     const subFrame = parabolicPeak(corr, peakIdx);
 
-    const refineLag = peak.lag + subFrame;
-    const totalLag  = (anchorSamples !== null ? anchorSamples : 0) + refineLag;
+    const refineLag   = peak.lag + subFrame;
+    const totalLag    = (anchorSamples !== null ? anchorSamples : 0) + refineLag;
     const rawOffsetMs = totalLag * ivMs;
     const confidence  = peak.r;
 
-    // Suavização exponencial sobre ch._rtSmooth
-    let smoothedOffsetMs = rawOffsetMs;
-    if (chB._rtSmooth !== undefined && chB._rtSmooth !== null) {
-      if (confidence < confThresh) {
-        // Abaixo do threshold: mistura com alpha baixo (puxa levemente para novo valor)
-        smoothedOffsetMs = chB._rtSmooth * (1 - smoothAlpha) + rawOffsetMs * smoothAlpha;
-      } else {
-        // Acima do threshold: atualiza com alpha alto para convergir rápido
-        smoothedOffsetMs = chB._rtSmooth * (1 - Math.min(0.7, smoothAlpha * 2)) +
-                           rawOffsetMs   * Math.min(0.7, smoothAlpha * 2);
-      }
+    // Acumula histórico apenas quando confiante
+    if (confidence >= confThresh) {
+      if (!chB._rtHistory) chB._rtHistory = [];
+      chB._rtHistory.push(rawOffsetMs);
     }
-    // Persiste o smoothed para o próximo tick
-    chB._rtSmooth = smoothedOffsetMs;
+
+    const medianOffsetMs = median(chB._rtHistory || []);
 
     return {
-      offsetMs:         smoothedOffsetMs,
-      rawOffsetMs,
+      offsetMs:         medianOffsetMs,   // valor estável para exibição
+      rawOffsetMs,                         // valor bruto do tick atual
       confidence,
       anchorConfidence: anchor ? anchor.confidence : null,
       intervalMs:       ivMs,
       samples:          Math.min(lumA.length, lumB.length),
-      usedLongBuffer:   useActuallyLong,
+      historyLen:       (chB._rtHistory || []).length,
       labelA:           chA.label,
       labelB:           chB.label,
     };
@@ -386,7 +358,7 @@
         confidence:       r.error ? null : r.confidence,
         intervalMs:       r.error ? null : r.intervalMs,
         samples:          r.error ? null : r.samples,
-        usedLongBuffer:   r.error ? null : r.usedLongBuffer,
+        historyLen:       r.error ? null : r.historyLen,
         error:            r.error || null,
       });
     });
@@ -398,7 +370,8 @@
     correlateRolling, correlateRollingAll,
     crossCorrelation, diffSeries, normalize,
     realIntervalMsFromBuf,
+    median,
   };
 
-  console.log('[MedLat] 30-correlator carregado. RT: buffer longo para âncoras (rtUseLongBuffer), suavização exponencial (rtSmoothAlpha).');
+  console.log('[MedLat] 30-correlator carregado. RT: mediana do histórico acumulado (sem EMA). Mín. 60 amostras para iniciar.');
 })();
