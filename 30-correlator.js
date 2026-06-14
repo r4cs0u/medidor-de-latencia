@@ -4,8 +4,8 @@
   const ADAPT_FACTOR          = 0.15;
   const DIFF_THRESHOLD_MIN    = 1;
   const ANCHOR_TOP_N          = 30;
-  const ANCHOR_MIN_ISOLATION  = 30;
-  const ANCHOR_STRENGTH_RATIO = 1.5;
+  const ANCHOR_MIN_ISOLATION  = 60;   // era 30 — aumentado para sinais web com jitter de GOP
+  const ANCHOR_STRENGTH_RATIO = 2.5;  // era 1.5 — só cortes de cena fortes viram âncoras
   const ANCHOR_CONSENSUS_TOL  = 2;
   const REFINE_WINDOW         = 15;
 
@@ -112,6 +112,9 @@
   }
 
   // ── Âncoras de cena ───────────────────────────────────────────────────────
+  // ANCHOR_MIN_ISOLATION e ANCHOR_STRENGTH_RATIO aumentados para sinais web:
+  // - GOP corrompido por jitter pode gerar falsos picos de luminância
+  // - Só eventos fortes e isolados são usados como âncoras
 
   function extractAnchors(lum) {
     const diff = diffSeries(lum);
@@ -119,8 +122,8 @@
     diff.forEach((d, i) => { if (d > 0) peaks.push({ i, d }); });
     if (peaks.length < 2) return [];
     const sorted = [...peaks].sort((a, b) => a.d - b.d);
-    const median = sorted[Math.floor(sorted.length / 2)].d;
-    const minAmp = median * ANCHOR_STRENGTH_RATIO;
+    const med = sorted[Math.floor(sorted.length / 2)].d;
+    const minAmp = med * ANCHOR_STRENGTH_RATIO;
     const strong = peaks
       .filter(p => p.d >= minAmp)
       .sort((a, b) => b.d - a.d)
@@ -139,6 +142,7 @@
 
   // anchorOffset: aceita offsets negativos (tela adiantada em relação à ref).
   // minLagSamples=0 por padrão — passa explicitamente para restringir no modo LOG.
+  // Consenso exige count >= 3 (era >= 2) para reduzir falsos positivos em sinais web.
   function anchorOffset(lumA, lumB, maxLagSamples, minLagSamples) {
     const anchorsA = extractAnchors(lumA);
     const anchorsB = extractAnchors(lumB);
@@ -149,7 +153,6 @@
       anchorsB.forEach(b => {
         const delta = b.i - a.i;
         if (Math.abs(delta) > maxLagSamples) return;
-        // minLagSamples só filtra quando > 0 (modo LOG com preset)
         if (minLagSamples && Math.abs(delta) < minLagSamples) return;
         const dist = Math.abs(delta);
         if (dist < bestDist) { bestDist = dist; best = { delta, scoreA: a.d, scoreB: b.d }; }
@@ -169,7 +172,7 @@
       }
     });
     const best = groups
-      .filter(g => g.count >= 2)
+      .filter(g => g.count >= 3)   // era >= 2: exige mais consenso para sinais web
       .sort((a, b) => b.count - a.count || b.totalScore - a.totalScore)[0];
     if (!best) return null;
     return { delta: best.delta, confidence: best.count / deltas.length };
@@ -270,14 +273,9 @@
     return results;
   }
 
-  // ── correlateRolling (modo RT) ────────────────────────────────────────────
-  //
-  // No modo RT, minLagSamples = 0 para que offsets negativos (tela adiantada
-  // em relação à referência) sejam detectados normalmente.
-  // crossCorrelation já itera de -maxLag a +maxLag; anchorOffset com
-  // minLagSamples=0 não descarta deltas negativos.
-  //
-  // O valor exibido é a MEDIANA de ch._rtHistory (ticks confiantes acumulados).
+  // ── Mediana aparada (trimmed median) ──────────────────────────────────────
+  // Descarta os 10% menores e 10% maiores do histórico antes de calcular
+  // a mediana. Reduz o impacto de outliers causados por jitter de rede.
 
   function median(arr) {
     if (!arr.length) return null;
@@ -285,6 +283,22 @@
     const m = Math.floor(s.length / 2);
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
   }
+
+  function trimmedMedian(arr) {
+    if (!arr.length) return null;
+    const s = [...arr].sort((a, b) => a - b);
+    // Com menos de 10 pontos não faz sentido aparar — usa mediana simples
+    if (s.length < 10) return median(s);
+    const cut = Math.max(1, Math.floor(s.length * 0.10));
+    const trimmed = s.slice(cut, s.length - cut);
+    return median(trimmed);
+  }
+
+  // ── correlateRolling (modo RT) ────────────────────────────────────────────
+  //
+  // No modo RT, minLagSamples = 0 para que offsets negativos (tela adiantada
+  // em relação à referência) sejam detectados normalmente.
+  // O valor exibido é a MEDIANA APARADA de ch._rtHistory (ticks confiantes).
 
   function correlateRolling(chA, chB) {
     const confThresh = (ML.config && ML.config.rtConfThreshold !== undefined)
@@ -304,7 +318,6 @@
 
     const lagRange    = effectiveLag({ label: chA.label }, { label: chB.label });
     let maxLagSamples = Math.ceil(lagRange.maxLagMs / ivMs);
-    // minLagSamples = 0 no modo RT: aceita offsets negativos (tela adiantada)
     const minLagSamples = 0;
     maxLagSamples = Math.min(maxLagSamples, Math.floor(Math.min(lumA.length, lumB.length) * 0.8));
 
@@ -324,17 +337,16 @@
     const rawOffsetMs = totalLag * ivMs;
     const confidence  = peak.r;
 
-    // Acumula histórico apenas quando confiante
     if (confidence >= confThresh) {
       if (!chB._rtHistory) chB._rtHistory = [];
       chB._rtHistory.push(rawOffsetMs);
     }
 
-    const medianOffsetMs = median(chB._rtHistory || []);
+    const stableOffsetMs = trimmedMedian(chB._rtHistory || []);
 
     return {
-      offsetMs:         medianOffsetMs,   // valor estável para exibição
-      rawOffsetMs,                         // valor bruto do tick atual
+      offsetMs:         stableOffsetMs,  // mediana aparada — valor estável para exibição
+      rawOffsetMs,                        // valor bruto do tick atual
       confidence,
       anchorConfidence: anchor ? anchor.confidence : null,
       intervalMs:       ivMs,
@@ -374,8 +386,8 @@
     correlateRolling, correlateRollingAll,
     crossCorrelation, diffSeries, normalize,
     realIntervalMsFromBuf,
-    median,
+    median, trimmedMedian,
   };
 
-  console.log('[MedLat] 30-correlator carregado. RT: confThresh=0.50, minLagSamples=0 (aceita negativos), mediana do histórico.');
+  console.log('[MedLat] 30-correlator carregado. RT: trimmedMedian (10% aparado), âncoras robustas (isolation=60, ratio=2.5, consenso>=3).');
 })();
