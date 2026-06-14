@@ -2,13 +2,13 @@
   const ML = window.MedLat;
   const ui = ML.ui;
 
-  // ── CSS específico do painel ──────────────────────────────────────────────
+  // ── CSS específico do painel ────────────────────────────────────────────
 
   (function injectStyles() {
     ui.injectStyles();
   })();
 
-  // ── Resultados ──────────────────────────────────────────────────────────────
+  // ── Resultados ──────────────────────────────────────────────────
 
   function refreshRealColumn() {
     const refDed = ML.CHANNELS[0].deduction || 0;
@@ -22,12 +22,12 @@
       const offsetS = parseFloat(ch.offsetEl.textContent.replace('s', '').replace(',', '.'));
       if (isNaN(offsetS)) { ch.realEl.textContent = '--'; ch.realEl.style.color = '#aaaacc'; return; }
       const realS = offsetS + (ch.deduction || 0) - refDed;
-      ch.realEl.textContent = (realS > 0 ? '+' : '') + realS.toFixed(3) + 's';
+      ch.realEl.textContent = (realS > 0 ? '\u2009+' : '') + realS.toFixed(3) + 's';
       ch.realEl.style.color = ui.colorByOffset(Math.abs(realS));
     });
   }
 
-  // ── Inputs de canal ──────────────────────────────────────────────────────────
+  // ── Inputs de canal ───────────────────────────────────────────────
 
   function mkLagSelect(ch) {
     const sel = document.createElement('select');
@@ -43,9 +43,9 @@
     }
     [
       { value: 'auto',   label: 'Auto'       },
-      { value: 'rapido', label: 'Rápido ≤5s'  },
-      { value: 'normal', label: 'Normal ≤15s' },
-      { value: 'lento',  label: 'Lento ≤30s'  },
+      { value: 'rapido', label: 'R\u00e1pido \u22645s'  },
+      { value: 'normal', label: 'Normal \u226415s' },
+      { value: 'lento',  label: 'Lento \u226430s'  },
     ].forEach(o => {
       const opt = document.createElement('option');
       opt.value = o.value; opt.textContent = o.label;
@@ -67,7 +67,7 @@
     const inp = document.createElement('input');
     inp.type = 'text'; inp.placeholder = '0.000s';
     inp.value = ch.deduction ? ui.formatDeduction(ch.deduction) : '';
-    inp.title = 'Offset fixo do multiviewer. Ex: 3 → -3.000s  +1.5 → +1.500s';
+    inp.title = 'Offset fixo do multiviewer. Ex: 3 \u2192 -3.000s  +1.5 \u2192 +1.500s';
     function applyDedStyle() {
       const t = ui.T;
       const hasVal = inp.value && inp.value !== '' && inp.value !== '0.000s';
@@ -99,7 +99,7 @@
     return inp;
   }
 
-  // ── init ────────────────────────────────────────────────────────────────────
+  // ── init ──────────────────────────────────────────────────────────
 
   function init() {
     ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-guide', 'ml-widget'].forEach(id => {
@@ -142,17 +142,40 @@
     ttl.textContent = '\u{1F550} ANALISADOR DE LAT\u00CANCIA';
     ttl.style.cssText = `color:${ui.T.textPrimary};font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
 
-    const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medição precisa', '#ffd700');
+    const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medi\u00e7\u00e3o precisa', '#ffd700');
     const btnGuide = ui.mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
-    const btnMin   = ui.mkIconBtn('\u2212', 'Minimizar para widget', '#aaaaaa');
-    const btnX     = document.createElement('button');
+
+    // ── Botão RT ──
+    const btnRT = document.createElement('button');
+    btnRT.title = 'Alternar entre modo Tempo Real e modo Gravar/Analisar';
+    btnRT.textContent = '\u26a1RT';
+    function applyBtnRTStyle() {
+      const on = ML.config.rtMode;
+      btnRT.style.cssText = [
+        `background:${on ? '#003a4a' : ui.T.btnBg}`,
+        `border:1px solid ${on ? '#00d4ff88' : ui.T.btnBorder}`,
+        `color:${on ? '#00d4ff' : ui.T.textPrimary}`,
+        'font:bold 9px monospace;border-radius:3px;padding:0 5px',
+        'cursor:pointer;height:17px;flex-shrink:0;line-height:1',
+        on ? 'box-shadow:0 0 6px #00d4ff44' : '',
+      ].join(';');
+    }
+    applyBtnRTStyle();
+
+    const btnMin = ui.mkIconBtn('\u2212', 'Minimizar para widget', '#aaaaaa');
+    const btnX   = document.createElement('button');
     btnX.textContent = '\u2715'; btnX.title = 'Fechar o medidor';
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
-    btnX.onclick = () => { ML.recorder.stop(); document.querySelectorAll('[id^="ml-"], .ml-search-overlay').forEach(e => e.remove()); };
+    btnX.onclick = () => {
+      ML.recorder.stop();
+      ML.recorder.stopRolling();
+      if (rtIntervalId) clearInterval(rtIntervalId);
+      document.querySelectorAll('[id^="ml-"], .ml-search-overlay').forEach(e => e.remove());
+    };
     btnTips.onclick  = () => ML.help.toggleTips(panel);
     btnGuide.onclick = () => ML.help.toggleGuide(panel);
     btnMin.onclick   = () => ui.minimizePanel(panel);
-    hdr.append(ttl, btnTips, btnGuide, btnMin, btnX);
+    hdr.append(ttl, btnTips, btnGuide, btnRT, btnMin, btnX);
     panel.appendChild(hdr);
 
     // ── Drag ──
@@ -258,7 +281,7 @@
       };
 
       const lblInp = document.createElement('input');
-      lblInp.value = i === 0 ? 'Referência' : ch.label;
+      lblInp.value = i === 0 ? 'Refer\u00eancia' : ch.label;
       lblInp.title = 'Clique para renomear a tela';
       lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
       lblInp.addEventListener('change', () => {
@@ -268,7 +291,7 @@
       });
 
       const lumEl = document.createElement('span');
-      lumEl.title = 'Luminância atual da probe (0–255)';
+      lumEl.title = 'Lumin\u00e2ncia atual da probe (0\u2013255)';
       lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;flex-shrink:0`;
       lumEl.textContent = '--'; ch.lumEl = lumEl;
 
@@ -346,12 +369,12 @@
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
-    /* ── Seção: Análise ── */
-    const secAn = ui.sec('Análise');
+    /* ── Seção: Análise (modo LOG) ── */
+    const secAn = ui.sec('An\u00e1lise');
     const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = ui.mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;color:#ce93d8;opacity:.45');
-    btnRec.title     = 'Inicia a captura de luminância';
-    btnAnalyze.title = 'Calcula a latência com base nos dados gravados';
+    btnRec.title     = 'Inicia a captura de lumin\u00e2ncia';
+    btnAnalyze.title = 'Calcula a lat\u00eancia com base nos dados gravados';
 
     const progWrap = document.createElement('div');
     progWrap.style.cssText = 'display:none;flex-direction:column;gap:1px;padding:2px 0';
@@ -422,7 +445,7 @@
         const errs = results.filter(r => r.error);
         statusEl.textContent = errs.length
           ? errs.map(r => r.label + ': ' + r.error).join(' | ')
-          : 'Análise concluída';
+          : 'An\u00e1lise conclu\u00edda';
         statusEl.style.color = errs.length ? '#ff8844' : '#44ff88';
       }, 30);
     };
@@ -439,10 +462,86 @@
     secAn.appendChild(progWrap);
     scrollBody.appendChild(secAn);
 
+    /* ── Seção: Tempo Real (modo RT) ── */
+    const secRT = ui.sec('\u26a1 Tempo Real');
+    secRT.style.display = 'none';
+
+    // Grid de cards RT (1 por canal ativo)
+    const rtGrid = document.createElement('div');
+    rtGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px';
+
+    // Cria card RT para cada canal (ch[0] = Refer\u00eancia, mostra "REF")
+    ML.CHANNELS.forEach((ch, i) => {
+      const card = document.createElement('div');
+      card.style.cssText = [
+        'display:flex;flex-direction:column;align-items:center;gap:2px',
+        'padding:4px 3px;border-radius:4px;box-sizing:border-box',
+        `border:1px solid ${ch.color}44`,
+        `background:${ch.color}0d`,
+        `border-top:2px solid ${ch.color}99`,
+        'min-width:0;overflow:hidden',
+      ].join(';');
+      ch._rtCard = card;
+
+      // Label
+      const lbl = document.createElement('div');
+      lbl.textContent = i === 0 ? 'REF' : ch.label;
+      lbl.style.cssText = `color:${ch.color};font:bold 8px monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center`;
+      ch._rtLbl = lbl;
+
+      // Valor principal (offset)
+      const val = document.createElement('div');
+      val.textContent = i === 0 ? '\u2605' : '--';
+      val.style.cssText = 'font:bold 14px monospace;letter-spacing:-.02em;text-align:center;line-height:1';
+      val.style.color = i === 0 ? '#44ff88' : '#aaaacc';
+      ch._rtVal = val;
+
+      // Barra de confian\u00e7a
+      const confWrap = document.createElement('div');
+      confWrap.style.cssText = 'width:100%;height:3px;background:#ffffff18;border-radius:2px;overflow:hidden';
+      const confBar = document.createElement('div');
+      confBar.style.cssText = 'height:100%;width:0%;border-radius:2px;transition:width .4s,background .4s';
+      confWrap.appendChild(confBar);
+      ch._rtConfBar = confBar;
+
+      // Mini sparkline (8 barras)
+      const sparkWrap = document.createElement('div');
+      sparkWrap.style.cssText = 'display:flex;align-items:flex-end;gap:1px;height:16px;width:100%;margin-top:1px';
+      ch._rtSpark     = sparkWrap;
+      ch._rtHistory   = [];  // últimos 8 offsets em ms
+
+      if (i === 0) {
+        card.append(lbl, val);
+      } else {
+        card.append(lbl, val, confWrap, sparkWrap);
+      }
+      rtGrid.appendChild(card);
+    });
+
+    // Strip de resumo global
+    const rtSummary = document.createElement('div');
+    rtSummary.style.cssText = [
+      'display:flex;justify-content:space-between;align-items:center',
+      `background:#ffffff08;border:1px solid #ffffff14`,
+      'border-radius:3px;padding:3px 6px;font-size:8px;color:#aaaacc',
+    ].join(';');
+    rtSummary.innerHTML = '<span>ATIVOS: <b id="ml-rt-active">--</b></span>' +
+      '<span>M\u00c1X: <b id="ml-rt-max">--</b></span>' +
+      '<span>M\u00c9D: <b id="ml-rt-avg">--</b></span>' +
+      '<span>CONF: <b id="ml-rt-conf">--</b></span>';
+
+    // Status RT
+    const rtStatusEl = document.createElement('div');
+    rtStatusEl.style.cssText = 'font-size:8px;color:#aaaacc;text-align:center;margin-top:2px;letter-spacing:.04em';
+    rtStatusEl.textContent = 'Aguardando...';
+
+    secRT.append(rtGrid, rtSummary, rtStatusEl);
+    scrollBody.appendChild(secRT);
+
     /* ── Seção: Resultados ── */
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
-    btnCopyInline.title = 'Copiar tabela de resultados para a área de transferência';
+    btnCopyInline.title = 'Copiar tabela de resultados para a \u00e1rea de transfer\u00eancia';
     btnCopyInline.style.cssText = `background:transparent;border:1px solid ${ui.T.accentColor}44;color:${ui.T.accentColor};border-radius:3px;padding:0 4px;cursor:pointer;font-size:10px;line-height:14px`;
     btnCopyInline.addEventListener('mouseenter', () => btnCopyInline.style.background = ui.T.accentColor + '18');
     btnCopyInline.addEventListener('mouseleave', () => btnCopyInline.style.background = 'transparent');
@@ -466,7 +565,7 @@
       tr.style.cssText = `border-bottom:1px solid ${ui.T.rowBorder}`;
       ch._panelTr = tr;
       const tdName = document.createElement('td');
-      tdName.textContent = (i === 0 ? '\u2605 ' : '') + (i === 0 ? 'Referência' : ch.label);
+      tdName.textContent = (i === 0 ? '\u2605 ' : '') + (i === 0 ? 'Refer\u00eancia' : ch.label);
       tdName.style.cssText = `color:${ch.color};padding:1px 2px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px`;
       ch._tdName = tdName;
       const tdOff = document.createElement('td');
@@ -495,7 +594,7 @@
 
     panel.appendChild(scrollBody);
 
-    // ── Escala responsiva ────────────────────────────────────────────────────
+    // ── Escala responsiva ──────────────────────────────────────────────
     const BASE_W = 340;
     const BASE_H = 640;
 
@@ -508,6 +607,7 @@
 
       const cols = w >= 320 ? 3 : w >= 220 ? 2 : 1;
       probeGrid.style.gridTemplateColumns = `repeat(${cols},1fr)`;
+      rtGrid.style.gridTemplateColumns    = `repeat(${cols},1fr)`;
 
       if (h != null) {
         secTG.style.display = h < 260 ? 'none' : '';
@@ -528,7 +628,126 @@
       }).observe(panel);
     }
 
-    // ── Expõe ML.panel ──────────────────────────────────────────────────────
+    // ── Lógica do toggle RT ───────────────────────────────────────────
+    let rtIntervalId = null;
+
+    function updateRTCard(ch, r) {
+      if (!ch._rtVal) return;
+      if (r.isReference) return;
+      if (!ch.active || r.skipped) {
+        ch._rtVal.textContent = '\u2014';
+        ch._rtVal.style.color = '#555566';
+        if (ch._rtConfBar) { ch._rtConfBar.style.width = '0%'; }
+        return;
+      }
+      const conf = r.confidence !== null ? r.confidence : 0;
+      const aboveThreshold = conf >= ML.config.rtConfThreshold;
+
+      if (r.error || !aboveThreshold) {
+        ch._rtVal.textContent = r.error ? 'ERR' : 'AGUARD.';
+        ch._rtVal.style.color = '#666688';
+        ch._rtVal.style.fontSize = r.error ? '10px' : '8px';
+      } else {
+        const s = r.offsetMs / 1000;
+        ch._rtVal.textContent = (s >= 0 ? '+' : '') + s.toFixed(2) + 's';
+        ch._rtVal.style.color = ui.colorByOffset(Math.abs(s));
+        ch._rtVal.style.fontSize = '14px';
+        // sparkline
+        ch._rtHistory.push(r.offsetMs);
+        if (ch._rtHistory.length > 8) ch._rtHistory.shift();
+        if (ch._rtSpark) {
+          ch._rtSpark.innerHTML = '';
+          const maxAbs = Math.max(1, ...ch._rtHistory.map(v => Math.abs(v)));
+          ch._rtHistory.forEach(v => {
+            const bar = document.createElement('div');
+            const h = Math.max(2, Math.round(14 * Math.abs(v) / maxAbs));
+            bar.style.cssText = [
+              `height:${h}px;flex:1;border-radius:1px`,
+              `background:${ui.colorByOffset(Math.abs(v) / 1000)}`,
+              'min-width:0',
+            ].join(';');
+            ch._rtSpark.appendChild(bar);
+          });
+        }
+      }
+
+      // barra de confian\u00e7a
+      if (ch._rtConfBar) {
+        const pct = Math.round(conf * 100);
+        ch._rtConfBar.style.width  = pct + '%';
+        ch._rtConfBar.style.background = conf >= ML.config.rtConfThreshold
+          ? '#44ff88' : conf > 0.4 ? '#ffd700' : '#ff4444';
+      }
+    }
+
+    function rtTick() {
+      if (!ML.config.rtMode) return;
+      const results = ML.correlator.correlateRollingAll();
+
+      let activeCount = 0, offsets = [], confs = [];
+      results.forEach(r => {
+        const ch = r.channel;
+        if (!ch) return;
+        updateRTCard(ch, r);
+        if (!r.isReference && !r.skipped && r.offsetMs !== null) {
+          activeCount++;
+          offsets.push(Math.abs(r.offsetMs));
+          if (r.confidence !== null) confs.push(r.confidence);
+        }
+      });
+
+      // Atualiza summary strip
+      const elActive = document.getElementById('ml-rt-active');
+      const elMax    = document.getElementById('ml-rt-max');
+      const elAvg    = document.getElementById('ml-rt-avg');
+      const elConf   = document.getElementById('ml-rt-conf');
+      if (elActive) elActive.textContent = activeCount;
+      if (elMax && offsets.length) {
+        const maxS = Math.max(...offsets) / 1000;
+        elMax.textContent = maxS.toFixed(2) + 's';
+        elMax.style.color = ui.colorByOffset(maxS);
+      } else if (elMax) elMax.textContent = '--';
+      if (elAvg && offsets.length) {
+        const avgS = offsets.reduce((a, b) => a + b, 0) / offsets.length / 1000;
+        elAvg.textContent = avgS.toFixed(2) + 's';
+        elAvg.style.color = ui.colorByOffset(avgS);
+      } else if (elAvg) elAvg.textContent = '--';
+      if (elConf && confs.length) {
+        const avgConf = Math.round(confs.reduce((a, b) => a + b, 0) / confs.length * 100);
+        elConf.textContent = avgConf + '%';
+        elConf.style.color = avgConf >= 70 ? '#44ff88' : avgConf >= 40 ? '#ffd700' : '#ff4444';
+      } else if (elConf) elConf.textContent = '--';
+
+      rtStatusEl.textContent = '\u25cf AO VIVO  \u2014  ' + new Date().toLocaleTimeString('pt-BR');
+      rtStatusEl.style.color = '#00d4ff';
+    }
+
+    btnRT.onclick = () => {
+      ML.config.rtMode = !ML.config.rtMode;
+      applyBtnRTStyle();
+
+      if (ML.config.rtMode) {
+        // Entra no modo RT
+        secAn.style.display  = 'none';
+        secRT.style.display  = '';
+        ML.recorder.stopRolling();
+        ML.recorder.startRolling();
+        if (rtIntervalId) clearInterval(rtIntervalId);
+        rtIntervalId = setInterval(rtTick, ML.config.rtIntervalMs);
+        rtStatusEl.textContent = 'Iniciando...'; rtStatusEl.style.color = '#aaaacc';
+        statusEl.textContent   = '\u26a1 Modo RT ativo'; statusEl.style.color = '#00d4ff';
+      } else {
+        // Volta ao modo LOG
+        clearInterval(rtIntervalId); rtIntervalId = null;
+        ML.recorder.stopRolling();
+        secRT.style.display  = 'none';
+        secAn.style.display  = '';
+        rtStatusEl.textContent = 'Pausado';
+        statusEl.textContent   = 'Pronto'; statusEl.style.color = ui.T.statusColor;
+      }
+    };
+
+    // ── Exp\u00f5e ML.panel ─────────────────────────────────────────────
     ML.panel = {
       refreshOffsets(offsets) {
         ML.CHANNELS.forEach((ch, i) => {
@@ -593,5 +812,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado.');
+  console.log('[MedLat] 50-panel carregado. Modo RT dispon\u00edvel via bot\u00e3o \u26a1RT no header.');
 })();
