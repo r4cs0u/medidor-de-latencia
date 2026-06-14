@@ -9,7 +9,7 @@
   const ANCHOR_CONSENSUS_TOL  = 2;    // tolerância em samples para consenso
   const REFINE_WINDOW         = 15;   // janela de refino sub-frame em samples
 
-  // ── Primitivas ────────────────────────────────────────────────────────────
+  // ── Primitivas ───────────────────────────────────────────────────────────
 
   function adaptiveThreshold(arr) {
     const n = arr.length;
@@ -94,6 +94,14 @@
     return ML.INTERVAL_MS;
   }
 
+  function realIntervalMsFromBuf(buf) {
+    if (!buf || buf.length < 2) return ML.INTERVAL_MS;
+    const first = buf[0].ts;
+    const last  = buf[buf.length - 1].ts;
+    const iv    = (last - first) / (buf.length - 1);
+    return (iv >= 10 && iv <= 200) ? iv : ML.INTERVAL_MS;
+  }
+
   function effectiveLag(serA, serB) {
     const chB = ML.CHANNELS.find(c => c.label === serB.label);
     const key = (chB && chB.lagPreset) || 'auto';
@@ -105,32 +113,18 @@
 
   // ── Âncoras de cena ────────────────────────────────────────────────────────
 
-  /**
-   * Extrai âncoras de cena: picos fortes E isolados, como um humano faria.
-   * - Ordena picos por amplitude desc
-   * - Só aceita se amplitude >= ANCHOR_STRENGTH_RATIO * mediana dos picos
-   * - Só aceita se distância ao último aceito >= ANCHOR_MIN_ISOLATION samples
-   */
   function extractAnchors(lum) {
     const diff = diffSeries(lum);
-
-    // Todos os picos não-zero
     const peaks = [];
     diff.forEach((d, i) => { if (d > 0) peaks.push({ i, d }); });
     if (peaks.length < 2) return [];
-
-    // Mediana das amplitudes
     const sorted = [...peaks].sort((a, b) => a.d - b.d);
     const median = sorted[Math.floor(sorted.length / 2)].d;
     const minAmp = median * ANCHOR_STRENGTH_RATIO;
-
-    // Top-N por amplitude, filtrado por força
     const strong = peaks
       .filter(p => p.d >= minAmp)
       .sort((a, b) => b.d - a.d)
       .slice(0, ANCHOR_TOP_N);
-
-    // Ordenar por posição e aplicar isolamento
     strong.sort((a, b) => a.i - b.i);
     const anchors = [];
     let lastIdx = -Infinity;
@@ -143,20 +137,12 @@
     return anchors;
   }
 
-  /**
-   * anchorOffset — replica o raciocínio visual humano:
-   * Para cada âncora de A, encontra a âncora mais próxima em B dentro do range.
-   * Valida por consenso: se >= 2 pares concordam com o mesmo delta (±tol), retorna.
-   * Retorna { delta, confidence } ou null se sem consenso.
-   */
   function anchorOffset(lumA, lumB, maxLagSamples, minLagSamples) {
     const anchorsA = extractAnchors(lumA);
     const anchorsB = extractAnchors(lumB);
     if (anchorsA.length < 2 || anchorsB.length < 2) return null;
-
     const deltas = [];
     anchorsA.forEach(a => {
-      // Encontra a âncora em B mais próxima dentro do range de lag
       let best = null, bestDist = Infinity;
       anchorsB.forEach(b => {
         const delta = b.i - a.i;
@@ -167,35 +153,26 @@
       });
       if (best) deltas.push(best);
     });
-
     if (deltas.length < 2) return null;
-
-    // Agrupa por consenso com tolerância
     const groups = [];
     deltas.forEach(entry => {
       const g = groups.find(g => Math.abs(g.delta - entry.delta) <= ANCHOR_CONSENSUS_TOL);
       if (g) {
         g.count++;
         g.totalScore += entry.scoreA + entry.scoreB;
-        // Recalcula delta como média ponderada pelo score
-        g.delta = Math.round(
-          (g.delta * (g.count - 1) + entry.delta) / g.count
-        );
+        g.delta = Math.round((g.delta * (g.count - 1) + entry.delta) / g.count);
       } else {
         groups.push({ delta: entry.delta, count: 1, totalScore: entry.scoreA + entry.scoreB });
       }
     });
-
-    // Melhor grupo: maior count, desempata por maior totalScore
     const best = groups
       .filter(g => g.count >= 2)
       .sort((a, b) => b.count - a.count || b.totalScore - a.totalScore)[0];
-
     if (!best) return null;
     return { delta: best.delta, confidence: best.count / deltas.length };
   }
 
-  // ── shiftArr ────────────────────────────────────────────────────────────
+  // ── shiftArr ────────────────────────────────────────────────────────
 
   function shiftArr(arr, shift) {
     if (!shift) return arr;
@@ -205,7 +182,7 @@
     return out;
   }
 
-  // ── analyze ────────────────────────────────────────────────────────────
+  // ── analyze (modo LOG) ──────────────────────────────────────────────
 
   function analyze(chA, chB, maxLagMs) {
     const serA = ML.recorder.getSeries(chA);
@@ -223,18 +200,11 @@
     const maxLagSamples = Math.ceil(usedMaxLagMs / ivMs);
     const minLagSamples = Math.ceil(usedMinLagMs / ivMs);
 
-    // ─ Passo 1: âncoras de cena (raciocínio visual) ─
     const anchor = anchorOffset(serA.lum, serB.lum, maxLagSamples, minLagSamples);
     const anchorSamples = anchor ? anchor.delta : null;
 
-    // ─ Passo 2: correlação fina ao redor da âncora ─
-    const lumBshifted = anchorSamples !== null
-      ? shiftArr(serB.lum, anchorSamples)
-      : serB.lum;
-
-    const refineWindow = anchorSamples !== null
-      ? REFINE_WINDOW
-      : maxLagSamples;  // sem âncora: correlação global como fallback
+    const lumBshifted = anchorSamples !== null ? shiftArr(serB.lum, anchorSamples) : serB.lum;
+    const refineWindow = anchorSamples !== null ? REFINE_WINDOW : maxLagSamples;
 
     const corr     = crossCorrelation(serA.lum, lumBshifted, refineWindow);
     const peak     = selectRobustPeak(corr);
@@ -249,14 +219,14 @@
 
     return {
       offsetMs,
-      confidence:      peak.r,
+      confidence:       peak.r,
       anchorConfidence: anchor ? anchor.confidence : null,
-      lagUsedMs:       usedMaxLagMs,
-      lagMinMs:        usedMinLagMs,
-      intervalMs:      ivMs,
+      lagUsedMs:        usedMaxLagMs,
+      lagMinMs:         usedMinLagMs,
+      intervalMs:       ivMs,
       subFrame,
-      landmarkSamples: anchorSamples,
-      lagPreset:       chBobj ? (chBobj.lagPreset || 'auto') : 'auto',
+      landmarkSamples:  anchorSamples,
+      lagPreset:        chBobj ? (chBobj.lagPreset || 'auto') : 'auto',
       corr, serA, serB,
       labelA: serA.label, labelB: serB.label,
     };
@@ -278,25 +248,104 @@
       }
       const r = analyzeBest(chRef, ch);
       results.push({
-        channel:         ch,
-        label:           ch.label,
-        offsetMs:        r.error ? null : r.offsetMs,
-        confidence:      r.error ? null : r.confidence,
-        lagUsedMs:       r.error ? null : r.lagUsedMs,
-        lagMinMs:        r.error ? null : r.lagMinMs,
-        intervalMs:      r.error ? null : r.intervalMs,
-        subFrame:        r.error ? null : r.subFrame,
-        landmarkSamples: r.error ? null : r.landmarkSamples,
-        lagPreset:       r.error ? null : r.lagPreset,
-        error:           r.error || null,
-        corr:            r.corr  || null,
-        serA:            r.serA  || null,
-        serB:            r.serB  || null,
+        channel:          ch,
+        label:            ch.label,
+        offsetMs:         r.error ? null : r.offsetMs,
+        confidence:       r.error ? null : r.confidence,
+        lagUsedMs:        r.error ? null : r.lagUsedMs,
+        lagMinMs:         r.error ? null : r.lagMinMs,
+        intervalMs:       r.error ? null : r.intervalMs,
+        subFrame:         r.error ? null : r.subFrame,
+        landmarkSamples:  r.error ? null : r.landmarkSamples,
+        lagPreset:        r.error ? null : r.lagPreset,
+        error:            r.error || null,
+        corr:             r.corr  || null,
+        serA:             r.serA  || null,
+        serB:             r.serB  || null,
       });
     });
     return results;
   }
 
-  ML.correlator = { analyze, analyzeBest, analyzeBestAll, crossCorrelation, diffSeries, normalize };
-  console.log('[MedLat] 30-correlator carregado. Método: âncoras de cena + refino sub-frame.');
+  // ── correlateRolling (modo RT) ─────────────────────────────────────────
+  //
+  // Opera sobre ch.rollingBuffer (janela deslizante do 20-recorder).
+  // Com poucos segundos de dados (≤5s), o range de lag é limitado ao
+  // tamanho da janela, então ignora lagPreset e usa correlação global.
+  // Tenta âncoras primeiro; cai em correlação global se não houver consenso.
+  // Retorna { offsetMs, confidence, intervalMs, error? }
+
+  function correlateRolling(chA, chB) {
+    const bufA = chA.rollingBuffer || [];
+    const bufB = chB.rollingBuffer || [];
+
+    const MIN_SAMPLES = 20;
+    if (bufA.length < MIN_SAMPLES || bufB.length < MIN_SAMPLES) {
+      return { error: 'Aguardando amostras (' + Math.min(bufA.length, bufB.length) + '/' + MIN_SAMPLES + ')' };
+    }
+
+    const lumA = bufA.map(p => p.lum);
+    const lumB = bufB.map(p => p.lum);
+    const ivMs = (realIntervalMsFromBuf(bufA) + realIntervalMsFromBuf(bufB)) / 2;
+
+    // Janela máxima de lag = metade do menor buffer (em samples)
+    const maxLagSamples = Math.floor(Math.min(lumA.length, lumB.length) / 2);
+
+    // Tenta âncoras (funciona se houver cortes de cena na janela)
+    const anchor = anchorOffset(lumA, lumB, maxLagSamples, 0);
+    const anchorSamples = anchor ? anchor.delta : null;
+
+    const lumBshifted  = anchorSamples !== null ? shiftArr(lumB, anchorSamples) : lumB;
+    const refineWindow = anchorSamples !== null ? REFINE_WINDOW : maxLagSamples;
+
+    const corr    = crossCorrelation(lumA, lumBshifted, refineWindow);
+    const peak    = selectRobustPeak(corr);
+    const peakIdx = corr.findIndex(c => c.lag === peak.lag);
+    const subFrame = parabolicPeak(corr, peakIdx);
+
+    const refineLag = peak.lag + subFrame;
+    const totalLag  = (anchorSamples !== null ? anchorSamples : 0) + refineLag;
+    const offsetMs  = totalLag * ivMs;
+
+    return {
+      offsetMs,
+      confidence:      peak.r,
+      anchorConfidence: anchor ? anchor.confidence : null,
+      intervalMs:      ivMs,
+      samples:         Math.min(lumA.length, lumB.length),
+      labelA:          chA.label,
+      labelB:          chB.label,
+    };
+  }
+
+  // Roda correlateRolling para todos os canais ativos contra ch[0]
+  function correlateRollingAll() {
+    const chRef = ML.CHANNELS[0];
+    const results = [{ channel: chRef, label: chRef.label, offsetMs: 0, confidence: 1, isReference: true }];
+    ML.CHANNELS.slice(1).forEach(ch => {
+      if (!ch.active) {
+        results.push({ channel: ch, label: ch.label, skipped: true });
+        return;
+      }
+      const r = correlateRolling(chRef, ch);
+      results.push({
+        channel:    ch,
+        label:      ch.label,
+        offsetMs:   r.error ? null : r.offsetMs,
+        confidence: r.error ? null : r.confidence,
+        intervalMs: r.error ? null : r.intervalMs,
+        samples:    r.error ? null : r.samples,
+        error:      r.error || null,
+      });
+    });
+    return results;
+  }
+
+  ML.correlator = {
+    analyze, analyzeBest, analyzeBestAll,
+    correlateRolling, correlateRollingAll,
+    crossCorrelation, diffSeries, normalize,
+  };
+
+  console.log('[MedLat] 30-correlator carregado. Método: âncoras de cena + refino sub-frame. Rolling disponível via correlateRolling/correlateRollingAll.');
 })();
