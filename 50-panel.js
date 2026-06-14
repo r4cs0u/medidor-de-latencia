@@ -162,7 +162,6 @@
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnX.onclick = () => {
       ML.recorder.stop();
-      ML.recorder.stopRolling();
       if (rtIntervalId) clearInterval(rtIntervalId);
       document.querySelectorAll('[id^="ml-"], .ml-search-overlay').forEach(e => e.remove());
     };
@@ -487,11 +486,11 @@
       val.style.color = i === 0 ? '#44ff88' : '#aaaacc';
       ch._rtVal = val;
 
-      // Badge de fonte (BUF / ROL)
-      const srcBadge = document.createElement('div');
-      srcBadge.style.cssText = 'font:bold 7px monospace;text-align:center;opacity:.5;letter-spacing:.04em;height:9px;line-height:9px';
-      srcBadge.textContent = '';
-      ch._rtSrcBadge = srcBadge;
+      // Contador de amostras do histórico
+      const histBadge = document.createElement('div');
+      histBadge.style.cssText = 'font:bold 7px monospace;text-align:center;opacity:.5;letter-spacing:.04em;height:9px;line-height:9px';
+      histBadge.textContent = '';
+      ch._rtHistBadge = histBadge;
 
       // Barra de confiança
       const confWrap = document.createElement('div');
@@ -501,16 +500,13 @@
       confWrap.appendChild(confBar);
       ch._rtConfBar = confBar;
 
-      // Sparkline (8 barras)
-      const sparkWrap = document.createElement('div');
-      sparkWrap.style.cssText = 'display:flex;align-items:flex-end;gap:1px;height:16px;width:100%;margin-top:1px';
-      ch._rtSpark   = sparkWrap;
+      // _rtHistory é gerenciado pelo correlator (30-correlator.js)
       ch._rtHistory = [];
 
       if (i === 0) {
         card.append(lbl, val);
       } else {
-        card.append(lbl, val, srcBadge, confWrap, sparkWrap);
+        card.append(lbl, val, histBadge, confWrap);
       }
       rtGrid.appendChild(card);
     });
@@ -615,12 +611,9 @@
 
     // ── updateRTCard ───────────────────────────────────────────────────────
     //
-    // Comportamento de valor persistente:
-    // - Se há um último valor válido (ch._rtLastVal), ele SEMPRE é exibido.
-    // - Confiante (conf ≥ threshold): cor viva normal.
-    // - Incerto (conf < threshold): prefixo "~", cor cinza/esmaecida.
-    // - Sem nenhum valor ainda + erro/aguard: exibe texto de estado.
-    // - Badge BUF (buffer longo) ou ROL (rolling) aparece abaixo do valor.
+    // Exibe a mediana de ch._rtHistory (acumulado pelo correlator).
+    // Sem sparkline. historyLen indica quantos pontos confiantes já foram coletados.
+    // Quando sem histórico ainda: exibe estado de aguardo/erro.
 
     function updateRTCard(ch, r) {
       if (!ch._rtVal) return;
@@ -630,87 +623,46 @@
         ch._rtVal.textContent = '\u2014';
         ch._rtVal.style.color = '#555566';
         ch._rtVal.style.fontSize = '14px';
-        if (ch._rtConfBar) ch._rtConfBar.style.width = '0%';
-        if (ch._rtSrcBadge) ch._rtSrcBadge.textContent = '';
+        if (ch._rtConfBar)   ch._rtConfBar.style.width = '0%';
+        if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
         return;
       }
 
-      const conf          = r.confidence !== null ? r.confidence : 0;
-      const aboveThresh   = conf >= ML.config.rtConfThreshold;
-      const hasLastVal    = ch._rtLastVal !== undefined && ch._rtLastVal !== null;
-      const offsetMs      = r.offsetMs;
+      const conf        = r.confidence !== null ? r.confidence : 0;
+      const aboveThresh = conf >= ML.config.rtConfThreshold;
+      const offsetMs    = r.offsetMs;   // já é a mediana do histórico
+      const histLen     = r.historyLen || 0;
 
-      // Atualiza último valor válido só quando acima do threshold
-      if (aboveThresh && offsetMs !== null) {
-        ch._rtLastVal  = offsetMs;
-        ch._rtLastConf = conf;
-      }
-
-      if (r.error && !hasLastVal) {
-        // Nunca teve valor: mostra ERR
-        ch._rtVal.textContent = 'ERR';
-        ch._rtVal.style.color = '#ff4444';
-        ch._rtVal.style.fontSize = '10px';
-        if (ch._rtSrcBadge) ch._rtSrcBadge.textContent = '';
-      } else if (offsetMs !== null || hasLastVal) {
-        // Tem valor (atual ou persistido): exibe
-        const displayMs = (aboveThresh && offsetMs !== null) ? offsetMs : ch._rtLastVal;
-        const s = displayMs / 1000;
+      if (r.error && !histLen) {
+        // Nunca teve valor confiante ainda
+        ch._rtVal.textContent  = r.error.includes('Aguardando') ? 'AGUARD.' : 'ERR';
+        ch._rtVal.style.color  = '#555566';
+        ch._rtVal.style.fontSize = '8px';
+        ch._rtVal.style.opacity  = '1';
+        if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
+      } else if (offsetMs !== null) {
+        const s      = offsetMs / 1000;
         const prefix = aboveThresh ? (s >= 0 ? '+' : '') : '~';
         ch._rtVal.textContent  = prefix + Math.abs(s).toFixed(2) + 's';
         ch._rtVal.style.fontSize = '14px';
-
-        if (aboveThresh) {
-          // Valor confiante: cor viva
-          ch._rtVal.style.color   = ui.colorByOffset(Math.abs(s));
-          ch._rtVal.style.opacity = '1';
-        } else {
-          // Valor persistido / incerto: cinza esmaecido
-          ch._rtVal.style.color   = '#667788';
-          ch._rtVal.style.opacity = '0.75';
-        }
-
-        // Sparkline: só atualiza com valores confiantes
-        if (aboveThresh && offsetMs !== null) {
-          ch._rtHistory.push(offsetMs);
-          if (ch._rtHistory.length > 8) ch._rtHistory.shift();
-          if (ch._rtSpark) {
-            ch._rtSpark.innerHTML = '';
-            const maxAbs = Math.max(1, ...ch._rtHistory.map(v => Math.abs(v)));
-            ch._rtHistory.forEach(v => {
-              const bar = document.createElement('div');
-              const bh = Math.max(2, Math.round(14 * Math.abs(v) / maxAbs));
-              bar.style.cssText = [
-                `height:${bh}px;flex:1;border-radius:1px`,
-                `background:${ui.colorByOffset(Math.abs(v) / 1000)}`,
-                'min-width:0',
-              ].join(';');
-              ch._rtSpark.appendChild(bar);
-            });
-          }
-        }
+        ch._rtVal.style.color    = aboveThresh
+          ? ui.colorByOffset(Math.abs(s))
+          : '#667788';
+        ch._rtVal.style.opacity  = aboveThresh ? '1' : '0.75';
       } else {
-        // Sem nenhum valor ainda
-        ch._rtVal.textContent = 'AGUARD.';
-        ch._rtVal.style.color = '#555566';
+        ch._rtVal.textContent  = 'AGUARD.';
+        ch._rtVal.style.color  = '#555566';
         ch._rtVal.style.fontSize = '8px';
-        ch._rtVal.style.opacity = '1';
+        ch._rtVal.style.opacity  = '1';
       }
 
-      // Badge: fonte do cálculo
-      if (ch._rtSrcBadge) {
-        if (r.usedLongBuffer === true) {
-          ch._rtSrcBadge.textContent = 'BUF';
-          ch._rtSrcBadge.style.color = '#44ff88';
-        } else if (r.usedLongBuffer === false) {
-          ch._rtSrcBadge.textContent = 'ROL';
-          ch._rtSrcBadge.style.color = '#ffd700';
-        } else {
-          ch._rtSrcBadge.textContent = '';
-        }
+      // Badge com contagem de pontos do histórico
+      if (ch._rtHistBadge) {
+        ch._rtHistBadge.textContent = histLen ? histLen + 'pt' : '';
+        ch._rtHistBadge.style.color = histLen >= 10 ? '#44ff88' : '#ffd700';
       }
 
-      // Barra de confiança
+      // Barra de confiança do tick atual
       if (ch._rtConfBar) {
         const pct = Math.round(conf * 100);
         ch._rtConfBar.style.width      = pct + '%';
@@ -760,33 +712,40 @@
       rtStatusEl.style.color = '#00d4ff';
     }
 
+    function resetRTState() {
+      ML.CHANNELS.forEach(ch => {
+        // Zera buffer e histórico completamente
+        ch.buffer      = [];
+        ch.rollingBuffer = [];
+        ch._rtHistory  = [];
+        ch._rtLastVal  = undefined;
+        ch._rtLastConf = undefined;
+        ch.prevLum     = null;
+        if (ch._rtVal)      { ch._rtVal.textContent = '--'; ch._rtVal.style.color = '#aaaacc'; ch._rtVal.style.opacity = '1'; ch._rtVal.style.fontSize = '14px'; }
+        if (ch._rtConfBar)  { ch._rtConfBar.style.width = '0%'; }
+        if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
+      });
+    }
+
     btnRT.onclick = () => {
       ML.config.rtMode = !ML.config.rtMode;
       applyBtnRTStyle();
 
       if (ML.config.rtMode) {
+        // Garante estado limpo ao ativar
+        resetRTState();
         secAn.style.display = 'none';
         secRT.style.display = '';
-        ML.recorder.stopRolling();
-        ML.recorder.startRolling();
+        // Inicia gravação contínua no ch.buffer (sliding window 2min)
+        ML.recorder.start();
         if (rtIntervalId) clearInterval(rtIntervalId);
         rtIntervalId = setInterval(rtTick, ML.config.rtIntervalMs);
-        rtStatusEl.textContent = 'Iniciando...'; rtStatusEl.style.color = '#aaaacc';
+        rtStatusEl.textContent = 'Acumulando amostras...'; rtStatusEl.style.color = '#aaaacc';
         statusEl.textContent   = '\u26a1 Modo RT ativo'; statusEl.style.color = '#00d4ff';
       } else {
         clearInterval(rtIntervalId); rtIntervalId = null;
-        ML.recorder.stopRolling();
-        // Reseta estado RT de cada canal
-        ML.CHANNELS.forEach(ch => {
-          ch._rtSmooth  = undefined;
-          ch._rtLastVal = undefined;
-          ch._rtLastConf = undefined;
-          ch._rtHistory  = [];
-          if (ch._rtVal)     { ch._rtVal.textContent = '--'; ch._rtVal.style.color = '#aaaacc'; ch._rtVal.style.opacity = '1'; }
-          if (ch._rtConfBar) { ch._rtConfBar.style.width = '0%'; }
-          if (ch._rtSrcBadge) ch._rtSrcBadge.textContent = '';
-          if (ch._rtSpark)   ch._rtSpark.innerHTML = '';
-        });
+        ML.recorder.stop();
+        resetRTState();
         secRT.style.display = 'none';
         secAn.style.display = '';
         rtStatusEl.textContent = 'Pausado';
@@ -826,6 +785,8 @@
 
     setInterval(() => {
       if (!ML.state.recording) return;
+      // Barra de progresso só aparece no modo LOG
+      if (ML.config.rtMode) return;
       const activeChs = ML.CHANNELS.filter(ch => ch.active);
       if (!activeChs.length) return;
       const globalTarget = ML.recorder.getGlobalTarget();
@@ -857,5 +818,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. RT: valor persistente (~), badge BUF/ROL, reset ao sair do modo RT.');
+  console.log('[MedLat] 50-panel carregado. RT: recorder.start() contínuo, mediana do histórico, sem sparkline, reset total ao (des)ativar.');
 })();
