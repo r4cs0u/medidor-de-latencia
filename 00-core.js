@@ -39,6 +39,13 @@
       noOverlap: true,
     },
 
+    config: {
+      rtMode:          false,  // alterna entre modo LOG e RT
+      rtConfThreshold: 0.70,   // confiança mínima para exibir valor (0–1)
+      rtIntervalMs:    500,    // intervalo de atualização do modo RT em ms
+      rtWindowMs:      5000,   // tamanho da janela deslizante em ms
+    },
+
     stop() { this.state.running = false; },
   };
 
