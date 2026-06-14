@@ -50,6 +50,43 @@
     return Math.max(...active.map(ch => getTargetPts(ch)));
   }
 
+  // ── Modo Rolling (Tempo Real) ──────────────────────────────────────────
+  // Buffer separado por canal: ch.rollingBuffer
+  // Janela deslizante de ML.config.rtWindowMs ms.
+  // RAF independente do modo gravação.
+
+  let rollingRafId  = null;
+  let rollingLastTs = 0;
+
+  function rollingTick() {
+    if (!ML.state.rollingActive) return;
+    rollingRafId = requestAnimationFrame(rollingTick);
+
+    const now = performance.now();
+    if (now - rollingLastTs < ML.INTERVAL_MS) return;
+    rollingLastTs = now;
+
+    const ts         = Date.now();
+    const windowMs   = (ML.config && ML.config.rtWindowMs) || 5000;
+    const cutoff     = ts - windowMs;
+
+    ML.CHANNELS.filter(ch => ch.active).forEach(ch => {
+      if (!ch.rollingBuffer) ch.rollingBuffer = [];
+
+      const y = ML.getLum(ch);
+      const v = (y !== null && y !== -1) ? Math.round(y) : null;
+
+      if (v !== null) {
+        ch.rollingBuffer.push({ ts, lum: v });
+      }
+
+      // descarta amostras fora da janela
+      while (ch.rollingBuffer.length && ch.rollingBuffer[0].ts < cutoff) {
+        ch.rollingBuffer.shift();
+      }
+    });
+  }
+
   ML.recorder = {
     start() {
       ML.CHANNELS.forEach(ch => { ch.buffer = []; ch.prevLum = null; });
@@ -84,7 +121,33 @@
     },
     getTargetPts,
     getGlobalTarget,
+
+    // ── Rolling ────────────────────────────────────────────────────────
+    startRolling() {
+      ML.CHANNELS.forEach(ch => { ch.rollingBuffer = []; });
+      ML.state.rollingActive = true;
+      rollingLastTs = 0;
+      if (rollingRafId) cancelAnimationFrame(rollingRafId);
+      rollingRafId = requestAnimationFrame(rollingTick);
+      console.log('[MedLat] Rolling iniciado. Janela:', (ML.config && ML.config.rtWindowMs) || 5000, 'ms');
+    },
+    stopRolling() {
+      ML.state.rollingActive = false;
+      if (rollingRafId) cancelAnimationFrame(rollingRafId);
+      rollingRafId = null;
+      console.log('[MedLat] Rolling parado.');
+    },
+    // Retorna série da janela atual de um canal (mesmo formato de getSeries)
+    getRollingSeries(ch) {
+      const buf = ch.rollingBuffer || [];
+      return {
+        label: ch.label,
+        color: ch.color,
+        ts:    buf.map(p => p.ts),
+        lum:   buf.map(p => p.lum),
+      };
+    },
   };
 
-  console.log('[MedLat] 20-recorder carregado. globalTarget = max das telas ativas (ref excluída).');
+  console.log('[MedLat] 20-recorder carregado. globalTarget = max das telas ativas (ref excluída). Rolling disponível via startRolling/stopRolling/getRollingSeries.');
 })();
