@@ -88,6 +88,90 @@
   function rowBg(color)    { return color + '0d'; }
   function rowBorder(color){ return color + '22'; }
 
+  // ── update leve: atualiza dados dos charts existentes sem recriar DOM ─────
+  // Chamado pelo modo Tempo Real (50-panel.js) a cada tick do setInterval.
+  // Se o painel ainda não existe, delega para showChart() normalmente.
+  async function updateChart(newResults) {
+    if (!document.getElementById('ml-chart-panel')) {
+      return showChart(newResults);
+    }
+    if (!Array.isArray(newResults)) newResults = [newResults];
+
+    // Recalcula maxLen com os buffers atuais
+    let maxLen = 0;
+    ML.CHANNELS.forEach(ch => {
+      if (ch.active && ch.buffer && ch.buffer.length > maxLen) maxLen = ch.buffer.length;
+    });
+
+    // Atualiza cada chart registrado no chartMeta
+    const metaKeys = Object.keys(chartMeta);
+
+    // Modo overlay: chave especial '_overlay'
+    if (metaKeys.length === 1 && metaKeys[0] === '_overlay') {
+      const { chart, channels } = chartMeta['_overlay'];
+      if (!chart) return;
+      channels.forEach((ch, idx) => {
+        const raw   = ch.buffer.map(p => p.lum).slice(0, maxLen);
+        const iv    = ui.realIvMs(ch);
+        const shift = idx === 0 ? 0 : Math.round((ML.manualOffsets && ML.manualOffsets[ch.id] != null ? ML.manualOffsets[ch.id] : 0) / iv);
+        const lums  = _shiftSeries(raw, shift);
+        if (chart.data.datasets[idx]) chart.data.datasets[idx].data = lums;
+      });
+      chart.update('none');
+      return;
+    }
+
+    // Modo paralelo: uma chave por canal
+    metaKeys.forEach(chId => {
+      const meta = chartMeta[chId];
+      if (!meta || !meta.chart || !meta.ch) return;
+      const ch   = meta.ch;
+      const raw  = ch.buffer.map(p => p.lum).slice(0, maxLen);
+      const iv   = ui.realIvMs(ch);
+      // Usa manualOffsets se existir, senão 0 (canal referência)
+      const offsetMs = ML.manualOffsets && ML.manualOffsets[chId] != null ? ML.manualOffsets[chId] : 0;
+      const shift    = Math.round(offsetMs / iv);
+      const lums     = _shiftSeries(raw, shift);
+      if (meta.chart.data.datasets[0]) meta.chart.data.datasets[0].data = lums;
+      meta.chart.update('none');
+    });
+
+    // Atualiza cards de resultado com novos offsets calculados
+    newResults.forEach(r => {
+      if (r.isReference || !r.channel || r.error || r.skipped || r.offsetMs == null) return;
+      _updateCardResultRT(r.channel.id, r.offsetMs);
+    });
+
+    // Atualiza indicador de timestamp no título do painel
+    const htitle = document.querySelector('#ml-chart-panel span[data-rt-title]');
+    if (htitle) {
+      const now = new Date();
+      htitle.textContent = '📊 Luminância · RT ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+  }
+
+  // Atualiza o valEl de uma card no painel de gráfico (modo RT, sem fechar o painel)
+  function _updateCardResultRT(chId, offsetMs) {
+    // As cards ficam dentro de #ml-chart-panel .card com data-ch-id
+    const card = document.querySelector(`#ml-chart-panel [data-ch-id="${chId}"]`);
+    if (!card) return;
+    const valEl = card._valEl || card.querySelector('[data-val]');
+    if (!valEl) return;
+    const s = offsetMs / 1000;
+    valEl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
+    valEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+  }
+
+  // Helper puro (cópia local para uso em updateChart sem depender do closure de showChart)
+  function _shiftSeries(data, shift) {
+    if (!shift) return data;
+    const n   = data.length;
+    const out = new Array(n).fill(null);
+    if (shift > 0) { for (let i = 0; i < n - shift; i++) out[i] = data[i + shift]; }
+    else           { const s = -shift; for (let i = s; i < n; i++) out[i] = data[i - s]; }
+    return out;
+  }
+
   async function showChart(results) {
     if (!Array.isArray(results)) results = [results];
     await loadChartJs();
@@ -131,6 +215,7 @@
     ].join(';');
 
     const htitle = document.createElement('span');
+    htitle.setAttribute('data-rt-title', '1');
     htitle.textContent = '📊 Luminância';
     htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 
@@ -284,6 +369,7 @@
           autoColor = r.error ? '#ff4444' : ui.T.textMuted;
         }
         const card = mkCardCompact(ch.label, '', ch.color, autoTxt, autoColor);
+        card.setAttribute('data-ch-id', ch.id);
         cardRefs[ch.id] = { ch, manualEl: card._manualEl, valEl: card._valEl };
         bar.appendChild(card);
       });
@@ -644,6 +730,8 @@
         plugins: allPeaksMerged.length ? [overlayPeakPlugin] : [],
       });
       chartInstances.push(ci);
+      // Registra o overlay no chartMeta para que updateChart() possa atualizar os datasets
+      chartMeta['_overlay'] = { chart: ci, channels };
     }
 
     document.body.appendChild(panel);
@@ -675,6 +763,6 @@
     return card;
   }
 
-  ML.chart = { show: showChart };
+  ML.chart = { show: showChart, update: updateChart };
   console.log('[MedLat] 40-chart carregado.');
 })();
