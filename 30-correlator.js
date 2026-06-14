@@ -137,6 +137,8 @@
     return anchors;
   }
 
+  // anchorOffset: aceita offsets negativos (tela adiantada em relação à ref).
+  // minLagSamples=0 por padrão — passa explicitamente para restringir no modo LOG.
   function anchorOffset(lumA, lumB, maxLagSamples, minLagSamples) {
     const anchorsA = extractAnchors(lumA);
     const anchorsB = extractAnchors(lumB);
@@ -147,6 +149,7 @@
       anchorsB.forEach(b => {
         const delta = b.i - a.i;
         if (Math.abs(delta) > maxLagSamples) return;
+        // minLagSamples só filtra quando > 0 (modo LOG com preset)
         if (minLagSamples && Math.abs(delta) < minLagSamples) return;
         const dist = Math.abs(delta);
         if (dist < bestDist) { bestDist = dist; best = { delta, scoreA: a.d, scoreB: b.d }; }
@@ -269,12 +272,12 @@
 
   // ── correlateRolling (modo RT) ────────────────────────────────────────────
   //
-  // Sempre usa ch.buffer (acumulado continuamente pelo recorder no modo RT).
-  // A cada tick, se a correlação for confiante (>= rtConfThreshold), o
-  // rawOffsetMs é adicionado a ch._rtHistory (sem limite de tamanho —
-  // o buffer tem no máximo 2 min, portanto o histórico é proporcional).
-  // O valor exibido pelo panel é a MEDIANA de ch._rtHistory.
-  // Sem suavização exponencial (EMA removida).
+  // No modo RT, minLagSamples = 0 para que offsets negativos (tela adiantada
+  // em relação à referência) sejam detectados normalmente.
+  // crossCorrelation já itera de -maxLag a +maxLag; anchorOffset com
+  // minLagSamples=0 não descarta deltas negativos.
+  //
+  // O valor exibido é a MEDIANA de ch._rtHistory (ticks confiantes acumulados).
 
   function median(arr) {
     if (!arr.length) return null;
@@ -285,7 +288,7 @@
 
   function correlateRolling(chA, chB) {
     const confThresh = (ML.config && ML.config.rtConfThreshold !== undefined)
-      ? ML.config.rtConfThreshold : 0.70;
+      ? ML.config.rtConfThreshold : 0.50;
 
     const bufA = chA.buffer || [];
     const bufB = chB.buffer || [];
@@ -301,7 +304,8 @@
 
     const lagRange    = effectiveLag({ label: chA.label }, { label: chB.label });
     let maxLagSamples = Math.ceil(lagRange.maxLagMs / ivMs);
-    const minLagSamples = Math.ceil(lagRange.minLagMs / ivMs);
+    // minLagSamples = 0 no modo RT: aceita offsets negativos (tela adiantada)
+    const minLagSamples = 0;
     maxLagSamples = Math.min(maxLagSamples, Math.floor(Math.min(lumA.length, lumB.length) * 0.8));
 
     const anchor        = anchorOffset(lumA, lumB, maxLagSamples, minLagSamples);
@@ -373,5 +377,5 @@
     median,
   };
 
-  console.log('[MedLat] 30-correlator carregado. RT: mediana do histórico acumulado (sem EMA). Mín. 60 amostras para iniciar.');
+  console.log('[MedLat] 30-correlator carregado. RT: confThresh=0.50, minLagSamples=0 (aceita negativos), mediana do histórico.');
 })();

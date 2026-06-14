@@ -42,7 +42,7 @@
     config: {
       // ── Modo RT ──────────────────────────────────────────────────────
       rtMode:          false,   // alterna entre modo LOG e RT
-      rtConfThreshold: 0.70,    // confiança mínima para exibir valor em cor viva (0–1)
+      rtConfThreshold: 0.50,    // confiança mínima para exibir valor em cor viva (0–1)
       rtIntervalMs:    500,     // intervalo de atualização do modo RT em ms
 
       // Janela do rollingBuffer — 35s cobre o preset "lento" (até 35s)
@@ -71,5 +71,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. rtWindowMs=35000, rtUseLongBuffer=true, rtSmoothAlpha=0.3, lagPreset lento cobre até 35s.');
+  console.log('[MedLat] 00-core carregado. rtConfThreshold=0.50, rtWindowMs=35000, rtUseLongBuffer=true, lagPreset lento cobre até 35s.');
 })();
