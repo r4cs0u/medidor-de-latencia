@@ -3,11 +3,11 @@
 
   const ADAPT_FACTOR          = 0.15;
   const DIFF_THRESHOLD_MIN    = 1;
-  const ANCHOR_TOP_N          = 30;   // candidatos iniciais para âncoras
-  const ANCHOR_MIN_ISOLATION  = 30;   // samples mínimos entre âncoras (~1s a 30fps)
-  const ANCHOR_STRENGTH_RATIO = 1.5;  // âncora precisa ser >= 1.5x a mediana dos picos
-  const ANCHOR_CONSENSUS_TOL  = 2;    // tolerância em samples para consenso
-  const REFINE_WINDOW         = 15;   // janela de refino sub-frame em samples
+  const ANCHOR_TOP_N          = 30;
+  const ANCHOR_MIN_ISOLATION  = 30;
+  const ANCHOR_STRENGTH_RATIO = 1.5;
+  const ANCHOR_CONSENSUS_TOL  = 2;
+  const REFINE_WINDOW         = 15;
 
   // ── Primitivas ───────────────────────────────────────────────────────────
 
@@ -108,10 +108,10 @@
     const presetKey = key === 'auto' ? 'lento' : key;
     const preset    = ML.LAG_PRESETS ? ML.LAG_PRESETS[presetKey] : null;
     if (preset) return { minLagMs: preset.min, maxLagMs: preset.max };
-    return { minLagMs: 15000, maxLagMs: 30000 };
+    return { minLagMs: 15000, maxLagMs: 35000 };
   }
 
-  // ── Âncoras de cena ────────────────────────────────────────────────────────
+  // ── Âncoras de cena ───────────────────────────────────────────────────────
 
   function extractAnchors(lum) {
     const diff = diffSeries(lum);
@@ -172,7 +172,7 @@
     return { delta: best.delta, confidence: best.count / deltas.length };
   }
 
-  // ── shiftArr ────────────────────────────────────────────────────────
+  // ── shiftArr ──────────────────────────────────────────────────────────────
 
   function shiftArr(arr, shift) {
     if (!shift) return arr;
@@ -182,7 +182,7 @@
     return out;
   }
 
-  // ── analyze (modo LOG) ──────────────────────────────────────────────
+  // ── analyze (modo LOG) ────────────────────────────────────────────────────
 
   function analyze(chA, chB, maxLagMs) {
     const serA = ML.recorder.getSeries(chA);
@@ -267,17 +267,40 @@
     return results;
   }
 
-  // ── correlateRolling (modo RT) ─────────────────────────────────────────
+  // ── correlateRolling (modo RT) ────────────────────────────────────────────
   //
-  // Opera sobre ch.rollingBuffer (janela deslizante do 20-recorder).
-  // Com poucos segundos de dados (≤5s), o range de lag é limitado ao
-  // tamanho da janela, então ignora lagPreset e usa correlação global.
-  // Tenta âncoras primeiro; cai em correlação global se não houver consenso.
-  // Retorna { offsetMs, confidence, intervalMs, error? }
+  // Estratégia em dois níveis:
+  //
+  // 1. BUFFER LONGO (rtUseLongBuffer=true, padrão):
+  //    Usa ch.buffer acumulado para encontrar âncoras de cena — o mesmo
+  //    usado pelo modo LOG. Isso cobre delays de 5–35s com precisão.
+  //    O lagPreset do canal define o range de busca (min/max em samples).
+  //    Após achar anchorSamples, refina com crossCorrelation de janela curta.
+  //
+  // 2. FALLBACK ROLLING:
+  //    Usado quando buffer < 60 amostras ou rtUseLongBuffer=false.
+  //    Opera só sobre rollingBuffer — funciona bem para delays ≤ rtWindowMs/2.
+  //
+  // Suavização exponencial:
+  //    Se confidence < rtConfThreshold, o offsetMs retornado é uma média
+  //    ponderada entre o valor bruto e o último valor válido (ch._rtSmooth),
+  //    com peso rtSmoothAlpha. O caller (50-panel) usa ch._rtSmooth para
+  //    exibir o valor persistente em cinza.
 
   function correlateRolling(chA, chB) {
-    const bufA = chA.rollingBuffer || [];
-    const bufB = chB.rollingBuffer || [];
+    const cfg          = ML.config;
+    const useLongBuf   = cfg.rtUseLongBuffer !== false;
+    const smoothAlpha  = cfg.rtSmoothAlpha   !== undefined ? cfg.rtSmoothAlpha : 0.3;
+    const confThresh   = cfg.rtConfThreshold !== undefined ? cfg.rtConfThreshold : 0.70;
+
+    // Decide qual buffer usar para âncoras
+    const longBufA = chA.buffer || [];
+    const longBufB = chB.buffer || [];
+    const MIN_LONG = 60;
+    const useActuallyLong = useLongBuf && longBufA.length >= MIN_LONG && longBufB.length >= MIN_LONG;
+
+    const bufA = useActuallyLong ? longBufA : (chA.rollingBuffer || []);
+    const bufB = useActuallyLong ? longBufB : (chB.rollingBuffer || []);
 
     const MIN_SAMPLES = 20;
     if (bufA.length < MIN_SAMPLES || bufB.length < MIN_SAMPLES) {
@@ -288,37 +311,64 @@
     const lumB = bufB.map(p => p.lum);
     const ivMs = (realIntervalMsFromBuf(bufA) + realIntervalMsFromBuf(bufB)) / 2;
 
-    // Janela máxima de lag = metade do menor buffer (em samples)
-    const maxLagSamples = Math.floor(Math.min(lumA.length, lumB.length) / 2);
+    // Range de lag: usa lagPreset do canal B quando buffer longo disponível
+    let maxLagSamples, minLagSamples;
+    if (useActuallyLong) {
+      const lagRange  = effectiveLag({ label: chA.label }, { label: chB.label });
+      maxLagSamples   = Math.ceil(lagRange.maxLagMs / ivMs);
+      minLagSamples   = Math.ceil(lagRange.minLagMs / ivMs);
+      // Nunca extrapolar além do buffer disponível
+      maxLagSamples   = Math.min(maxLagSamples, Math.floor(Math.min(lumA.length, lumB.length) * 0.8));
+    } else {
+      maxLagSamples   = Math.floor(Math.min(lumA.length, lumB.length) / 2);
+      minLagSamples   = 0;
+    }
 
-    // Tenta âncoras (funciona se houver cortes de cena na janela)
-    const anchor = anchorOffset(lumA, lumB, maxLagSamples, 0);
+    // Âncoras de cena sobre o buffer completo
+    const anchor        = anchorOffset(lumA, lumB, maxLagSamples, minLagSamples);
     const anchorSamples = anchor ? anchor.delta : null;
 
     const lumBshifted  = anchorSamples !== null ? shiftArr(lumB, anchorSamples) : lumB;
     const refineWindow = anchorSamples !== null ? REFINE_WINDOW : maxLagSamples;
 
-    const corr    = crossCorrelation(lumA, lumBshifted, refineWindow);
-    const peak    = selectRobustPeak(corr);
-    const peakIdx = corr.findIndex(c => c.lag === peak.lag);
+    const corr     = crossCorrelation(lumA, lumBshifted, refineWindow);
+    const peak     = selectRobustPeak(corr);
+    const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
     const subFrame = parabolicPeak(corr, peakIdx);
 
     const refineLag = peak.lag + subFrame;
     const totalLag  = (anchorSamples !== null ? anchorSamples : 0) + refineLag;
-    const offsetMs  = totalLag * ivMs;
+    const rawOffsetMs = totalLag * ivMs;
+    const confidence  = peak.r;
+
+    // Suavização exponencial sobre ch._rtSmooth
+    let smoothedOffsetMs = rawOffsetMs;
+    if (chB._rtSmooth !== undefined && chB._rtSmooth !== null) {
+      if (confidence < confThresh) {
+        // Abaixo do threshold: mistura com alpha baixo (puxa levemente para novo valor)
+        smoothedOffsetMs = chB._rtSmooth * (1 - smoothAlpha) + rawOffsetMs * smoothAlpha;
+      } else {
+        // Acima do threshold: atualiza com alpha alto para convergir rápido
+        smoothedOffsetMs = chB._rtSmooth * (1 - Math.min(0.7, smoothAlpha * 2)) +
+                           rawOffsetMs   * Math.min(0.7, smoothAlpha * 2);
+      }
+    }
+    // Persiste o smoothed para o próximo tick
+    chB._rtSmooth = smoothedOffsetMs;
 
     return {
-      offsetMs,
-      confidence:      peak.r,
+      offsetMs:         smoothedOffsetMs,
+      rawOffsetMs,
+      confidence,
       anchorConfidence: anchor ? anchor.confidence : null,
-      intervalMs:      ivMs,
-      samples:         Math.min(lumA.length, lumB.length),
-      labelA:          chA.label,
-      labelB:          chB.label,
+      intervalMs:       ivMs,
+      samples:          Math.min(lumA.length, lumB.length),
+      usedLongBuffer:   useActuallyLong,
+      labelA:           chA.label,
+      labelB:           chB.label,
     };
   }
 
-  // Roda correlateRolling para todos os canais ativos contra ch[0]
   function correlateRollingAll() {
     const chRef = ML.CHANNELS[0];
     const results = [{ channel: chRef, label: chRef.label, offsetMs: 0, confidence: 1, isReference: true }];
@@ -329,13 +379,15 @@
       }
       const r = correlateRolling(chRef, ch);
       results.push({
-        channel:    ch,
-        label:      ch.label,
-        offsetMs:   r.error ? null : r.offsetMs,
-        confidence: r.error ? null : r.confidence,
-        intervalMs: r.error ? null : r.intervalMs,
-        samples:    r.error ? null : r.samples,
-        error:      r.error || null,
+        channel:          ch,
+        label:            ch.label,
+        offsetMs:         r.error ? null : r.offsetMs,
+        rawOffsetMs:      r.error ? null : r.rawOffsetMs,
+        confidence:       r.error ? null : r.confidence,
+        intervalMs:       r.error ? null : r.intervalMs,
+        samples:          r.error ? null : r.samples,
+        usedLongBuffer:   r.error ? null : r.usedLongBuffer,
+        error:            r.error || null,
       });
     });
     return results;
@@ -345,7 +397,8 @@
     analyze, analyzeBest, analyzeBestAll,
     correlateRolling, correlateRollingAll,
     crossCorrelation, diffSeries, normalize,
+    realIntervalMsFromBuf,
   };
 
-  console.log('[MedLat] 30-correlator carregado. Método: âncoras de cena + refino sub-frame. Rolling disponível via correlateRolling/correlateRollingAll.');
+  console.log('[MedLat] 30-correlator carregado. RT: buffer longo para âncoras (rtUseLongBuffer), suavização exponencial (rtSmoothAlpha).');
 })();
