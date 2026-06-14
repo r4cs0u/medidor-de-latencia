@@ -8,14 +8,14 @@
 
   const LAG_PRESETS = {
     auto:   null,
-    lento:  { min: 15000, max: 35000 },   // cobre até 35s
+    lento:  { min: 15000, max: 35000 },
     normal: { min: 5000,  max: 15000 },
     rapido: { min: 0,     max: 5000  },
   };
 
   window.MedLat = {
     CHANNELS: [
-      { id:'ch0', label:'Referência', color:'#00d4ff', active:false, lagPreset:'auto' },
+      { id:'ch0', label:'Refer\u00eancia', color:'#00d4ff', active:false, lagPreset:'auto' },
       { id:'ch1', label:'Tela 2',      color:'#ff4444',  active:false, lagPreset:'auto' },
       { id:'ch2', label:'Tela 3',      color:'#44ff88',  active:false, lagPreset:'auto' },
       { id:'ch3', label:'Tela 4',      color:'#ffd700',  active:false, lagPreset:'auto' },
@@ -40,22 +40,11 @@
     },
 
     config: {
-      // ── Modo RT ──────────────────────────────────────────────────────
-      rtMode:          false,   // alterna entre modo LOG e RT
-      rtConfThreshold: 0.50,    // confiança mínima para exibir valor em cor viva (0–1)
-      rtIntervalMs:    500,     // intervalo de atualização do modo RT em ms
-
-      // Janela do rollingBuffer — 35s cobre o preset "lento" (até 35s)
-      // Aumentar aqui se precisar detectar delays maiores no modo RT puro
+      rtMode:          false,
+      rtConfThreshold: 0.60,    // confia\u00e7a m\u00ednima para exibir valor em cor viva (0\u20131)
+      rtIntervalMs:    500,
       rtWindowMs:      35000,
-
-      // Quando true, correlateRolling usa ch.buffer (acumulado) para as
-      // âncoras de cena em vez do rollingBuffer — muito mais preciso para
-      // delays grandes (5–35s). Só cai no rolling quando buffer < 60 amostras.
       rtUseLongBuffer: true,
-
-      // Suavização exponencial do valor RT quando confiança < threshold.
-      // 0 = congela no último valor válido  |  1 = sem suavização
       rtSmoothAlpha:   0.3,
     },
 
@@ -71,5 +60,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. rtConfThreshold=0.50, rtWindowMs=35000, rtUseLongBuffer=true, lagPreset lento cobre até 35s.');
+  console.log('[MedLat] 00-core carregado. rtConfThreshold=0.60, rtWindowMs=35000, rtUseLongBuffer=true.');
 })();

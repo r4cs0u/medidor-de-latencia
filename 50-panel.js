@@ -17,7 +17,9 @@
       const offsetS = parseFloat(ch.offsetEl.textContent.replace('s', '').replace(',', '.'));
       if (isNaN(offsetS)) { ch.realEl.textContent = '--'; ch.realEl.style.color = '#aaaacc'; return; }
       const realS = offsetS + (ch.deduction || 0) - refDed;
-      ch.realEl.textContent = (realS > 0 ? '\u2009+' : '') + realS.toFixed(3) + 's';
+      // Preserva sinal negativo: usa sinal explícito '+' só para positivos
+      const prefix = realS > 0 ? '\u2009+' : realS < 0 ? '\u2009' : '\u2009';
+      ch.realEl.textContent = prefix + realS.toFixed(3) + 's';
       ch.realEl.style.color = ui.colorByOffset(Math.abs(realS));
     });
   }
@@ -428,7 +430,9 @@
               ch.offsetEl.style.color = r.error ? '#ff4444' : '#aaaacc';
             } else {
               const s = r.offsetMs / 1000;
-              ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
+              // Preserva sinal negativo
+              const prefix = s > 0 ? '+' : '';
+              ch.offsetEl.textContent = prefix + s.toFixed(3) + 's';
               ch.offsetEl.style.color = ui.colorByOffset(Math.abs(s));
             }
           }
@@ -479,20 +483,17 @@
       lbl.style.cssText = `color:${ch.color};font:bold 8px monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center`;
       ch._rtLbl = lbl;
 
-      // Valor principal
       const val = document.createElement('div');
       val.textContent = i === 0 ? '\u2605' : '--';
       val.style.cssText = 'font:bold 14px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s';
       val.style.color = i === 0 ? '#44ff88' : '#aaaacc';
       ch._rtVal = val;
 
-      // Contador de amostras do histórico
       const histBadge = document.createElement('div');
       histBadge.style.cssText = 'font:bold 7px monospace;text-align:center;opacity:.5;letter-spacing:.04em;height:9px;line-height:9px';
       histBadge.textContent = '';
       ch._rtHistBadge = histBadge;
 
-      // Barra de confiança
       const confWrap = document.createElement('div');
       confWrap.style.cssText = 'width:100%;height:3px;background:#ffffff18;border-radius:2px;overflow:hidden';
       const confBar = document.createElement('div');
@@ -500,7 +501,6 @@
       confWrap.appendChild(confBar);
       ch._rtConfBar = confBar;
 
-      // _rtHistory é gerenciado pelo correlator (30-correlator.js)
       ch._rtHistory = [];
 
       if (i === 0) {
@@ -606,15 +606,11 @@
       }).observe(panel);
     }
 
-    // ── Toggle RT ──────────────────────────────────────────────────────────
+    // ── Toggle RT ──
     let rtIntervalId = null;
 
-    // ── updateRTCard ───────────────────────────────────────────────────────
-    //
-    // Exibe a mediana de ch._rtHistory (acumulado pelo correlator).
-    // Sem sparkline. historyLen indica quantos pontos confiantes já foram coletados.
-    // Quando sem histórico ainda: exibe estado de aguardo/erro.
-
+    // updateRTCard: exibe offsetMs com sinal correto (incluindo negativos).
+    // Não usa Math.abs() no valor exibido — apenas na cor e na barra de confiança.
     function updateRTCard(ch, r) {
       if (!ch._rtVal) return;
       if (r.isReference) return;
@@ -630,20 +626,22 @@
 
       const conf        = r.confidence !== null ? r.confidence : 0;
       const aboveThresh = conf >= ML.config.rtConfThreshold;
-      const offsetMs    = r.offsetMs;   // já é a mediana do histórico
+      const offsetMs    = r.offsetMs;
       const histLen     = r.historyLen || 0;
 
       if (r.error && !histLen) {
-        // Nunca teve valor confiante ainda
         ch._rtVal.textContent  = r.error.includes('Aguardando') ? 'AGUARD.' : 'ERR';
         ch._rtVal.style.color  = '#555566';
         ch._rtVal.style.fontSize = '8px';
         ch._rtVal.style.opacity  = '1';
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
       } else if (offsetMs !== null) {
-        const s      = offsetMs / 1000;
-        const prefix = aboveThresh ? (s >= 0 ? '+' : '') : '~';
-        ch._rtVal.textContent  = prefix + Math.abs(s).toFixed(2) + 's';
+        const s = offsetMs / 1000;
+        // Sinal explícito: '+' para positivo, '-' já vem do toFixed para negativo
+        const prefix = aboveThresh
+          ? (s > 0 ? '+' : '')
+          : (s > 0 ? '~+' : '~');
+        ch._rtVal.textContent  = prefix + s.toFixed(2) + 's';
         ch._rtVal.style.fontSize = '14px';
         ch._rtVal.style.color    = aboveThresh
           ? ui.colorByOffset(Math.abs(s))
@@ -656,13 +654,11 @@
         ch._rtVal.style.opacity  = '1';
       }
 
-      // Badge com contagem de pontos do histórico
       if (ch._rtHistBadge) {
         ch._rtHistBadge.textContent = histLen ? histLen + 'pt' : '';
         ch._rtHistBadge.style.color = histLen >= 10 ? '#44ff88' : '#ffd700';
       }
 
-      // Barra de confiança do tick atual
       if (ch._rtConfBar) {
         const pct = Math.round(conf * 100);
         ch._rtConfBar.style.width      = pct + '%';
@@ -705,7 +701,7 @@
       if (elConf && confs.length) {
         const avgConf = Math.round(confs.reduce((a, b) => a + b, 0) / confs.length * 100);
         elConf.textContent = avgConf + '%';
-        elConf.style.color = avgConf >= 70 ? '#44ff88' : avgConf >= 40 ? '#ffd700' : '#ff4444';
+        elConf.style.color = avgConf >= 60 ? '#44ff88' : avgConf >= 40 ? '#ffd700' : '#ff4444';
       } else if (elConf) elConf.textContent = '--';
 
       rtStatusEl.textContent = '\u25cf AO VIVO  \u2014  ' + new Date().toLocaleTimeString('pt-BR');
@@ -714,15 +710,14 @@
 
     function resetRTState() {
       ML.CHANNELS.forEach(ch => {
-        // Zera buffer e histórico completamente
-        ch.buffer      = [];
+        ch.buffer        = [];
         ch.rollingBuffer = [];
-        ch._rtHistory  = [];
-        ch._rtLastVal  = undefined;
-        ch._rtLastConf = undefined;
-        ch.prevLum     = null;
-        if (ch._rtVal)      { ch._rtVal.textContent = '--'; ch._rtVal.style.color = '#aaaacc'; ch._rtVal.style.opacity = '1'; ch._rtVal.style.fontSize = '14px'; }
-        if (ch._rtConfBar)  { ch._rtConfBar.style.width = '0%'; }
+        ch._rtHistory    = [];
+        ch._rtLastVal    = undefined;
+        ch._rtLastConf   = undefined;
+        ch.prevLum       = null;
+        if (ch._rtVal)       { ch._rtVal.textContent = '--'; ch._rtVal.style.color = '#aaaacc'; ch._rtVal.style.opacity = '1'; ch._rtVal.style.fontSize = '14px'; }
+        if (ch._rtConfBar)   { ch._rtConfBar.style.width = '0%'; }
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
       });
     }
@@ -732,11 +727,9 @@
       applyBtnRTStyle();
 
       if (ML.config.rtMode) {
-        // Garante estado limpo ao ativar
         resetRTState();
         secAn.style.display = 'none';
         secRT.style.display = '';
-        // Inicia gravação contínua no ch.buffer (sliding window 2min)
         ML.recorder.start();
         if (rtIntervalId) clearInterval(rtIntervalId);
         rtIntervalId = setInterval(rtTick, ML.config.rtIntervalMs);
@@ -760,7 +753,9 @@
           const totalMs = offsets[ch.id];
           if (totalMs == null) return;
           const s = totalMs / 1000;
-          ch.offsetEl.textContent = (s > 0 ? '+' : '') + s.toFixed(3) + 's';
+          // Preserva sinal negativo
+          const prefix = s > 0 ? '+' : '';
+          ch.offsetEl.textContent = prefix + s.toFixed(3) + 's';
           ch.offsetEl.style.color = ui.colorByOffset(Math.abs(s));
         });
         refreshRealColumn();
@@ -785,7 +780,6 @@
 
     setInterval(() => {
       if (!ML.state.recording) return;
-      // Barra de progresso só aparece no modo LOG
       if (ML.config.rtMode) return;
       const activeChs = ML.CHANNELS.filter(ch => ch.active);
       if (!activeChs.length) return;
@@ -818,5 +812,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. RT: recorder.start() contínuo, mediana do histórico, sem sparkline, reset total ao (des)ativar.');
+  console.log('[MedLat] 50-panel carregado. rtConfThreshold=0.60, sinais negativos preservados em RT e LOG, CONF verde >= 60%.');
 })();
