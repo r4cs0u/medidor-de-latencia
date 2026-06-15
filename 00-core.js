@@ -6,11 +6,17 @@
   });
   document.querySelectorAll('[id^="ml-probe-"]').forEach(e => e.remove());
 
+  // ── Presets de janela de lag ───────────────────────────────────────────────
+  // min/max em ms. onlyPositive=true → correlator não testa lags negativos.
+  //
+  //  auto   : cobre tudo (-15s … +35s) — fallback geral
+  //  rapido : ⚡ sinais SDI/local  (-15s … +15s, positivo e negativo)
+  //  web    : 🌐 streaming web    (+15s … +35s, apenas positivo)
+  //
   const LAG_PRESETS = {
-    auto:   null,
-    lento:  { min: 15000, max: 35000 },
-    normal: { min: 5000,  max: 15000 },
-    rapido: { min: 0,     max: 5000  },
+    auto:   { min: -15000, max:  35000, onlyPositive: false },
+    rapido: { min: -15000, max:  15000, onlyPositive: false },
+    web:    { min:  15000, max:  35000, onlyPositive: true  },
   };
 
   window.MedLat = {
@@ -67,5 +73,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. 12 canais (ch0–ch11), rtMode=true, numChannels default=4.');
+  console.log('[MedLat] 00-core carregado. 12 canais (ch0–ch11), presets: auto/⚡rapido/🌐web, rtMode=true, numChannels default=4.');
 })();
