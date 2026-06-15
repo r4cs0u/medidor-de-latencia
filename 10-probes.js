@@ -15,7 +15,13 @@
     ch.ctx = ch.off.getContext('2d', { willReadFrequently: true });
   }
 
-  function getLum(ch) {
+  // Captura pixels da probe e retorna { lum, r, g, b, cb, cr }
+  // lum  = luminância BT.709 (0-255)
+  // r/g/b = médias dos canais RGB (0-255)
+  // cb   = diferença de cor azul  B - lum  (proxy de Cb, -255..255)
+  // cr   = diferença de cor vermelha R - lum (proxy de Cr, -255..255)
+  // Retorna null se sem elemento, -1 se bloqueio CORS.
+  function getSample(ch) {
     const pw = probeW(ch), ph = probeH(ch);
     const d = ch.probe;
     if (!d) return null;
@@ -46,15 +52,38 @@
     try { px = ch.ctx.getImageData(0, 0, pw, ph).data; } catch (e) { return -1; }
     const xMin = Math.floor(pw * 0.10), xMax = Math.floor(pw * 0.90);
     const yMin = Math.floor(ph * 0.10), yMax = Math.floor(ph * 0.90);
-    let Y = 0, n = 0;
+    let Y = 0, R = 0, G = 0, B = 0, n = 0;
     for (let row = yMin; row < yMax; row++) {
       for (let col = xMin; col < xMax; col++) {
-        const i = (row * pw + col) * 4;
-        Y += 0.2126 * px[i] + 0.7152 * px[i+1] + 0.0722 * px[i+2];
+        const idx = (row * pw + col) * 4;
+        const ri = px[idx], gi = px[idx+1], bi = px[idx+2];
+        Y += 0.2126 * ri + 0.7152 * gi + 0.0722 * bi;
+        R += ri;
+        G += gi;
+        B += bi;
         n++;
       }
     }
-    return n ? Y / n : null;
+    if (!n) return null;
+    const lum = Y / n;
+    const rM  = R / n;
+    const gM  = G / n;
+    const bM  = B / n;
+    return {
+      lum,
+      r: rM,
+      g: gM,
+      b: bM,
+      cb: bM - lum,   // proxy Cb: positivo = cena azulada
+      cr: rM - lum,   // proxy Cr: positivo = cena avermelhada
+    };
+  }
+
+  // Mantém compatibilidade retroativa: retorna apenas a luminância (ou null/-1)
+  function getLum(ch) {
+    const s = getSample(ch);
+    if (s === null || s === -1) return s;
+    return s.lum;
   }
 
   function snapGrid(v) {
@@ -308,8 +337,9 @@
     mkProbe(ch, Math.max(0, x), Math.max(0, y));
   });
 
-  ML.getLum   = getLum;
-  ML.setFocus = setFocus;
+  ML.getLum    = getLum;
+  ML.getSample = getSample;
+  ML.setFocus  = setFocus;
 
-  console.log(`[MedLat] 10-probes carregado. px responsivo=${responsiveW} (viewport ${vw}×${vh}). ${numCh} canais posicionados (de ${ML.CHANNELS.length} disponíveis).`);
+  console.log(`[MedLat] 10-probes carregado. getSample() disponível (lum+r+g+b+cb+cr). px responsivo=${responsiveW} (viewport ${vw}×${vh}). ${numCh} canais posicionados (de ${ML.CHANNELS.length} disponíveis).`);
 })();
