@@ -297,7 +297,9 @@
     [  0, -5],  // ch11
   ];
 
-  ML.CHANNELS.forEach((ch, i) => {
+  // Cria probes apenas para os canais ativos no seletor (numChannels)
+  const numCh = ML.state.numChannels || ML.CHANNELS.length;
+  ML.CHANNELS.slice(0, numCh).forEach((ch, i) => {
     makeOff(ch);
     const pw = probeW(ch);
     const ph = probeH(ch);
@@ -309,6 +311,5 @@
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  const n = ML.CHANNELS.length;
-  console.log(`[MedLat] 10-probes carregado. px responsivo=${responsiveW} (viewport ${vw}×${vh}). ${n} canais posicionados.`);
+  console.log(`[MedLat] 10-probes carregado. px responsivo=${responsiveW} (viewport ${vw}×${vh}). ${numCh} canais posicionados (de ${ML.CHANNELS.length} disponíveis).`);
 })();
