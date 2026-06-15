@@ -15,16 +15,18 @@
 
   window.MedLat = {
     CHANNELS: [
-      { id:'ch0', label:'Referência', color:'#00d4ff', active:false, lagPreset:'auto' },
-      { id:'ch1', label:'Tela 2',     color:'#ff4444', active:false, lagPreset:'auto' },
-      { id:'ch2', label:'Tela 3',     color:'#44ff88', active:false, lagPreset:'auto' },
-      { id:'ch3', label:'Tela 4',     color:'#ffd700', active:false, lagPreset:'auto' },
-      { id:'ch4', label:'Tela 5',     color:'#ff66ff', active:false, lagPreset:'auto' },
-      { id:'ch5', label:'Tela 6',     color:'#ff9933', active:false, lagPreset:'auto' },
-      { id:'ch6', label:'Tela 7',     color:'#aa88ff', active:false, lagPreset:'auto' },
-      { id:'ch7', label:'Tela 8',     color:'#ff44aa', active:false, lagPreset:'auto' },
-      { id:'ch8', label:'Tela 9',     color:'#44dddd', active:false, lagPreset:'auto' },
-      { id:'ch9', label:'Tela 10',    color:'#bbff44', active:false, lagPreset:'auto' },
+      { id:'ch0',  label:'Referência', color:'#00d4ff', active:false, lagPreset:'auto' },
+      { id:'ch1',  label:'Tela 2',     color:'#ff4444', active:false, lagPreset:'auto' },
+      { id:'ch2',  label:'Tela 3',     color:'#44ff88', active:false, lagPreset:'auto' },
+      { id:'ch3',  label:'Tela 4',     color:'#ffd700', active:false, lagPreset:'auto' },
+      { id:'ch4',  label:'Tela 5',     color:'#ff66ff', active:false, lagPreset:'auto' },
+      { id:'ch5',  label:'Tela 6',     color:'#ff9933', active:false, lagPreset:'auto' },
+      { id:'ch6',  label:'Tela 7',     color:'#aa88ff', active:false, lagPreset:'auto' },
+      { id:'ch7',  label:'Tela 8',     color:'#ff44aa', active:false, lagPreset:'auto' },
+      { id:'ch8',  label:'Tela 9',     color:'#44dddd', active:false, lagPreset:'auto' },
+      { id:'ch9',  label:'Tela 10',    color:'#bbff44', active:false, lagPreset:'auto' },
+      { id:'ch10', label:'Tela 11',    color:'#ff8800', active:false, lagPreset:'auto' },
+      { id:'ch11', label:'Tela 12',    color:'#cc44ff', active:false, lagPreset:'auto' },
     ],
 
     LAG_PRESETS,
@@ -35,12 +37,13 @@
     MIN_LAG_MS:     20000,
 
     state: {
-      running:   false,
-      recording: false,
-      probeW:    232,
-      snapGrid:  true,
-      snapSize:  2,
-      noOverlap: true,
+      running:    false,
+      recording:  false,
+      probeW:     232,
+      snapGrid:   true,
+      snapSize:   2,
+      noOverlap:  true,
+      numChannels: 10,   // 10, 11 ou 12
     },
 
     config: {
@@ -64,5 +67,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. 10 canais (ch0–ch9), rtMode=true.');
+  console.log('[MedLat] 00-core carregado. 12 canais (ch0–ch11), rtMode=true.');
 })();

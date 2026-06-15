@@ -140,12 +140,16 @@
     applyHdrStyle();
 
     const ttl = document.createElement('span');
-    ttl.textContent = '\u{1F550} ANALISADOR DE LAT\u00CANCIA';
+    ttl.textContent = '\u26a1 MEDIDOR DE LAT\u00CANCIA';
     ttl.style.cssText = `color:${ui.T.textPrimary};font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
 
+    // btnTips e btnGuide mantidos no código mas NÃO adicionados ao header
     const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medição precisa', '#ffd700');
     const btnGuide = ui.mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
+    btnTips.onclick  = () => ML.help && ML.help.toggleTips(panel);
+    btnGuide.onclick = () => ML.help && ML.help.toggleGuide(panel);
 
+    // btnRT mantido no código mas NÃO adicionado ao header (RT é o modo fixo)
     const btnRT = document.createElement('button');
     btnRT.title = 'Alternar entre modo Tempo Real e modo Gravar/Analisar';
     btnRT.textContent = '\u26a1RT';
@@ -171,10 +175,10 @@
       if (rtIntervalId) clearInterval(rtIntervalId);
       document.querySelectorAll('[id^="ml-"], .ml-search-overlay').forEach(e => e.remove());
     };
-    btnTips.onclick  = () => ML.help.toggleTips(panel);
-    btnGuide.onclick = () => ML.help.toggleGuide(panel);
-    btnMin.onclick   = () => ui.minimizePanel(panel);
-    hdr.append(ttl, btnTips, btnGuide, btnRT, btnMin, btnX);
+    btnMin.onclick = () => ui.minimizePanel(panel);
+
+    // Header: apenas título, minimizar e fechar
+    hdr.append(ttl, btnMin, btnX);
     panel.appendChild(hdr);
 
     // ── Drag ──
@@ -242,8 +246,23 @@
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); };
     updateColBtn();
 
+    // ── Seletor de número de telas ──
+    const selNumCh = document.createElement('select');
+    selNumCh.title = 'Número total de telas ativas (inclui referência)';
+    [10, 11, 12].forEach(n => {
+      const opt = document.createElement('option');
+      opt.value = n; opt.textContent = n + ' telas';
+      if (ML.state.numChannels === n) opt.selected = true;
+      selNumCh.appendChild(opt);
+    });
+    selNumCh.style.cssText = [
+      `background:${ui.T.selectBg};border:1px solid ${ui.T.selectBorder};color:${ui.T.selectColor}`,
+      'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
+      'cursor:pointer;outline:none;height:18px;box-sizing:border-box;flex-shrink:0',
+    ].join(';');
+
     const rowPos = ui.row(4);
-    rowPos.append(ui.sp('PX', 'flex-shrink:0;font-size:9px'), btnPxM, pxInp, btnPxP, btnSnap, btnCol);
+    rowPos.append(ui.sp('PX', 'flex-shrink:0;font-size:9px'), btnPxM, pxInp, btnPxP, btnSnap, btnCol, selNumCh);
     secTG.appendChild(rowPos);
     scrollBody.appendChild(secTG);
 
@@ -252,126 +271,140 @@
     const probeGrid = document.createElement('div');
     probeGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px';
 
-    ML.CHANNELS.forEach((ch, i) => {
-      ch.deduction = ch.deduction || 0;
-      const card = document.createElement('div');
-      card.style.cssText = [
-        'display:flex;flex-direction:column;gap:2px',
-        'padding:3px 4px;border-radius:4px',
-        `border:1px solid ${ch.color}55`,
-        `background:${ch.color}0d`,
-        `border-top:2px solid ${ch.color}99`,
-        `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
-        'box-sizing:border-box;min-width:0;overflow:hidden;width:100%',
-      ].join(';');
-      ch._panelRow = card;
-
-      const r1 = ui.row(3);
-      r1.style.cssText += ';overflow:hidden;min-width:0';
-      const tog = document.createElement('button');
-      tog.title = 'Ativar ou desativar esta tela';
-      tog.style.cssText = `width:8px;height:8px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
-      tog.onclick = () => {
-        ch.active = !ch.active;
-        tog.style.background = ch.active ? ch.color : 'transparent';
-        card.style.opacity = ch.active ? 1 : .4;
-        ch.probe.style.display = ch.active ? 'block' : 'none';
-        if (!ch.active) { ch.prevLum = null; } else { if (ch.resize) ch.resize(); }
-      };
-
-      const lblInp = document.createElement('input');
-      lblInp.value = i === 0 ? 'Referência' : ch.label;
-      lblInp.title = 'Clique para renomear a tela';
-      lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
-      lblInp.addEventListener('change', () => {
-        ch.label = lblInp.value.replace(/^\u2605\s*/, '');
-        if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
-        if (ch._tdName) ch._tdName.textContent = (i === 0 ? '\u2605 ' : '') + ch.label;
-        if (ch._rtLbl)  ch._rtLbl.textContent  = i === 0 ? 'REF' : ch.label;
-      });
-
-      const lumEl = document.createElement('span');
-      lumEl.title = 'Luminância atual da probe (0–255)';
-      lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;flex-shrink:0`;
-      lumEl.textContent = '--'; ch.lumEl = lumEl;
-
-      const ptsEl = document.createElement('span');
-      ptsEl.style.cssText = 'display:none';
-      ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
-
-      r1.append(tog, lblInp, lumEl, ptsEl);
-
-      const r2 = ui.row(2);
-      r2.style.cssText += ';overflow:hidden;min-width:0;align-items:center';
-
-      const szInp = document.createElement('input');
-      szInp.type = 'text';
-      szInp.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
-      szInp.className = 'ml-sz-inp';
-      szInp.title = 'Tamanho desta probe em pixels';
-      function applySzStyle() {
-        const t = ui.T;
-        szInp.style.cssText = [
-          `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.textPrimary}`,
-          'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
-          'text-align:center;outline:none;box-sizing:border-box',
-          'height:18px;width:28px;flex-shrink:0;min-width:0',
+    function buildProbeCards() {
+      probeGrid.innerHTML = '';
+      const n = parseInt(selNumCh.value) || 10;
+      ML.state.numChannels = n;
+      ML.CHANNELS.slice(0, n).forEach((ch, i) => {
+        ch.deduction = ch.deduction || 0;
+        const card = document.createElement('div');
+        card.style.cssText = [
+          'display:flex;flex-direction:column;gap:2px',
+          'padding:3px 4px;border-radius:4px',
+          `border:1px solid ${ch.color}55`,
+          `background:${ch.color}0d`,
+          `border-top:2px solid ${ch.color}99`,
+          `transition:opacity .2s;opacity:${ch.active ? 1 : .4}`,
+          'box-sizing:border-box;min-width:0;overflow:hidden;width:100%',
         ].join(';');
-      }
-      applySzStyle();
-      szInp.addEventListener('focus', () => szInp.style.borderColor = ui.T.inputBorder + 'cc');
-      szInp.addEventListener('blur',  () => szInp.style.borderColor = ui.T.inputBorder);
-      ch._szInp = szInp;
+        ch._panelRow = card;
 
-      function applyChanPx(v) {
-        const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
-        ch.probeW = c; szInp.value = c;
-        if (ch.active && ch.resize) ch.resize();
-      }
-      szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
-      szInp.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); applyChanPx(parseInt(szInp.value) || ML.state.probeW); szInp.blur(); }
+        const r1 = ui.row(3);
+        r1.style.cssText += ';overflow:hidden;min-width:0';
+        const tog = document.createElement('button');
+        tog.title = 'Ativar ou desativar esta tela';
+        tog.style.cssText = `width:8px;height:8px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
+        tog.onclick = () => {
+          ch.active = !ch.active;
+          tog.style.background = ch.active ? ch.color : 'transparent';
+          card.style.opacity = ch.active ? 1 : .4;
+          ch.probe.style.display = ch.active ? 'block' : 'none';
+          if (!ch.active) { ch.prevLum = null; } else { if (ch.resize) ch.resize(); }
+        };
+
+        const lblInp = document.createElement('input');
+        lblInp.value = i === 0 ? 'Referência' : ch.label;
+        lblInp.title = 'Clique para renomear a tela';
+        lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
+        lblInp.addEventListener('change', () => {
+          ch.label = lblInp.value.replace(/^\u2605\s*/, '');
+          if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
+          if (ch._tdName) ch._tdName.textContent = (i === 0 ? '\u2605 ' : '') + ch.label;
+          if (ch._rtLbl)  ch._rtLbl.textContent  = i === 0 ? 'REF' : ch.label;
+        });
+
+        const lumEl = document.createElement('span');
+        lumEl.title = 'Luminância atual da probe (0–255)';
+        lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;flex-shrink:0`;
+        lumEl.textContent = '--'; ch.lumEl = lumEl;
+
+        const ptsEl = document.createElement('span');
+        ptsEl.style.cssText = 'display:none';
+        ptsEl.textContent = '0pt'; ch.ptsEl = ptsEl;
+
+        r1.append(tog, lblInp, lumEl, ptsEl);
+
+        const r2 = ui.row(2);
+        r2.style.cssText += ';overflow:hidden;min-width:0;align-items:center';
+
+        const szInp = document.createElement('input');
+        szInp.type = 'text';
+        szInp.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
+        szInp.className = 'ml-sz-inp';
+        szInp.title = 'Tamanho desta probe em pixels';
+        function applySzStyle() {
+          const t = ui.T;
+          szInp.style.cssText = [
+            `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.textPrimary}`,
+            'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
+            'text-align:center;outline:none;box-sizing:border-box',
+            'height:18px;width:28px;flex-shrink:0;min-width:0',
+          ].join(';');
+        }
+        applySzStyle();
+        szInp.addEventListener('focus', () => szInp.style.borderColor = ui.T.inputBorder + 'cc');
+        szInp.addEventListener('blur',  () => szInp.style.borderColor = ui.T.inputBorder);
+        ch._szInp = szInp;
+
+        function applyChanPx(v) {
+          const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
+          ch.probeW = c; szInp.value = c;
+          if (ch.active && ch.resize) ch.resize();
+        }
+        szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
+        szInp.addEventListener('keydown', e => {
+          if (e.key === 'Enter') { e.preventDefault(); applyChanPx(parseInt(szInp.value) || ML.state.probeW); szInp.blur(); }
+        });
+
+        function mkSzBtn(symbol, title2) {
+          const b = document.createElement('button');
+          b.textContent = symbol; b.title = title2;
+          const t = ui.T;
+          b.style.cssText = [
+            `background:${t.btnBg};border:1px solid ${t.btnBorder};color:${t.textPrimary}`,
+            'font:bold 9px monospace;border-radius:3px;padding:0 3px',
+            'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
+          ].join(';');
+          return b;
+        }
+        const btnSzM = mkSzBtn('\u2212', 'Diminuir probe');
+        const btnSzP = mkSzBtn('+', 'Aumentar probe');
+        btnSzM.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) - 2);
+        btnSzP.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) + 2);
+
+        r2.append(ui.sp('px', 'font-size:9px;flex-shrink:0'), btnSzM, szInp, btnSzP);
+
+        const r3ded = ui.row(2);
+        r3ded.style.cssText += ';overflow:hidden;min-width:0';
+        r3ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
+
+        const rows = [r1, r2, r3ded];
+        if (i !== 0) {
+          const r4lag = ui.row(2);
+          r4lag.style.cssText += ';overflow:hidden;min-width:0';
+          r4lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
+          r4lag._logOnly = true;
+          r4lag.setAttribute('data-logonly', '1');
+          r4lag.style.display = 'none'; // LOG oculto
+          rows.push(r4lag);
+        }
+        rows.forEach(r => card.appendChild(r));
+        probeGrid.appendChild(card);
       });
+    }
 
-      function mkSzBtn(symbol, title2) {
-        const b = document.createElement('button');
-        b.textContent = symbol; b.title = title2;
-        const t = ui.T;
-        b.style.cssText = [
-          `background:${t.btnBg};border:1px solid ${t.btnBorder};color:${t.textPrimary}`,
-          'font:bold 9px monospace;border-radius:3px;padding:0 3px',
-          'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
-        ].join(';');
-        return b;
-      }
-      const btnSzM = mkSzBtn('\u2212', 'Diminuir probe');
-      const btnSzP = mkSzBtn('+', 'Aumentar probe');
-      btnSzM.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) - 2);
-      btnSzP.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) + 2);
-
-      r2.append(ui.sp('px', 'font-size:9px;flex-shrink:0'), btnSzM, szInp, btnSzP);
-
-      const r3ded = ui.row(2);
-      r3ded.style.cssText += ';overflow:hidden;min-width:0';
-      r3ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
-
-      const rows = [r1, r2, r3ded];
-      if (i !== 0) {
-        const r4lag = ui.row(2);
-        r4lag.style.cssText += ';overflow:hidden;min-width:0';
-        r4lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
-        r4lag._logOnly = true;
-        rows.push(r4lag);
-      }
-      rows.forEach(r => card.appendChild(r));
-      probeGrid.appendChild(card);
+    selNumCh.addEventListener('change', () => {
+      buildProbeCards();
+      buildRTGrid();
     });
 
+    buildProbeCards();
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
-    /* ── Seção: Análise (modo LOG) ── */
+    /* ── Seção: Análise (modo LOG) — oculta, código preservado ── */
     const secAn = ui.sec('Análise');
+    secAn.style.display = 'none';
     const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = ui.mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;color:#ce93d8;opacity:.45');
     btnRec.title     = 'Inicia a captura de luminância';
@@ -388,6 +421,10 @@
     progLabel.style.cssText = 'font-size:8px;color:#44ff88;text-align:center;letter-spacing:.05em';
     progLabel.textContent = '0%';
     progWrap.append(progBarOuter, progLabel);
+
+    const statusEl = document.createElement('div');
+    statusEl.style.cssText = `font-size:9px;color:${ui.T.statusColor};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+    statusEl.textContent = 'Pronto';
 
     function doStop() {
       ML.recorder.stop();
@@ -464,10 +501,9 @@
     secAn.appendChild(progWrap);
     scrollBody.appendChild(secAn);
 
-    /* ── Seção: Tempo Real (modo RT) ── */
+    /* ── Seção: Tempo Real (modo RT) — sempre visível ── */
     const secRT = ui.sec('\u26a1 Tempo Real');
 
-    // ── Botões INICIAR / DESLIGAR ──
     const btnRTStart = ui.mkBtn('\u25b6 INICIAR', '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
     const btnRTStop  = ui.mkBtn('\u25a0 DESLIGAR', '#3a0d0d', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold;opacity:.45');
     btnRTStart.style.color  = '#44ff88';
@@ -494,74 +530,72 @@
     const rtGrid = document.createElement('div');
     rtGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px';
 
-    ML.CHANNELS.forEach((ch, i) => {
-      // ch0 (Referência) não tem dados a exibir no painel RT — omitir
-      if (i === 0) return;
+    function buildRTGrid() {
+      rtGrid.innerHTML = '';
+      const n = parseInt(selNumCh.value) || 10;
+      ML.CHANNELS.slice(1, n).forEach(ch => {
+        const card = document.createElement('div');
+        card.style.cssText = [
+          'display:flex;flex-direction:column;align-items:center;gap:2px',
+          'padding:4px 3px;border-radius:4px;box-sizing:border-box',
+          `border:1px solid ${ch.color}44`,
+          `background:${ch.color}0d`,
+          `border-top:2px solid ${ch.color}99`,
+          'min-width:0;overflow:hidden;width:100%',
+        ].join(';');
+        ch._rtCard = card;
 
-      const card = document.createElement('div');
-      card.style.cssText = [
-        'display:flex;flex-direction:column;align-items:center;gap:2px',
-        'padding:4px 3px;border-radius:4px;box-sizing:border-box',
-        `border:1px solid ${ch.color}44`,
-        `background:${ch.color}0d`,
-        `border-top:2px solid ${ch.color}99`,
-        'min-width:0;overflow:hidden;width:100%',
-      ].join(';');
-      ch._rtCard = card;
+        const lbl = document.createElement('div');
+        lbl.textContent = ch.label;
+        lbl.style.cssText = `color:${ch.color};font:bold 8px monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center`;
+        ch._rtLbl = lbl;
 
-      const lbl = document.createElement('div');
-      lbl.textContent = ch.label;
-      lbl.style.cssText = `color:${ch.color};font:bold 8px monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center`;
-      ch._rtLbl = lbl;
+        const rowMed = document.createElement('div');
+        rowMed.style.cssText = 'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px';
+        const lblMed = document.createElement('div');
+        lblMed.textContent = 'MEDIDO';
+        lblMed.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
+        const valMed = document.createElement('div');
+        valMed.textContent = '--';
+        valMed.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
+        ch._rtVal = valMed;
 
-      const rowMed = document.createElement('div');
-      rowMed.style.cssText = 'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px';
+        const rowReal = document.createElement('div');
+        rowReal.style.cssText = [
+          'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px',
+          'margin-top:3px;padding-top:3px',
+          `border-top:1px solid ${ch.color}22`,
+        ].join(';');
+        const lblReal = document.createElement('div');
+        lblReal.textContent = 'REAL';
+        lblReal.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
+        const valReal = document.createElement('div');
+        valReal.textContent = '--';
+        valReal.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
+        ch._rtValReal = valReal;
 
-      const lblMed = document.createElement('div');
-      lblMed.textContent = 'MEDIDO';
-      lblMed.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
+        rowMed.append(lblMed, valMed);
+        rowReal.append(lblReal, valReal);
 
-      const valMed = document.createElement('div');
-      valMed.textContent = '--';
-      valMed.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
-      ch._rtVal = valMed;
+        const histBadge = document.createElement('div');
+        histBadge.style.cssText = 'font:bold 7px monospace;text-align:center;opacity:.5;letter-spacing:.04em;height:9px;line-height:9px;margin-top:2px';
+        histBadge.textContent = '';
+        ch._rtHistBadge = histBadge;
 
-      const rowReal = document.createElement('div');
-      rowReal.style.cssText = [
-        'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px',
-        'margin-top:3px;padding-top:3px',
-        `border-top:1px solid ${ch.color}22`,
-      ].join(';');
+        const confWrap = document.createElement('div');
+        confWrap.style.cssText = 'width:100%;height:3px;background:#ffffff18;border-radius:2px;overflow:hidden;margin-top:1px';
+        const confBar = document.createElement('div');
+        confBar.style.cssText = 'height:100%;width:0%;border-radius:2px;transition:width .4s,background .4s';
+        confWrap.appendChild(confBar);
+        ch._rtConfBar = confBar;
+        ch._rtHistory = [];
 
-      const lblReal = document.createElement('div');
-      lblReal.textContent = 'REAL';
-      lblReal.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
+        card.append(lbl, rowMed, rowReal, histBadge, confWrap);
+        rtGrid.appendChild(card);
+      });
+    }
 
-      const valReal = document.createElement('div');
-      valReal.textContent = '--';
-      valReal.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
-      ch._rtValReal = valReal;
-
-      rowMed.append(lblMed, valMed);
-      rowReal.append(lblReal, valReal);
-
-      const histBadge = document.createElement('div');
-      histBadge.style.cssText = 'font:bold 7px monospace;text-align:center;opacity:.5;letter-spacing:.04em;height:9px;line-height:9px;margin-top:2px';
-      histBadge.textContent = '';
-      ch._rtHistBadge = histBadge;
-
-      const confWrap = document.createElement('div');
-      confWrap.style.cssText = 'width:100%;height:3px;background:#ffffff18;border-radius:2px;overflow:hidden;margin-top:1px';
-      const confBar = document.createElement('div');
-      confBar.style.cssText = 'height:100%;width:0%;border-radius:2px;transition:width .4s,background .4s';
-      confWrap.appendChild(confBar);
-      ch._rtConfBar = confBar;
-
-      ch._rtHistory = [];
-
-      card.append(lbl, rowMed, rowReal, histBadge, confWrap);
-      rtGrid.appendChild(card);
-    });
+    buildRTGrid();
 
     const rtSummary = document.createElement('div');
     rtSummary.style.cssText = [
@@ -582,7 +616,7 @@
     secRT.append(rtGrid, rtSummary, rtStatusEl);
     scrollBody.appendChild(secRT);
 
-    /* ── Seção: Resultados (modo LOG) ── */
+    /* ── Seção: Resultados (modo LOG) — oculta, código preservado ── */
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
     btnCopyInline.title = 'Copiar tabela de resultados para a área de transferência';
@@ -592,6 +626,7 @@
     btnCopyInline.onclick = () => ui.copyResults(btnCopyInline);
 
     const secRes = ui.sec('Resultados', btnCopyInline);
+    secRes.style.display = 'none';
     const tbl = document.createElement('table');
     tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:9px';
     const thead = document.createElement('thead');
@@ -605,7 +640,6 @@
     thead.appendChild(trH); tbl.appendChild(thead);
     const tbody = document.createElement('tbody');
     ML.CHANNELS.forEach((ch, i) => {
-      // ch0 (Referência) não aparece na tabela de resultados
       if (i === 0) return;
       const tr = document.createElement('tr');
       tr.style.cssText = `border-bottom:1px solid ${ui.T.rowBorder}`;
@@ -629,13 +663,13 @@
     secRes.appendChild(tbl);
     scrollBody.appendChild(secRes);
 
-    /* ── Status (modo LOG) ── */
+    /* ── Status (modo LOG) — oculto ── */
     const secSt = document.createElement('div');
-    secSt.style.cssText = 'padding:3px 8px;flex-shrink:0';
-    const statusEl = document.createElement('div');
-    statusEl.style.cssText = `font-size:9px;color:${ui.T.statusColor};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
-    statusEl.textContent = 'Pronto';
-    secSt.appendChild(statusEl);
+    secSt.style.cssText = 'padding:3px 8px;flex-shrink:0;display:none';
+    const statusElDisp = document.createElement('div');
+    statusElDisp.style.cssText = `font-size:9px;color:${ui.T.statusColor};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+    statusElDisp.textContent = 'Pronto';
+    secSt.appendChild(statusElDisp);
     scrollBody.appendChild(secSt);
     panel.appendChild(scrollBody);
 
@@ -649,7 +683,6 @@
       rtGrid.style.gridTemplateColumns    = `repeat(${cols},1fr)`;
       if (h != null) {
         secTG.style.display = h < 260 ? 'none' : '';
-        if (!ML.config.rtMode) secAn.style.display = h < 200 ? 'none' : '';
       }
     }
     ui.makeResizable(panel, { minW: 220, minH: 180, onResize: (w, h) => applyScale(w, h) });
@@ -658,21 +691,6 @@
         const { width: w, height: h } = entries[0].contentRect;
         applyScale(w, h);
       }).observe(panel);
-    }
-
-    // ── Toggle RT/LOG ────────────────────────────────────────
-    probeGrid.querySelectorAll('div').forEach(el => {
-      if (el._logOnly) el.setAttribute('data-logonly', '1');
-    });
-
-    function applyModeLayout(rtOn) {
-      secAn.style.display  = rtOn ? 'none' : '';
-      secRes.style.display = rtOn ? 'none' : '';
-      secSt.style.display  = rtOn ? 'none' : '';
-      secRT.style.display  = rtOn ? ''     : 'none';
-      probeGrid.querySelectorAll('[data-logonly]').forEach(el => {
-        el.style.display = rtOn ? 'none' : '';
-      });
     }
 
     let rtIntervalId = null;
@@ -796,7 +814,6 @@
       if (elConf)   elConf.textContent   = '--';
     }
 
-    // ── INICIAR ──
     btnRTStart.onclick = () => {
       if (rtRunning) return;
       resetRTState();
@@ -808,7 +825,6 @@
       rtStatusEl.style.color = '#aaaacc';
     };
 
-    // ── DESLIGAR ──
     btnRTStop.onclick = () => {
       if (!rtRunning) return;
       clearInterval(rtIntervalId); rtIntervalId = null;
@@ -819,21 +835,17 @@
       rtStatusEl.style.color = '#aaaacc';
     };
 
-    // ── Toggle RT/LOG (não inicia coleta) ────────────────────
+    // btnRT.onclick mantido no código mas não exposto na UI
     btnRT.onclick = () => {
       ML.config.rtMode = !ML.config.rtMode;
       applyBtnRTStyle();
-      applyModeLayout(ML.config.rtMode);
       if (!ML.config.rtMode) {
         if (rtRunning) {
           clearInterval(rtIntervalId); rtIntervalId = null;
           ML.recorder.stop();
           setRTRunning(false);
           resetRTState();
-          rtStatusEl.textContent = 'Parado';
-          rtStatusEl.style.color = '#aaaacc';
         }
-        statusEl.textContent = 'Pronto'; statusEl.style.color = ui.T.statusColor;
       }
     };
 
@@ -857,11 +869,8 @@
     panel.style.top  = '4px';
     ui.minimizePanel(panel);
 
-    applyModeLayout(true);
-    applyBtnRTStyle();
-    resetRTState();
-    rtStatusEl.textContent = 'Parado';
-    rtStatusEl.style.color = '#aaaacc';
+    // RT sempre ativo como modo padrão
+    ML.config.rtMode = true;
 
     /* ── Timer de luminância (sempre ativo) ── */
     setInterval(() => {
@@ -874,7 +883,7 @@
       });
     }, 200);
 
-    /* ── Timer de progresso LOG ── */
+    /* ── Timer de progresso LOG (preservado, não ativo no RT) ── */
     setInterval(() => {
       if (!ML.state.recording) return;
       if (ML.config.rtMode) return;
@@ -909,5 +918,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. 10 canais, 3 casas decimais, ref oculta nos resultados.');
+  console.log('[MedLat] 50-panel carregado. RT fixo, LOG oculto, seletor 10/11/12 telas.');
 })();
