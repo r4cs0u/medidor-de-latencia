@@ -17,7 +17,6 @@
       const offsetS = parseFloat(ch.offsetEl.textContent.replace('s', '').replace(',', '.'));
       if (isNaN(offsetS)) { ch.realEl.textContent = '--'; ch.realEl.style.color = '#aaaacc'; return; }
       const realS = offsetS + (ch.deduction || 0) - refDed;
-      // Preserva sinal negativo: usa sinal explícito '+' só para positivos
       const prefix = realS > 0 ? '\u2009+' : realS < 0 ? '\u2009' : '\u2009';
       ch.realEl.textContent = prefix + realS.toFixed(3) + 's';
       ch.realEl.style.color = ui.colorByOffset(Math.abs(realS));
@@ -346,6 +345,7 @@
 
       r2.append(ui.sp('px', 'font-size:9px;flex-shrink:0'), btnSzM, szInp, btnSzP);
 
+      // r3ded: campo de dedução — visível em ambos os modos
       const r3ded = ui.row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
       r3ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
@@ -356,6 +356,9 @@
         r4lag.style.cssText += ';overflow:hidden;min-width:0';
         r4lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
         rows.push(r4lag);
+        // Guarda referência para esconder no modo RT
+        r3ded._logOnly = true;
+        r4lag._logOnly = true;
       }
       rows.forEach(r => card.appendChild(r));
       probeGrid.appendChild(card);
@@ -430,7 +433,6 @@
               ch.offsetEl.style.color = r.error ? '#ff4444' : '#aaaacc';
             } else {
               const s = r.offsetMs / 1000;
-              // Preserva sinal negativo
               const prefix = s > 0 ? '+' : '';
               ch.offsetEl.textContent = prefix + s.toFixed(3) + 's';
               ch.offsetEl.style.color = ui.colorByOffset(Math.abs(s));
@@ -606,11 +608,33 @@
       }).observe(panel);
     }
 
-    // ── Toggle RT ──
+    // ── Toggle RT: alterna seções completas ──────────────────────────────
+    // Modo RT  → mostra: secRT, secDet (sem ded/lag), secTG
+    //            esconde: secAn, secRes, secSt, linhas logOnly dos cards
+    // Modo LOG → mostra: secAn, secRes, secSt, linhas logOnly
+    //            esconde: secRT
+
     let rtIntervalId = null;
 
+    function applyModeLayout(rtOn) {
+      // Seções inteiras
+      secAn.style.display  = rtOn ? 'none' : '';
+      secRes.style.display = rtOn ? 'none' : '';
+      secSt.style.display  = rtOn ? 'none' : '';
+      secRT.style.display  = rtOn ? ''     : 'none';
+
+      // Linhas de dedução e lag (logOnly) dentro dos cards de tela
+      probeGrid.querySelectorAll('[data-logonly]').forEach(el => {
+        el.style.display = rtOn ? 'none' : '';
+      });
+    }
+
+    // Marca as linhas logOnly com data-attribute para seleção
+    probeGrid.querySelectorAll('div').forEach(el => {
+      if (el._logOnly) el.setAttribute('data-logonly', '1');
+    });
+
     // updateRTCard: exibe offsetMs com sinal correto (incluindo negativos).
-    // Não usa Math.abs() no valor exibido — apenas na cor e na barra de confiança.
     function updateRTCard(ch, r) {
       if (!ch._rtVal) return;
       if (r.isReference) return;
@@ -637,7 +661,6 @@
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
       } else if (offsetMs !== null) {
         const s = offsetMs / 1000;
-        // Sinal explícito: '+' para positivo, '-' já vem do toFixed para negativo
         const prefix = aboveThresh
           ? (s > 0 ? '+' : '')
           : (s > 0 ? '~+' : '~');
@@ -725,22 +748,18 @@
     btnRT.onclick = () => {
       ML.config.rtMode = !ML.config.rtMode;
       applyBtnRTStyle();
+      applyModeLayout(ML.config.rtMode);
 
       if (ML.config.rtMode) {
         resetRTState();
-        secAn.style.display = 'none';
-        secRT.style.display = '';
         ML.recorder.start();
         if (rtIntervalId) clearInterval(rtIntervalId);
         rtIntervalId = setInterval(rtTick, ML.config.rtIntervalMs);
         rtStatusEl.textContent = 'Acumulando amostras...'; rtStatusEl.style.color = '#aaaacc';
-        statusEl.textContent   = '\u26a1 Modo RT ativo'; statusEl.style.color = '#00d4ff';
       } else {
         clearInterval(rtIntervalId); rtIntervalId = null;
         ML.recorder.stop();
         resetRTState();
-        secRT.style.display = 'none';
-        secAn.style.display = '';
         rtStatusEl.textContent = 'Pausado';
         statusEl.textContent   = 'Pronto'; statusEl.style.color = ui.T.statusColor;
       }
@@ -753,7 +772,6 @@
           const totalMs = offsets[ch.id];
           if (totalMs == null) return;
           const s = totalMs / 1000;
-          // Preserva sinal negativo
           const prefix = s > 0 ? '+' : '';
           ch.offsetEl.textContent = prefix + s.toFixed(3) + 's';
           ch.offsetEl.style.color = ui.colorByOffset(Math.abs(s));
@@ -766,6 +784,9 @@
     panel.style.left = '4px';
     panel.style.top  = '4px';
     ui.minimizePanel(panel);
+
+    // Aplica layout inicial (modo LOG por padrão)
+    applyModeLayout(ML.config.rtMode);
 
     /* ── Timers ── */
     setInterval(() => {
@@ -812,5 +833,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. rtConfThreshold=0.60, sinais negativos preservados em RT e LOG, CONF verde >= 60%.');
+  console.log('[MedLat] 50-panel carregado. Alternância completa de layout RT/LOG via applyModeLayout().');
 })();
