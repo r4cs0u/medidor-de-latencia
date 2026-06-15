@@ -258,16 +258,19 @@
     secTG.appendChild(rowPos);
     scrollBody.appendChild(secTG);
 
+    // ── Cards unificados (probe + RT numa peça só) ─────────────
     const secDet = ui.sec('Telas');
     const probeGrid = document.createElement('div');
     probeGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px';
 
-    function buildProbeCards() {
+    function buildChannelCards() {
       probeGrid.innerHTML = '';
       const n = parseInt(selNumCh.value) || ML.state.numChannels;
       ML.state.numChannels = n;
       ML.CHANNELS.slice(0, n).forEach((ch, i) => {
         ch.deduction = ch.deduction || 0;
+        const isRef = i === 0;
+
         const card = document.createElement('div');
         card.style.cssText = [
           'display:flex;flex-direction:column;gap:2px',
@@ -280,6 +283,7 @@
         ].join(';');
         ch._panelRow = card;
 
+        // ── linha 1: toggle · label · lum ──
         const r1 = ui.row(3);
         r1.style.cssText += ';overflow:hidden;min-width:0';
         const tog = document.createElement('button');
@@ -294,14 +298,13 @@
         };
 
         const lblInp = document.createElement('input');
-        lblInp.value = i === 0 ? 'Referência' : ch.label;
+        lblInp.value = isRef ? 'Referência' : ch.label;
         lblInp.title = 'Clique para renomear a tela';
         lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
         lblInp.addEventListener('change', () => {
           ch.label = lblInp.value.replace(/^\u2605\s*/, '');
           if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
-          if (ch._tdName) ch._tdName.textContent = (i === 0 ? '\u2605 ' : '') + ch.label;
-          if (ch._rtLbl)  ch._rtLbl.textContent  = i === 0 ? 'REF' : ch.label;
+          if (ch._tdName) ch._tdName.textContent = (isRef ? '\u2605 ' : '') + ch.label;
         });
 
         const lumEl = document.createElement('span');
@@ -315,6 +318,7 @@
 
         r1.append(tog, lblInp, lumEl, ptsEl);
 
+        // ── linha 2: px ──
         const r2 = ui.row(2);
         r2.style.cssText += ';overflow:hidden;min-width:0;align-items:center';
 
@@ -365,34 +369,104 @@
 
         r2.append(ui.sp('px', 'font-size:9px;flex-shrink:0'), btnSzM, szInp, btnSzP);
 
-        const r3ded = ui.row(2);
-        r3ded.style.cssText += ';overflow:hidden;min-width:0';
-        r3ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
-
-        const rows = [r1, r2, r3ded];
-        if (i !== 0) {
-          const r4lag = ui.row(2);
-          r4lag.style.cssText += ';overflow:hidden;min-width:0';
-          r4lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
-          r4lag._logOnly = true;
-          r4lag.setAttribute('data-logonly', '1');
-          r4lag.style.display = 'none';
-          rows.push(r4lag);
+        // ── linha 3: lag (não-ref) ──
+        const r3lag = ui.row(2);
+        r3lag.style.cssText += ';overflow:hidden;min-width:0';
+        if (!isRef) {
+          r3lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
         }
-        rows.forEach(r => card.appendChild(r));
+
+        // ── linha 4: ded ──
+        const r4ded = ui.row(2);
+        r4ded.style.cssText += ';overflow:hidden;min-width:0';
+        r4ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
+
+        // ── divisor RT ──
+        const rtDivider = document.createElement('div');
+        rtDivider.style.cssText = `height:1px;background:${ch.color}22;margin:2px 0;display:none`;
+        ch._rtDivider = rtDivider;
+
+        // ── linha RT: MEDIDO · REAL ──
+        const rtRow = document.createElement('div');
+        rtRow.style.cssText = 'display:none;flex-direction:row;justify-content:space-around;align-items:flex-end;width:100%;gap:2px';
+        ch._rtRow = rtRow;
+
+        if (!isRef) {
+          const mkValCol = (labelTxt) => {
+            const wrap = document.createElement('div');
+            wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;flex:1;min-width:0';
+            const lbl = document.createElement('div');
+            lbl.textContent = labelTxt;
+            lbl.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.4';
+            const val = document.createElement('div');
+            val.textContent = '--';
+            val.style.cssText = 'font:bold 12px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%';
+            wrap.append(lbl, val);
+            return { wrap, val };
+          };
+          const colMed  = mkValCol('MEDIDO');
+          const colReal = mkValCol('REAL');
+          ch._rtVal     = colMed.val;
+          ch._rtValReal = colReal.val;
+          rtRow.append(colMed.wrap, colReal.wrap);
+
+          // ── barra conf + alpha ──
+          const rtFooter = document.createElement('div');
+          rtFooter.style.cssText = 'display:none;flex-direction:column;gap:1px;width:100%';
+          ch._rtFooter = rtFooter;
+
+          const confWrap = document.createElement('div');
+          confWrap.style.cssText = 'width:100%;height:3px;background:#ffffff18;border-radius:2px;overflow:hidden';
+          const confBar = document.createElement('div');
+          confBar.style.cssText = 'height:100%;width:0%;border-radius:2px;transition:width .4s,background .4s';
+          confWrap.appendChild(confBar);
+          ch._rtConfBar = confBar;
+
+          const rtMeta = document.createElement('div');
+          rtMeta.style.cssText = 'display:flex;justify-content:space-between;width:100%';
+
+          const histBadge = document.createElement('div');
+          histBadge.style.cssText = 'font:bold 6px monospace;opacity:.5;letter-spacing:.04em;line-height:1.4';
+          histBadge.textContent = '';
+          ch._rtHistBadge = histBadge;
+
+          const alphaBadge = document.createElement('div');
+          alphaBadge.style.cssText = 'font:bold 6px monospace;opacity:.6;letter-spacing:.06em;line-height:1.4;color:#aaaacc;text-align:right';
+          alphaBadge.textContent = '';
+          ch._rtAlphaBadge = alphaBadge;
+
+          rtMeta.append(histBadge, alphaBadge);
+          rtFooter.append(confWrap, rtMeta);
+          card.append(r1, r2, r3lag, r4ded, rtDivider, rtRow, rtFooter);
+        } else {
+          // REF: sem RT rows
+          ch._rtVal = null; ch._rtValReal = null; ch._rtConfBar = null;
+          ch._rtHistBadge = null; ch._rtAlphaBadge = null; ch._rtFooter = null;
+          card.append(r1, r2, r4ded);
+        }
+
+        ch._rtHistory = [];
         probeGrid.appendChild(card);
+      });
+
+      applyRTVisibility();
+    }
+
+    function applyRTVisibility() {
+      const on = ML.config.rtMode;
+      ML.CHANNELS.forEach(ch => {
+        if (ch._rtDivider) ch._rtDivider.style.display = on ? 'block' : 'none';
+        if (ch._rtRow)     ch._rtRow.style.display     = on ? 'flex'  : 'none';
+        if (ch._rtFooter)  ch._rtFooter.style.display  = on ? 'flex'  : 'none';
       });
     }
 
-    selNumCh.addEventListener('change', () => {
-      buildProbeCards();
-      buildRTGrid();
-    });
-
-    buildProbeCards();
+    selNumCh.addEventListener('change', () => { buildChannelCards(); });
+    buildChannelCards();
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
+    // ── Análise (modo LOG) ─────────────────────────────────────
     const secAn = ui.sec('Análise');
     secAn.style.display = 'none';
     const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
@@ -491,12 +565,13 @@
     secAn.appendChild(progWrap);
     scrollBody.appendChild(secAn);
 
+    // ── Seção Tempo Real (botões + status) ─────────────────────
     const secRT = ui.sec('\u26a1 Tempo Real');
 
-    const btnRTStart = ui.mkBtn('\u25b6 INICIAR', '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
+    const btnRTStart = ui.mkBtn('\u25b6 INICIAR',  '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
     const btnRTStop  = ui.mkBtn('\u25a0 DESLIGAR', '#3a0d0d', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold;opacity:.45');
-    btnRTStart.style.color  = '#44ff88';
-    btnRTStop.style.color   = '#ff4444';
+    btnRTStart.style.color = '#44ff88';
+    btnRTStop.style.color  = '#ff4444';
     btnRTStart.title = 'Inicia a coleta de amostras em tempo real';
     btnRTStop.title  = 'Para a coleta e limpa os dados';
 
@@ -514,102 +589,15 @@
     const rowRTBtns = ui.row(4);
     rowRTBtns.style.cssText += ';margin-bottom:4px';
     rowRTBtns.append(btnRTStart, btnRTStop);
-    secRT.appendChild(rowRTBtns);
-
-    const rtGrid = document.createElement('div');
-    rtGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px';
-
-    function buildRTGrid() {
-      rtGrid.innerHTML = '';
-      const n = parseInt(selNumCh.value) || ML.state.numChannels;
-      ML.CHANNELS.slice(1, n).forEach(ch => {
-        const card = document.createElement('div');
-        card.style.cssText = [
-          'display:flex;flex-direction:column;align-items:center;gap:2px',
-          'padding:4px 3px;border-radius:4px;box-sizing:border-box',
-          `border:1px solid ${ch.color}44`,
-          `background:${ch.color}0d`,
-          `border-top:2px solid ${ch.color}99`,
-          'min-width:0;overflow:hidden;width:100%',
-        ].join(';');
-        ch._rtCard = card;
-
-        const lbl = document.createElement('div');
-        lbl.textContent = ch.label;
-        lbl.style.cssText = `color:${ch.color};font:bold 8px monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center`;
-        ch._rtLbl = lbl;
-
-        const rowMed = document.createElement('div');
-        rowMed.style.cssText = 'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px';
-        const lblMed = document.createElement('div');
-        lblMed.textContent = 'MEDIDO';
-        lblMed.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
-        const valMed = document.createElement('div');
-        valMed.textContent = '--';
-        valMed.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
-        ch._rtVal = valMed;
-
-        const rowReal = document.createElement('div');
-        rowReal.style.cssText = [
-          'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px',
-          'margin-top:3px;padding-top:3px',
-          `border-top:1px solid ${ch.color}22`,
-        ].join(';');
-        const lblReal = document.createElement('div');
-        lblReal.textContent = 'REAL';
-        lblReal.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
-        const valReal = document.createElement('div');
-        valReal.textContent = '--';
-        valReal.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
-        ch._rtValReal = valReal;
-
-        rowMed.append(lblMed, valMed);
-        rowReal.append(lblReal, valReal);
-
-        const histBadge = document.createElement('div');
-        histBadge.style.cssText = 'font:bold 7px monospace;text-align:center;opacity:.5;letter-spacing:.04em;height:9px;line-height:9px;margin-top:2px';
-        histBadge.textContent = '';
-        ch._rtHistBadge = histBadge;
-
-        const confWrap = document.createElement('div');
-        confWrap.style.cssText = 'width:100%;height:3px;background:#ffffff18;border-radius:2px;overflow:hidden;margin-top:1px';
-        const confBar = document.createElement('div');
-        confBar.style.cssText = 'height:100%;width:0%;border-radius:2px;transition:width .4s,background .4s';
-        confWrap.appendChild(confBar);
-        ch._rtConfBar = confBar;
-
-        const alphaBadge = document.createElement('div');
-        alphaBadge.style.cssText = 'font:bold 6px monospace;text-align:center;opacity:.6;letter-spacing:.06em;height:9px;line-height:9px;margin-top:1px;color:#aaaacc';
-        alphaBadge.textContent = '';
-        ch._rtAlphaBadge = alphaBadge;
-        ch._rtHistory = [];
-
-        card.append(lbl, rowMed, rowReal, histBadge, confWrap, alphaBadge);
-        rtGrid.appendChild(card);
-      });
-    }
-
-    buildRTGrid();
-
-    const rtSummary = document.createElement('div');
-    rtSummary.style.cssText = [
-      'display:flex;justify-content:space-between;align-items:center',
-      'background:#ffffff08;border:1px solid #ffffff14',
-      'border-radius:3px;padding:3px 6px;font-size:8px;color:#aaaacc',
-    ].join(';');
-    rtSummary.innerHTML =
-      '<span>ATIVOS: <b id="ml-rt-active">--</b></span>' +
-      '<span>M\u00c1X: <b id="ml-rt-max">--</b></span>' +
-      '<span>M\u00c9D: <b id="ml-rt-avg">--</b></span>' +
-      '<span>CONF: <b id="ml-rt-conf">--</b></span>';
 
     const rtStatusEl = document.createElement('div');
     rtStatusEl.style.cssText = 'font-size:8px;color:#aaaacc;text-align:center;margin-top:2px;letter-spacing:.04em';
     rtStatusEl.textContent = 'Parado';
 
-    secRT.append(rtGrid, rtSummary, rtStatusEl);
+    secRT.append(rowRTBtns, rtStatusEl);
     scrollBody.appendChild(secRT);
 
+    // ── Resultados (tabela LOG) ────────────────────────────────
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
     btnCopyInline.title = 'Copiar tabela de resultados para a área de transferência';
@@ -671,7 +659,6 @@
       panel.style.fontSize = Math.max(8, Math.round(11 * scale)) + 'px';
       const cols = w >= 320 ? 3 : w >= 220 ? 2 : 1;
       probeGrid.style.gridTemplateColumns = `repeat(${cols},1fr)`;
-      rtGrid.style.gridTemplateColumns    = `repeat(${cols},1fr)`;
       if (h != null) {
         secTG.style.display = h < 260 ? 'none' : '';
       }
@@ -691,10 +678,10 @@
       const inactive = !ch.active || r.skipped;
       const DASH = '\u2014';
       if (inactive) {
-        if (ch._rtVal)     { ch._rtVal.textContent = DASH;     ch._rtVal.style.color = '#555566';  ch._rtVal.style.fontSize = '13px'; }
+        if (ch._rtVal)     { ch._rtVal.textContent = DASH;     ch._rtVal.style.color = '#555566'; }
         if (ch._rtValReal) { ch._rtValReal.textContent = DASH; ch._rtValReal.style.color = '#555566'; }
-        if (ch._rtConfBar)   ch._rtConfBar.style.width = '0%';
-        if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
+        if (ch._rtConfBar)    ch._rtConfBar.style.width = '0%';
+        if (ch._rtHistBadge)  ch._rtHistBadge.textContent = '';
         if (ch._rtAlphaBadge) ch._rtAlphaBadge.textContent = '';
         return;
       }
@@ -712,24 +699,22 @@
 
       if (r.error && !histLen) {
         const txt = r.error.includes('Aguardando') ? 'AGUARD.' : 'ERR';
-        if (ch._rtVal)     { ch._rtVal.textContent = txt;  ch._rtVal.style.color = '#555566';  ch._rtVal.style.fontSize = '8px'; }
-        if (ch._rtValReal) { ch._rtValReal.textContent = txt; ch._rtValReal.style.color = '#555566'; ch._rtValReal.style.fontSize = '8px'; }
+        if (ch._rtVal)     { ch._rtVal.textContent = txt;  ch._rtVal.style.color = '#555566'; }
+        if (ch._rtValReal) { ch._rtValReal.textContent = txt; ch._rtValReal.style.color = '#555566'; }
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
       } else {
         const med = fmtMs(offsetMs, !aboveThresh);
         if (ch._rtVal) {
-          ch._rtVal.textContent  = med.text;
-          ch._rtVal.style.color  = med.color;
-          ch._rtVal.style.fontSize = med.small ? '8px' : '13px';
-          ch._rtVal.style.opacity  = aboveThresh ? '1' : '0.75';
+          ch._rtVal.textContent = med.text;
+          ch._rtVal.style.color = med.color;
+          ch._rtVal.style.opacity = aboveThresh ? '1' : '0.75';
         }
         const realMs = offsetMs !== null ? calcRTReal(ch, offsetMs) : null;
         const real   = fmtMs(realMs, !aboveThresh);
         if (ch._rtValReal) {
-          ch._rtValReal.textContent  = real.text;
-          ch._rtValReal.style.color  = real.color;
-          ch._rtValReal.style.fontSize = real.small ? '8px' : '13px';
-          ch._rtValReal.style.opacity  = aboveThresh ? '1' : '0.75';
+          ch._rtValReal.textContent = real.text;
+          ch._rtValReal.style.color = real.color;
+          ch._rtValReal.style.opacity = aboveThresh ? '1' : '0.75';
         }
       }
       if (ch._rtHistBadge) {
@@ -751,38 +736,11 @@
     function rtTick() {
       if (!ML.config.rtMode || !rtRunning) return;
       const results = ML.correlator.correlateRollingAll();
-      let activeCount = 0;
-      const offsetsRaw = [], confs = [];
       results.forEach(r => {
         const ch = r.channel;
         if (!ch) return;
         updateRTCard(ch, r);
-        if (!r.isReference && !r.skipped && r.offsetMs !== null) {
-          activeCount++;
-          offsetsRaw.push(Math.abs(r.offsetMs));
-          if (r.confidence !== null) confs.push(r.confidence);
-        }
       });
-      const elActive = document.getElementById('ml-rt-active');
-      const elMax    = document.getElementById('ml-rt-max');
-      const elAvg    = document.getElementById('ml-rt-avg');
-      const elConf   = document.getElementById('ml-rt-conf');
-      if (elActive) elActive.textContent = activeCount;
-      if (elMax && offsetsRaw.length) {
-        const maxS = Math.max(...offsetsRaw) / 1000;
-        elMax.textContent = maxS.toFixed(3) + 's';
-        elMax.style.color = ui.colorByOffset(maxS);
-      } else if (elMax) elMax.textContent = '--';
-      if (elAvg && offsetsRaw.length) {
-        const avgS = offsetsRaw.reduce((a, b) => a + b, 0) / offsetsRaw.length / 1000;
-        elAvg.textContent = avgS.toFixed(3) + 's';
-        elAvg.style.color = ui.colorByOffset(avgS);
-      } else if (elAvg) elAvg.textContent = '--';
-      if (elConf && confs.length) {
-        const avgConf = Math.round(confs.reduce((a, b) => a + b, 0) / confs.length * 100);
-        elConf.textContent = avgConf + '%';
-        elConf.style.color = avgConf >= 60 ? '#44ff88' : avgConf >= 40 ? '#ffd700' : '#ff4444';
-      } else if (elConf) elConf.textContent = '--';
       rtStatusEl.textContent = '\u25cf AO VIVO  \u2014  ' + new Date().toLocaleTimeString('pt-BR');
       rtStatusEl.style.color = '#00d4ff';
     }
@@ -795,20 +753,12 @@
         ch._rtLastVal    = undefined;
         ch._rtLastConf   = undefined;
         ch.prevLum       = null;
-        if (ch._rtVal)       { ch._rtVal.textContent = '--';     ch._rtVal.style.color = '#aaaacc'; ch._rtVal.style.opacity = '1'; ch._rtVal.style.fontSize = '13px'; }
+        if (ch._rtVal)       { ch._rtVal.textContent = '--';     ch._rtVal.style.color = '#aaaacc'; ch._rtVal.style.opacity = '1'; }
         if (ch._rtValReal)   { ch._rtValReal.textContent = '--'; ch._rtValReal.style.color = '#aaaacc'; ch._rtValReal.style.opacity = '1'; }
         if (ch._rtConfBar)   { ch._rtConfBar.style.width = '0%'; }
-        if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
+        if (ch._rtHistBadge)  ch._rtHistBadge.textContent = '';
         if (ch._rtAlphaBadge) ch._rtAlphaBadge.textContent = '';
       });
-      const elActive = document.getElementById('ml-rt-active');
-      const elMax    = document.getElementById('ml-rt-max');
-      const elAvg    = document.getElementById('ml-rt-avg');
-      const elConf   = document.getElementById('ml-rt-conf');
-      if (elActive) elActive.textContent = '--';
-      if (elMax)    elMax.textContent    = '--';
-      if (elAvg)    elAvg.textContent    = '--';
-      if (elConf)   elConf.textContent   = '--';
     }
 
     btnRTStart.onclick = () => {
@@ -835,13 +785,12 @@
     btnRT.onclick = () => {
       ML.config.rtMode = !ML.config.rtMode;
       applyBtnRTStyle();
-      if (!ML.config.rtMode) {
-        if (rtRunning) {
-          clearInterval(rtIntervalId); rtIntervalId = null;
-          ML.recorder.stop();
-          setRTRunning(false);
-          resetRTState();
-        }
+      applyRTVisibility();
+      if (!ML.config.rtMode && rtRunning) {
+        clearInterval(rtIntervalId); rtIntervalId = null;
+        ML.recorder.stop();
+        setRTRunning(false);
+        resetRTState();
       }
     };
 
@@ -866,7 +815,10 @@
     ui.minimizePanel(panel);
 
     ML.config.rtMode = true;
+    applyBtnRTStyle();
+    applyRTVisibility();
 
+    // ── Atualização contínua de luminância nos cards ───────────
     setInterval(() => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch.lumEl) return;
@@ -876,13 +828,11 @@
           ch.lumEl.textContent = '--';
           ch.lumEl.style.color = ch.color;
           ch.lumEl.title = '';
-        }
-        else if (y === -1) {
+        } else if (y === -1) {
           ch.lumEl.textContent = '\ud83d\udd12';
           ch.lumEl.style.color = '#ff4444';
           ch.lumEl.title = 'CORS bloqueado';
-        }
-        else {
+        } else {
           ch.lumEl.textContent = Math.round(y);
           ch.lumEl.style.color = ch.color;
           ch.lumEl.title = s ? `Y:${Math.round(s.lum)}  R:${Math.round(s.r)}  G:${Math.round(s.g)}  B:${Math.round(s.b)}` : 'Luminância atual da probe (0–255)';
@@ -890,6 +840,7 @@
       });
     }, 200);
 
+    // ── Progresso da gravação (modo LOG) ───────────────────────
     setInterval(() => {
       if (!ML.state.recording) return;
       if (ML.config.rtMode) return;
@@ -924,5 +875,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. Seletor de telas: 2–12. Default: 4 telas.');
+  console.log('[MedLat] 50-panel carregado. Cards unificados probe+RT. Seletor de telas: 2–12.');
 })();
