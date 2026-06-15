@@ -4,7 +4,7 @@
 
   (function injectStyles() { ui.injectStyles(); })();
 
-  // ── Resultados (modo LOG) ────────────────────────────────────────
+  // ── Resultados (modo LOG) ──────────────────────────────────
 
   function refreshRealColumn() {
     const refDed = ML.CHANNELS[0].deduction || 0;
@@ -23,18 +23,15 @@
     });
   }
 
-  // ── Helpers de dedução ────────────────────────────────────────────
+  // ── Helpers de dedução ──────────────────────────────────
 
-  // Calcula o valor "REAL" de um canal RT:
-  // real = offsetMs_bruto + deduction_ch - deduction_ref
-  // A dedução é aplicada SOMENTE aqui, após a correlação já ter retornado offsetMs.
   function calcRTReal(ch, offsetMs) {
-    const refDed = (ML.CHANNELS[0].deduction || 0) * 1000; // em ms
-    const chDed  = (ch.deduction || 0) * 1000;             // em ms
+    const refDed = (ML.CHANNELS[0].deduction || 0) * 1000;
+    const chDed  = (ch.deduction || 0) * 1000;
     return offsetMs + chDed - refDed;
   }
 
-  // ── Inputs de canal ───────────────────────────────────────────────
+  // ── Inputs de canal ─────────────────────────────────────
 
   function mkLagSelect(ch) {
     const sel = document.createElement('select');
@@ -106,7 +103,7 @@
     return inp;
   }
 
-  // ── init ──────────────────────────────────────────────────────────
+  // ── init ────────────────────────────────────────────────────
 
   function init() {
     ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-guide', 'ml-widget'].forEach(id => {
@@ -474,7 +471,6 @@
 
     /* ── Seção: Tempo Real (modo RT) ── */
     const secRT = ui.sec('\u26a1 Tempo Real');
-    secRT.style.display = 'none';
 
     const rtGrid = document.createElement('div');
     rtGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px';
@@ -491,20 +487,17 @@
       ].join(';');
       ch._rtCard = card;
 
-      // Label do canal
       const lbl = document.createElement('div');
       lbl.textContent = i === 0 ? 'REF' : ch.label;
       lbl.style.cssText = `color:${ch.color};font:bold 8px monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center`;
       ch._rtLbl = lbl;
 
       if (i === 0) {
-        // Referência: só exibe estrela
         const val = document.createElement('div');
         val.textContent = '\u2605 REF';
         val.style.cssText = `font:bold 11px monospace;text-align:center;color:${ch.color};line-height:1.3`;
         card.append(lbl, val);
       } else {
-        // ── Linha MEDIDO (resultado bruto da correlação) ──
         const rowMed = document.createElement('div');
         rowMed.style.cssText = 'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px';
 
@@ -515,9 +508,8 @@
         const valMed = document.createElement('div');
         valMed.textContent = '--';
         valMed.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
-        ch._rtVal = valMed; // mantém compatibilidade com código anterior
+        ch._rtVal = valMed;
 
-        // ── Linha REAL (medido + deduções, calculado APÓS correlação) ──
         const rowReal = document.createElement('div');
         rowReal.style.cssText = [
           'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px',
@@ -537,13 +529,11 @@
         rowMed.append(lblMed, valMed);
         rowReal.append(lblReal, valReal);
 
-        // Badge de pontos acumulados
         const histBadge = document.createElement('div');
         histBadge.style.cssText = 'font:bold 7px monospace;text-align:center;opacity:.5;letter-spacing:.04em;height:9px;line-height:9px;margin-top:2px';
         histBadge.textContent = '';
         ch._rtHistBadge = histBadge;
 
-        // Barra de confiança
         const confWrap = document.createElement('div');
         confWrap.style.cssText = 'width:100%;height:3px;background:#ffffff18;border-radius:2px;overflow:hidden;margin-top:1px';
         const confBar = document.createElement('div');
@@ -653,7 +643,7 @@
       }).observe(panel);
     }
 
-    // ── Toggle RT: alterna seções completas ──────────────────────────
+    // ── Toggle RT: alterna seções completas ────────────────────
     // Modo RT  → mostra: secRT, secDet (com ded, sem lag), secTG
     //            esconde: secAn, secRes, secSt, r4lag nos cards
     // Modo LOG → mostra: secAn, secRes, secSt, r4lag
@@ -666,7 +656,6 @@
       secRes.style.display = rtOn ? 'none' : '';
       secSt.style.display  = rtOn ? 'none' : '';
       secRT.style.display  = rtOn ? ''     : 'none';
-      // Somente r4lag é logOnly — r3ded permanece visível em ambos os modos
       probeGrid.querySelectorAll('[data-logonly]').forEach(el => {
         el.style.display = rtOn ? 'none' : '';
       });
@@ -677,9 +666,7 @@
       if (el._logOnly) el.setAttribute('data-logonly', '1');
     });
 
-    // ── updateRTCard ─────────────────────────────────────────────────
-    // offsetMs = resultado BRUTO da correlação (sem dedução)
-    // realMs   = offsetMs + deduction_ch - deduction_ref  (só exibição)
+    // ── updateRTCard ─────────────────────────────────────────
     function updateRTCard(ch, r) {
       if (r.isReference) return;
 
@@ -716,7 +703,6 @@
         if (ch._rtValReal) { ch._rtValReal.textContent = txt; ch._rtValReal.style.color = '#555566'; ch._rtValReal.style.fontSize = '8px'; }
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
       } else {
-        // MEDIDO: valor bruto
         const med = fmtMs(offsetMs, !aboveThresh);
         if (ch._rtVal) {
           ch._rtVal.textContent  = med.text;
@@ -725,7 +711,6 @@
           ch._rtVal.style.opacity  = aboveThresh ? '1' : '0.75';
         }
 
-        // REAL: aplicar dedução SOMENTE aqui, depois da correlação
         const realMs = offsetMs !== null ? calcRTReal(ch, offsetMs) : null;
         const real   = fmtMs(realMs, !aboveThresh);
         if (ch._rtValReal) {
@@ -753,7 +738,7 @@
       const results = ML.correlator.correlateRollingAll();
 
       let activeCount = 0;
-      const offsetsRaw = [], confs = [];   // summary usa valor BRUTO (medido)
+      const offsetsRaw = [], confs = [];
       results.forEach(r => {
         const ch = r.channel;
         if (!ch) return;
@@ -845,8 +830,13 @@
     panel.style.top  = '4px';
     ui.minimizePanel(panel);
 
-    // Aplica layout inicial (modo LOG por padrão)
-    applyModeLayout(ML.config.rtMode);
+    // ── Layout e estado inicial: sempre RT ──
+    applyModeLayout(true);
+    applyBtnRTStyle();
+    resetRTState();
+    ML.recorder.start();
+    rtIntervalId = setInterval(rtTick, ML.config.rtIntervalMs);
+    rtStatusEl.textContent = 'Acumulando amostras...'; rtStatusEl.style.color = '#aaaacc';
 
     /* ── Timers ── */
     setInterval(() => {
@@ -893,5 +883,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. RT: MEDIDO (bruto) + REAL (deduzido separado).');
+  console.log('[MedLat] 50-panel carregado. Modo padrão: RT ativo. Gravar/Analisar apenas no modo LOG.');
 })();

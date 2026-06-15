@@ -40,8 +40,8 @@
     },
 
     config: {
-      rtMode:          false,
-      rtConfThreshold: 0.60,    // confia\u00e7a m\u00ednima para exibir valor em cor viva (0\u20131)
+      rtMode:          true,             // padrão: inicia em modo Tempo Real
+      rtConfThreshold: 0.60,
       rtIntervalMs:    500,
       rtWindowMs:      35000,
       rtUseLongBuffer: true,
@@ -60,5 +60,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. rtConfThreshold=0.60, rtWindowMs=35000, rtUseLongBuffer=true.');
+  console.log('[MedLat] 00-core carregado. rtMode=true (padrão RT), rtConfThreshold=0.60, rtWindowMs=35000.');
 })();
