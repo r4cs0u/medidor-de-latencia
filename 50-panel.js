@@ -4,7 +4,7 @@
 
   (function injectStyles() { ui.injectStyles(); })();
 
-  // ── Resultados ──────────────────────────────────────────────────
+  // ── Resultados (modo LOG) ────────────────────────────────────────
 
   function refreshRealColumn() {
     const refDed = ML.CHANNELS[0].deduction || 0;
@@ -21,6 +21,17 @@
       ch.realEl.textContent = prefix + realS.toFixed(3) + 's';
       ch.realEl.style.color = ui.colorByOffset(Math.abs(realS));
     });
+  }
+
+  // ── Helpers de dedução ────────────────────────────────────────────
+
+  // Calcula o valor "REAL" de um canal RT:
+  // real = offsetMs_bruto + deduction_ch - deduction_ref
+  // A dedução é aplicada SOMENTE aqui, após a correlação já ter retornado offsetMs.
+  function calcRTReal(ch, offsetMs) {
+    const refDed = (ML.CHANNELS[0].deduction || 0) * 1000; // em ms
+    const chDed  = (ch.deduction || 0) * 1000;             // em ms
+    return offsetMs + chDed - refDed;
   }
 
   // ── Inputs de canal ───────────────────────────────────────────────
@@ -282,6 +293,7 @@
         ch.label = lblInp.value.replace(/^\u2605\s*/, '');
         if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
         if (ch._tdName) ch._tdName.textContent = (i === 0 ? '\u2605 ' : '') + ch.label;
+        if (ch._rtLbl)  ch._rtLbl.textContent  = i === 0 ? 'REF' : ch.label;
       });
 
       const lumEl = document.createElement('span');
@@ -345,20 +357,19 @@
 
       r2.append(ui.sp('px', 'font-size:9px;flex-shrink:0'), btnSzM, szInp, btnSzP);
 
-      // r3ded: campo de dedução — visível em ambos os modos
+      // r3ded: campo de dedução — visível em AMBOS os modos (RT e LOG)
       const r3ded = ui.row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
       r3ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
 
       const rows = [r1, r2, r3ded];
       if (i !== 0) {
+        // r4lag: apenas no modo LOG (escondido no RT)
         const r4lag = ui.row(2);
         r4lag.style.cssText += ';overflow:hidden;min-width:0';
         r4lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
-        rows.push(r4lag);
-        // Guarda referência para esconder no modo RT
-        r3ded._logOnly = true;
         r4lag._logOnly = true;
+        rows.push(r4lag);
       }
       rows.forEach(r => card.appendChild(r));
       probeGrid.appendChild(card);
@@ -476,39 +487,73 @@
         `border:1px solid ${ch.color}44`,
         `background:${ch.color}0d`,
         `border-top:2px solid ${ch.color}99`,
-        'min-width:0;overflow:hidden',
+        'min-width:0;overflow:hidden;width:100%',
       ].join(';');
       ch._rtCard = card;
 
+      // Label do canal
       const lbl = document.createElement('div');
       lbl.textContent = i === 0 ? 'REF' : ch.label;
       lbl.style.cssText = `color:${ch.color};font:bold 8px monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center`;
       ch._rtLbl = lbl;
 
-      const val = document.createElement('div');
-      val.textContent = i === 0 ? '\u2605' : '--';
-      val.style.cssText = 'font:bold 14px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s';
-      val.style.color = i === 0 ? '#44ff88' : '#aaaacc';
-      ch._rtVal = val;
-
-      const histBadge = document.createElement('div');
-      histBadge.style.cssText = 'font:bold 7px monospace;text-align:center;opacity:.5;letter-spacing:.04em;height:9px;line-height:9px';
-      histBadge.textContent = '';
-      ch._rtHistBadge = histBadge;
-
-      const confWrap = document.createElement('div');
-      confWrap.style.cssText = 'width:100%;height:3px;background:#ffffff18;border-radius:2px;overflow:hidden';
-      const confBar = document.createElement('div');
-      confBar.style.cssText = 'height:100%;width:0%;border-radius:2px;transition:width .4s,background .4s';
-      confWrap.appendChild(confBar);
-      ch._rtConfBar = confBar;
-
-      ch._rtHistory = [];
-
       if (i === 0) {
+        // Referência: só exibe estrela
+        const val = document.createElement('div');
+        val.textContent = '\u2605 REF';
+        val.style.cssText = `font:bold 11px monospace;text-align:center;color:${ch.color};line-height:1.3`;
         card.append(lbl, val);
       } else {
-        card.append(lbl, val, histBadge, confWrap);
+        // ── Linha MEDIDO (resultado bruto da correlação) ──
+        const rowMed = document.createElement('div');
+        rowMed.style.cssText = 'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px';
+
+        const lblMed = document.createElement('div');
+        lblMed.textContent = 'MEDIDO';
+        lblMed.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
+
+        const valMed = document.createElement('div');
+        valMed.textContent = '--';
+        valMed.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
+        ch._rtVal = valMed; // mantém compatibilidade com código anterior
+
+        // ── Linha REAL (medido + deduções, calculado APÓS correlação) ──
+        const rowReal = document.createElement('div');
+        rowReal.style.cssText = [
+          'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px',
+          'margin-top:3px;padding-top:3px',
+          `border-top:1px solid ${ch.color}22`,
+        ].join(';');
+
+        const lblReal = document.createElement('div');
+        lblReal.textContent = 'REAL';
+        lblReal.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
+
+        const valReal = document.createElement('div');
+        valReal.textContent = '--';
+        valReal.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
+        ch._rtValReal = valReal;
+
+        rowMed.append(lblMed, valMed);
+        rowReal.append(lblReal, valReal);
+
+        // Badge de pontos acumulados
+        const histBadge = document.createElement('div');
+        histBadge.style.cssText = 'font:bold 7px monospace;text-align:center;opacity:.5;letter-spacing:.04em;height:9px;line-height:9px;margin-top:2px';
+        histBadge.textContent = '';
+        ch._rtHistBadge = histBadge;
+
+        // Barra de confiança
+        const confWrap = document.createElement('div');
+        confWrap.style.cssText = 'width:100%;height:3px;background:#ffffff18;border-radius:2px;overflow:hidden;margin-top:1px';
+        const confBar = document.createElement('div');
+        confBar.style.cssText = 'height:100%;width:0%;border-radius:2px;transition:width .4s,background .4s';
+        confWrap.appendChild(confBar);
+        ch._rtConfBar = confBar;
+
+        ch._rtHistory = [];
+
+        card.append(lbl, rowMed, rowReal, histBadge, confWrap);
       }
       rtGrid.appendChild(card);
     });
@@ -532,7 +577,7 @@
     secRT.append(rtGrid, rtSummary, rtStatusEl);
     scrollBody.appendChild(secRT);
 
-    /* ── Seção: Resultados ── */
+    /* ── Seção: Resultados (modo LOG) ── */
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
     btnCopyInline.title = 'Copiar tabela de resultados para a área de transferência';
@@ -577,7 +622,7 @@
     secRes.appendChild(tbl);
     scrollBody.appendChild(secRes);
 
-    /* ── Status ── */
+    /* ── Status (modo LOG) ── */
     const secSt = document.createElement('div');
     secSt.style.cssText = 'padding:3px 8px;flex-shrink:0';
     const statusEl = document.createElement('div');
@@ -597,7 +642,7 @@
       rtGrid.style.gridTemplateColumns    = `repeat(${cols},1fr)`;
       if (h != null) {
         secTG.style.display = h < 260 ? 'none' : '';
-        secAn.style.display = h < 200 ? 'none' : '';
+        if (!ML.config.rtMode) secAn.style.display = h < 200 ? 'none' : '';
       }
     }
     ui.makeResizable(panel, { minW: 220, minH: 180, onResize: (w, h) => applyScale(w, h) });
@@ -608,41 +653,42 @@
       }).observe(panel);
     }
 
-    // ── Toggle RT: alterna seções completas ──────────────────────────────
-    // Modo RT  → mostra: secRT, secDet (sem ded/lag), secTG
-    //            esconde: secAn, secRes, secSt, linhas logOnly dos cards
-    // Modo LOG → mostra: secAn, secRes, secSt, linhas logOnly
+    // ── Toggle RT: alterna seções completas ──────────────────────────
+    // Modo RT  → mostra: secRT, secDet (com ded, sem lag), secTG
+    //            esconde: secAn, secRes, secSt, r4lag nos cards
+    // Modo LOG → mostra: secAn, secRes, secSt, r4lag
     //            esconde: secRT
 
     let rtIntervalId = null;
 
     function applyModeLayout(rtOn) {
-      // Seções inteiras
       secAn.style.display  = rtOn ? 'none' : '';
       secRes.style.display = rtOn ? 'none' : '';
       secSt.style.display  = rtOn ? 'none' : '';
       secRT.style.display  = rtOn ? ''     : 'none';
-
-      // Linhas de dedução e lag (logOnly) dentro dos cards de tela
+      // Somente r4lag é logOnly — r3ded permanece visível em ambos os modos
       probeGrid.querySelectorAll('[data-logonly]').forEach(el => {
         el.style.display = rtOn ? 'none' : '';
       });
     }
 
-    // Marca as linhas logOnly com data-attribute para seleção
+    // Marca apenas r4lag como logOnly
     probeGrid.querySelectorAll('div').forEach(el => {
       if (el._logOnly) el.setAttribute('data-logonly', '1');
     });
 
-    // updateRTCard: exibe offsetMs com sinal correto (incluindo negativos).
+    // ── updateRTCard ─────────────────────────────────────────────────
+    // offsetMs = resultado BRUTO da correlação (sem dedução)
+    // realMs   = offsetMs + deduction_ch - deduction_ref  (só exibição)
     function updateRTCard(ch, r) {
-      if (!ch._rtVal) return;
       if (r.isReference) return;
 
-      if (!ch.active || r.skipped) {
-        ch._rtVal.textContent = '\u2014';
-        ch._rtVal.style.color = '#555566';
-        ch._rtVal.style.fontSize = '14px';
+      const inactive = !ch.active || r.skipped;
+      const DASH = '\u2014';
+
+      if (inactive) {
+        if (ch._rtVal)     { ch._rtVal.textContent = DASH;     ch._rtVal.style.color = '#555566';  ch._rtVal.style.fontSize = '13px'; }
+        if (ch._rtValReal) { ch._rtValReal.textContent = DASH; ch._rtValReal.style.color = '#555566'; }
         if (ch._rtConfBar)   ch._rtConfBar.style.width = '0%';
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
         return;
@@ -653,35 +699,47 @@
       const offsetMs    = r.offsetMs;
       const histLen     = r.historyLen || 0;
 
+      function fmtMs(ms, uncertain) {
+        if (ms === null) return { text: 'AGUARD.', color: '#555566', small: true };
+        const s      = ms / 1000;
+        const prefix = uncertain ? (s >= 0 ? '~+' : '~') : (s > 0 ? '+' : '');
+        return {
+          text:  prefix + s.toFixed(2) + 's',
+          color: uncertain ? '#667788' : ui.colorByOffset(Math.abs(s)),
+          small: false,
+        };
+      }
+
       if (r.error && !histLen) {
-        ch._rtVal.textContent  = r.error.includes('Aguardando') ? 'AGUARD.' : 'ERR';
-        ch._rtVal.style.color  = '#555566';
-        ch._rtVal.style.fontSize = '8px';
-        ch._rtVal.style.opacity  = '1';
+        const txt = r.error.includes('Aguardando') ? 'AGUARD.' : 'ERR';
+        if (ch._rtVal)     { ch._rtVal.textContent = txt;  ch._rtVal.style.color = '#555566';  ch._rtVal.style.fontSize = '8px'; }
+        if (ch._rtValReal) { ch._rtValReal.textContent = txt; ch._rtValReal.style.color = '#555566'; ch._rtValReal.style.fontSize = '8px'; }
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
-      } else if (offsetMs !== null) {
-        const s = offsetMs / 1000;
-        const prefix = aboveThresh
-          ? (s > 0 ? '+' : '')
-          : (s > 0 ? '~+' : '~');
-        ch._rtVal.textContent  = prefix + s.toFixed(2) + 's';
-        ch._rtVal.style.fontSize = '14px';
-        ch._rtVal.style.color    = aboveThresh
-          ? ui.colorByOffset(Math.abs(s))
-          : '#667788';
-        ch._rtVal.style.opacity  = aboveThresh ? '1' : '0.75';
       } else {
-        ch._rtVal.textContent  = 'AGUARD.';
-        ch._rtVal.style.color  = '#555566';
-        ch._rtVal.style.fontSize = '8px';
-        ch._rtVal.style.opacity  = '1';
+        // MEDIDO: valor bruto
+        const med = fmtMs(offsetMs, !aboveThresh);
+        if (ch._rtVal) {
+          ch._rtVal.textContent  = med.text;
+          ch._rtVal.style.color  = med.color;
+          ch._rtVal.style.fontSize = med.small ? '8px' : '13px';
+          ch._rtVal.style.opacity  = aboveThresh ? '1' : '0.75';
+        }
+
+        // REAL: aplicar dedução SOMENTE aqui, depois da correlação
+        const realMs = offsetMs !== null ? calcRTReal(ch, offsetMs) : null;
+        const real   = fmtMs(realMs, !aboveThresh);
+        if (ch._rtValReal) {
+          ch._rtValReal.textContent  = real.text;
+          ch._rtValReal.style.color  = real.color;
+          ch._rtValReal.style.fontSize = real.small ? '8px' : '13px';
+          ch._rtValReal.style.opacity  = aboveThresh ? '1' : '0.75';
+        }
       }
 
       if (ch._rtHistBadge) {
         ch._rtHistBadge.textContent = histLen ? histLen + 'pt' : '';
         ch._rtHistBadge.style.color = histLen >= 10 ? '#44ff88' : '#ffd700';
       }
-
       if (ch._rtConfBar) {
         const pct = Math.round(conf * 100);
         ch._rtConfBar.style.width      = pct + '%';
@@ -694,14 +752,15 @@
       if (!ML.config.rtMode) return;
       const results = ML.correlator.correlateRollingAll();
 
-      let activeCount = 0, offsets = [], confs = [];
+      let activeCount = 0;
+      const offsetsRaw = [], confs = [];   // summary usa valor BRUTO (medido)
       results.forEach(r => {
         const ch = r.channel;
         if (!ch) return;
         updateRTCard(ch, r);
         if (!r.isReference && !r.skipped && r.offsetMs !== null) {
           activeCount++;
-          offsets.push(Math.abs(r.offsetMs));
+          offsetsRaw.push(Math.abs(r.offsetMs));
           if (r.confidence !== null) confs.push(r.confidence);
         }
       });
@@ -711,13 +770,13 @@
       const elAvg    = document.getElementById('ml-rt-avg');
       const elConf   = document.getElementById('ml-rt-conf');
       if (elActive) elActive.textContent = activeCount;
-      if (elMax && offsets.length) {
-        const maxS = Math.max(...offsets) / 1000;
+      if (elMax && offsetsRaw.length) {
+        const maxS = Math.max(...offsetsRaw) / 1000;
         elMax.textContent = maxS.toFixed(2) + 's';
         elMax.style.color = ui.colorByOffset(maxS);
       } else if (elMax) elMax.textContent = '--';
-      if (elAvg && offsets.length) {
-        const avgS = offsets.reduce((a, b) => a + b, 0) / offsets.length / 1000;
+      if (elAvg && offsetsRaw.length) {
+        const avgS = offsetsRaw.reduce((a, b) => a + b, 0) / offsetsRaw.length / 1000;
         elAvg.textContent = avgS.toFixed(2) + 's';
         elAvg.style.color = ui.colorByOffset(avgS);
       } else if (elAvg) elAvg.textContent = '--';
@@ -739,7 +798,8 @@
         ch._rtLastVal    = undefined;
         ch._rtLastConf   = undefined;
         ch.prevLum       = null;
-        if (ch._rtVal)       { ch._rtVal.textContent = '--'; ch._rtVal.style.color = '#aaaacc'; ch._rtVal.style.opacity = '1'; ch._rtVal.style.fontSize = '14px'; }
+        if (ch._rtVal)       { ch._rtVal.textContent = '--';     ch._rtVal.style.color = '#aaaacc'; ch._rtVal.style.opacity = '1'; ch._rtVal.style.fontSize = '13px'; }
+        if (ch._rtValReal)   { ch._rtValReal.textContent = '--'; ch._rtValReal.style.color = '#aaaacc'; ch._rtValReal.style.opacity = '1'; }
         if (ch._rtConfBar)   { ch._rtConfBar.style.width = '0%'; }
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
       });
@@ -833,5 +893,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. Alternância completa de layout RT/LOG via applyModeLayout().');
+  console.log('[MedLat] 50-panel carregado. RT: MEDIDO (bruto) + REAL (deduzido separado).');
 })();
