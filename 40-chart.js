@@ -88,25 +88,27 @@
   function rowBg(color)    { return color + '0d'; }
   function rowBorder(color){ return color + '22'; }
 
+  // ── calcRTReal: aplica dedução do canal e da referência (ms) ──────────────
+  function calcRTReal(ch, offsetMs) {
+    const refDed = (ML.CHANNELS[0].deduction || 0) * 1000;
+    const chDed  = (ch.deduction || 0) * 1000;
+    return offsetMs + chDed - refDed;
+  }
+
   // ── update leve: atualiza dados dos charts existentes sem recriar DOM ─────
-  // Chamado pelo modo Tempo Real (50-panel.js) a cada tick do setInterval.
-  // Se o painel ainda não existe, delega para showChart() normalmente.
   async function updateChart(newResults) {
     if (!document.getElementById('ml-chart-panel')) {
       return showChart(newResults);
     }
     if (!Array.isArray(newResults)) newResults = [newResults];
 
-    // Recalcula maxLen com os buffers atuais
     let maxLen = 0;
     ML.CHANNELS.forEach(ch => {
       if (ch.active && ch.buffer && ch.buffer.length > maxLen) maxLen = ch.buffer.length;
     });
 
-    // Atualiza cada chart registrado no chartMeta
     const metaKeys = Object.keys(chartMeta);
 
-    // Modo overlay: chave especial '_overlay'
     if (metaKeys.length === 1 && metaKeys[0] === '_overlay') {
       const { chart, channels } = chartMeta['_overlay'];
       if (!chart) return;
@@ -121,14 +123,12 @@
       return;
     }
 
-    // Modo paralelo: uma chave por canal
     metaKeys.forEach(chId => {
       const meta = chartMeta[chId];
       if (!meta || !meta.chart || !meta.ch) return;
       const ch   = meta.ch;
       const raw  = ch.buffer.map(p => p.lum).slice(0, maxLen);
       const iv   = ui.realIvMs(ch);
-      // Usa manualOffsets se existir, senão 0 (canal referência)
       const offsetMs = ML.manualOffsets && ML.manualOffsets[chId] != null ? ML.manualOffsets[chId] : 0;
       const shift    = Math.round(offsetMs / iv);
       const lums     = _shiftSeries(raw, shift);
@@ -136,13 +136,12 @@
       meta.chart.update('none');
     });
 
-    // Atualiza cards de resultado com novos offsets calculados
+    // fix: usa calcRTReal para exibir valor já com dedução
     newResults.forEach(r => {
       if (r.isReference || !r.channel || r.error || r.skipped || r.offsetMs == null) return;
-      _updateCardResultRT(r.channel.id, r.offsetMs);
+      _updateCardResultRT(r.channel, r.offsetMs);
     });
 
-    // Atualiza indicador de timestamp no título do painel
     const htitle = document.querySelector('#ml-chart-panel span[data-rt-title]');
     if (htitle) {
       const now = new Date();
@@ -150,19 +149,19 @@
     }
   }
 
-  // Atualiza o valEl de uma card no painel de gráfico (modo RT, sem fechar o painel)
-  function _updateCardResultRT(chId, offsetMs) {
-    // As cards ficam dentro de #ml-chart-panel .card com data-ch-id
+  // fix: recebe objeto ch completo para poder aplicar calcRTReal
+  function _updateCardResultRT(ch, offsetMs) {
+    const chId = ch.id;
     const card = document.querySelector(`#ml-chart-panel [data-ch-id="${chId}"]`);
     if (!card) return;
     const valEl = card._valEl || card.querySelector('[data-val]');
     if (!valEl) return;
-    const s = offsetMs / 1000;
+    const realMs = calcRTReal(ch, offsetMs);
+    const s = realMs / 1000;
     valEl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
     valEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
   }
 
-  // Helper puro (cópia local para uso em updateChart sem depender do closure de showChart)
   function _shiftSeries(data, shift) {
     if (!shift) return data;
     const n   = data.length;
@@ -305,6 +304,23 @@
       if (ch.buffer.length > maxLen) maxLen = ch.buffer.length;
     });
 
+    // fix: empty state com botão fechar em vez de painel vazio sem saída
+    if (!activeChannels.length) {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:8px;padding:16px';
+      const msg = document.createElement('div');
+      msg.style.cssText = 'color:#ff4444;font-size:10px;text-align:center';
+      msg.textContent = 'Nenhum canal com dados gravados.';
+      const btn = document.createElement('button');
+      btn.textContent = '✕ Fechar';
+      btn.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:3px 10px;cursor:pointer;font:bold 9px monospace';
+      btn.onclick = () => panel.remove();
+      wrap.append(msg, btn);
+      body.appendChild(wrap);
+      document.body.appendChild(panel);
+      return;
+    }
+
     const originalAutoMs = {};
     const confirmedMs    = {};
     ML.CHANNELS.forEach(ch => { originalAutoMs[ch.id] = 0; confirmedMs[ch.id] = 0; });
@@ -361,7 +377,8 @@
         const ch = r.channel;
         let autoTxt = '--', autoColor = ui.T.textMuted;
         if (!r.error && !r.skipped) {
-          const s = originalAutoMs[ch.id] / 1000;
+          const realMs = calcRTReal(ch, originalAutoMs[ch.id]);
+          const s = realMs / 1000;
           autoTxt   = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
           autoColor = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
         } else {
@@ -380,7 +397,8 @@
     function updateCardResult(chId, totalMs) {
       const ref = cardRefs[chId];
       if (!ref || !ref.valEl) return;
-      const s = totalMs / 1000;
+      const realMs = calcRTReal(ref.ch, totalMs);
+      const s = realMs / 1000;
       ref.valEl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
       ref.valEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
     }
@@ -388,7 +406,8 @@
       const ref = cardRefs[chId];
       if (!ref || !ref.manualEl) return;
       const el = ref.manualEl;
-      const s  = totalMs / 1000;
+      const realMs = calcRTReal(ref.ch, totalMs);
+      const s  = realMs / 1000;
       el.style.display = 'inline';
       el.textContent   = ' → ' + (s>=0?'+':'') + s.toFixed(3) + 's';
       el.style.color   = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#00d4ff';
@@ -396,13 +415,6 @@
     function hideCardManual(chId) {
       const ref = cardRefs[chId];
       if (ref && ref.manualEl) { ref.manualEl.style.display = 'none'; ref.manualEl.textContent = ''; }
-    }
-
-    if (!activeChannels.length) {
-      const msg = document.createElement('div');
-      msg.style.cssText = 'color:#ff4444;padding:16px;text-align:center;flex:1';
-      msg.textContent = 'Nenhum canal com dados gravados.';
-      body.appendChild(msg); document.body.appendChild(panel); return;
     }
 
     const toggleBar = document.createElement('div');
@@ -469,9 +481,10 @@
 
       function refreshLabel(fineVal) {
         const totalMs = (confirmedMs[ch.id] || 0) + fineVal * iv;
-        const s       = totalMs / 1000;
+        const realMs  = calcRTReal(ch, totalMs);
+        const s       = realMs / 1000;
         valLbl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
-        valLbl.style.color = fineVal === 0 ? '#44ff88' : (totalMs >= 0 ? '#ffd700' : '#00d4ff');
+        valLbl.style.color = fineVal === 0 ? '#44ff88' : (realMs >= 0 ? '#ffd700' : '#00d4ff');
         return { totalMs };
       }
       refreshLabel(0);
@@ -730,7 +743,6 @@
         plugins: allPeaksMerged.length ? [overlayPeakPlugin] : [],
       });
       chartInstances.push(ci);
-      // Registra o overlay no chartMeta para que updateChart() possa atualizar os datasets
       chartMeta['_overlay'] = { chart: ci, channels };
     }
 
