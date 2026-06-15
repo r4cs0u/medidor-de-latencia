@@ -23,15 +23,11 @@
     });
   }
 
-  // ── Helpers de dedução ──────────────────────────────────
-
   function calcRTReal(ch, offsetMs) {
     const refDed = (ML.CHANNELS[0].deduction || 0) * 1000;
     const chDed  = (ch.deduction || 0) * 1000;
     return offsetMs + chDed - refDed;
   }
-
-  // ── Inputs de canal ─────────────────────────────────────
 
   function mkLagSelect(ch) {
     const sel = document.createElement('select');
@@ -354,14 +350,12 @@
 
       r2.append(ui.sp('px', 'font-size:9px;flex-shrink:0'), btnSzM, szInp, btnSzP);
 
-      // r3ded: campo de dedução — visível em AMBOS os modos (RT e LOG)
       const r3ded = ui.row(2);
       r3ded.style.cssText += ';overflow:hidden;min-width:0';
       r3ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
 
       const rows = [r1, r2, r3ded];
       if (i !== 0) {
-        // r4lag: apenas no modo LOG (escondido no RT)
         const r4lag = ui.row(2);
         r4lag.style.cssText += ';overflow:hidden;min-width:0';
         r4lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
@@ -472,6 +466,30 @@
     /* ── Seção: Tempo Real (modo RT) ── */
     const secRT = ui.sec('\u26a1 Tempo Real');
 
+    // ── Botões INICIAR / DESLIGAR ──
+    const btnRTStart = ui.mkBtn('\u25b6 INICIAR', '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
+    const btnRTStop  = ui.mkBtn('\u25a0 DESLIGAR', '#3a0d0d', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold;opacity:.45');
+    btnRTStart.style.color  = '#44ff88';
+    btnRTStop.style.color   = '#ff4444';
+    btnRTStart.title = 'Inicia a coleta de amostras em tempo real';
+    btnRTStop.title  = 'Para a coleta e limpa os dados';
+
+    let rtRunning = false;
+
+    function setRTRunning(on) {
+      rtRunning = on;
+      btnRTStart.style.opacity = on ? '.45' : '1';
+      btnRTStart.style.cursor  = on ? 'not-allowed' : 'pointer';
+      btnRTStop.style.opacity  = on ? '1' : '.45';
+      btnRTStop.style.cursor   = on ? 'pointer' : 'not-allowed';
+    }
+    setRTRunning(false);
+
+    const rowRTBtns = ui.row(4);
+    rowRTBtns.style.cssText += ';margin-bottom:4px';
+    rowRTBtns.append(btnRTStart, btnRTStop);
+    secRT.appendChild(rowRTBtns);
+
     const rtGrid = document.createElement('div');
     rtGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px';
 
@@ -562,7 +580,7 @@
 
     const rtStatusEl = document.createElement('div');
     rtStatusEl.style.cssText = 'font-size:8px;color:#aaaacc;text-align:center;margin-top:2px;letter-spacing:.04em';
-    rtStatusEl.textContent = 'Aguardando...';
+    rtStatusEl.textContent = 'Parado';
 
     secRT.append(rtGrid, rtSummary, rtStatusEl);
     scrollBody.appendChild(secRT);
@@ -643,13 +661,10 @@
       }).observe(panel);
     }
 
-    // ── Toggle RT: alterna seções completas ────────────────────
-    // Modo RT  → mostra: secRT, secDet (com ded, sem lag), secTG
-    //            esconde: secAn, secRes, secSt, r4lag nos cards
-    // Modo LOG → mostra: secAn, secRes, secSt, r4lag
-    //            esconde: secRT
-
-    let rtIntervalId = null;
+    // ── Toggle RT/LOG ────────────────────────────────────────
+    probeGrid.querySelectorAll('div').forEach(el => {
+      if (el._logOnly) el.setAttribute('data-logonly', '1');
+    });
 
     function applyModeLayout(rtOn) {
       secAn.style.display  = rtOn ? 'none' : '';
@@ -661,18 +676,13 @@
       });
     }
 
-    // Marca apenas r4lag como logOnly
-    probeGrid.querySelectorAll('div').forEach(el => {
-      if (el._logOnly) el.setAttribute('data-logonly', '1');
-    });
+    let rtIntervalId = null;
 
     // ── updateRTCard ─────────────────────────────────────────
     function updateRTCard(ch, r) {
       if (r.isReference) return;
-
       const inactive = !ch.active || r.skipped;
       const DASH = '\u2014';
-
       if (inactive) {
         if (ch._rtVal)     { ch._rtVal.textContent = DASH;     ch._rtVal.style.color = '#555566';  ch._rtVal.style.fontSize = '13px'; }
         if (ch._rtValReal) { ch._rtValReal.textContent = DASH; ch._rtValReal.style.color = '#555566'; }
@@ -680,7 +690,6 @@
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
         return;
       }
-
       const conf        = r.confidence !== null ? r.confidence : 0;
       const aboveThresh = conf >= ML.config.rtConfThreshold;
       const offsetMs    = r.offsetMs;
@@ -690,11 +699,7 @@
         if (ms === null) return { text: 'AGUARD.', color: '#555566', small: true };
         const s      = ms / 1000;
         const prefix = uncertain ? (s >= 0 ? '~+' : '~') : (s > 0 ? '+' : '');
-        return {
-          text:  prefix + s.toFixed(2) + 's',
-          color: uncertain ? '#667788' : ui.colorByOffset(Math.abs(s)),
-          small: false,
-        };
+        return { text: prefix + s.toFixed(2) + 's', color: uncertain ? '#667788' : ui.colorByOffset(Math.abs(s)), small: false };
       }
 
       if (r.error && !histLen) {
@@ -710,7 +715,6 @@
           ch._rtVal.style.fontSize = med.small ? '8px' : '13px';
           ch._rtVal.style.opacity  = aboveThresh ? '1' : '0.75';
         }
-
         const realMs = offsetMs !== null ? calcRTReal(ch, offsetMs) : null;
         const real   = fmtMs(realMs, !aboveThresh);
         if (ch._rtValReal) {
@@ -720,7 +724,6 @@
           ch._rtValReal.style.opacity  = aboveThresh ? '1' : '0.75';
         }
       }
-
       if (ch._rtHistBadge) {
         ch._rtHistBadge.textContent = histLen ? histLen + 'pt' : '';
         ch._rtHistBadge.style.color = histLen >= 10 ? '#44ff88' : '#ffd700';
@@ -728,15 +731,13 @@
       if (ch._rtConfBar) {
         const pct = Math.round(conf * 100);
         ch._rtConfBar.style.width      = pct + '%';
-        ch._rtConfBar.style.background = conf >= ML.config.rtConfThreshold
-          ? '#44ff88' : conf > 0.4 ? '#ffd700' : '#ff4444';
+        ch._rtConfBar.style.background = conf >= ML.config.rtConfThreshold ? '#44ff88' : conf > 0.4 ? '#ffd700' : '#ff4444';
       }
     }
 
     function rtTick() {
-      if (!ML.config.rtMode) return;
+      if (!ML.config.rtMode || !rtRunning) return;
       const results = ML.correlator.correlateRollingAll();
-
       let activeCount = 0;
       const offsetsRaw = [], confs = [];
       results.forEach(r => {
@@ -749,7 +750,6 @@
           if (r.confidence !== null) confs.push(r.confidence);
         }
       });
-
       const elActive = document.getElementById('ml-rt-active');
       const elMax    = document.getElementById('ml-rt-max');
       const elAvg    = document.getElementById('ml-rt-avg');
@@ -770,7 +770,6 @@
         elConf.textContent = avgConf + '%';
         elConf.style.color = avgConf >= 60 ? '#44ff88' : avgConf >= 40 ? '#ffd700' : '#ff4444';
       } else if (elConf) elConf.textContent = '--';
-
       rtStatusEl.textContent = '\u25cf AO VIVO  \u2014  ' + new Date().toLocaleTimeString('pt-BR');
       rtStatusEl.style.color = '#00d4ff';
     }
@@ -788,25 +787,55 @@
         if (ch._rtConfBar)   { ch._rtConfBar.style.width = '0%'; }
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
       });
+      const elActive = document.getElementById('ml-rt-active');
+      const elMax    = document.getElementById('ml-rt-max');
+      const elAvg    = document.getElementById('ml-rt-avg');
+      const elConf   = document.getElementById('ml-rt-conf');
+      if (elActive) elActive.textContent = '--';
+      if (elMax)    elMax.textContent    = '--';
+      if (elAvg)    elAvg.textContent    = '--';
+      if (elConf)   elConf.textContent   = '--';
     }
 
+    // ── INICIAR ──
+    btnRTStart.onclick = () => {
+      if (rtRunning) return;
+      resetRTState();
+      ML.recorder.start();
+      setRTRunning(true);
+      if (rtIntervalId) clearInterval(rtIntervalId);
+      rtIntervalId = setInterval(rtTick, ML.config.rtIntervalMs);
+      rtStatusEl.textContent = 'Acumulando amostras...';
+      rtStatusEl.style.color = '#aaaacc';
+    };
+
+    // ── DESLIGAR ──
+    btnRTStop.onclick = () => {
+      if (!rtRunning) return;
+      clearInterval(rtIntervalId); rtIntervalId = null;
+      ML.recorder.stop();
+      setRTRunning(false);
+      resetRTState();
+      rtStatusEl.textContent = 'Parado';
+      rtStatusEl.style.color = '#aaaacc';
+    };
+
+    // ── Toggle RT/LOG (não inicia coleta) ────────────────────
     btnRT.onclick = () => {
       ML.config.rtMode = !ML.config.rtMode;
       applyBtnRTStyle();
       applyModeLayout(ML.config.rtMode);
-
-      if (ML.config.rtMode) {
-        resetRTState();
-        ML.recorder.start();
-        if (rtIntervalId) clearInterval(rtIntervalId);
-        rtIntervalId = setInterval(rtTick, ML.config.rtIntervalMs);
-        rtStatusEl.textContent = 'Acumulando amostras...'; rtStatusEl.style.color = '#aaaacc';
-      } else {
-        clearInterval(rtIntervalId); rtIntervalId = null;
-        ML.recorder.stop();
-        resetRTState();
-        rtStatusEl.textContent = 'Pausado';
-        statusEl.textContent   = 'Pronto'; statusEl.style.color = ui.T.statusColor;
+      if (!ML.config.rtMode) {
+        // ao entrar em LOG, para coleta RT se estiver rodando
+        if (rtRunning) {
+          clearInterval(rtIntervalId); rtIntervalId = null;
+          ML.recorder.stop();
+          setRTRunning(false);
+          resetRTState();
+          rtStatusEl.textContent = 'Parado';
+          rtStatusEl.style.color = '#aaaacc';
+        }
+        statusEl.textContent = 'Pronto'; statusEl.style.color = ui.T.statusColor;
       }
     };
 
@@ -830,15 +859,14 @@
     panel.style.top  = '4px';
     ui.minimizePanel(panel);
 
-    // ── Layout e estado inicial: sempre RT ──
+    // ── Layout inicial: RT visível, coleta PARADA ──
     applyModeLayout(true);
     applyBtnRTStyle();
     resetRTState();
-    ML.recorder.start();
-    rtIntervalId = setInterval(rtTick, ML.config.rtIntervalMs);
-    rtStatusEl.textContent = 'Acumulando amostras...'; rtStatusEl.style.color = '#aaaacc';
+    rtStatusEl.textContent = 'Parado';
+    rtStatusEl.style.color = '#aaaacc';
 
-    /* ── Timers ── */
+    /* ── Timer de luminância (sempre ativo) ── */
     setInterval(() => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch.lumEl) return;
@@ -849,6 +877,7 @@
       });
     }, 200);
 
+    /* ── Timer de progresso LOG ── */
     setInterval(() => {
       if (!ML.state.recording) return;
       if (ML.config.rtMode) return;
@@ -883,5 +912,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. Modo padrão: RT ativo. Gravar/Analisar apenas no modo LOG.');
+  console.log('[MedLat] 50-panel carregado. Modo RT: coleta manual via botões INICIAR/DESLIGAR.');
 })();
