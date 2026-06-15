@@ -119,6 +119,7 @@
         'border-radius:6px;box-shadow:0 4px 24px #000c',
         `font-family:monospace;font-size:11px;color:${t.textPrimary}`,
         `user-select:none;width:${hasW ? panel.style.width : '340px'}`,
+        `max-height:${hasH ? panel.style.height : 'calc(100vh - 8px)'}`,
         ...(hasH ? [`height:${panel.style.height}`] : []),
         'display:flex;flex-direction:column;overflow:hidden',
       ].join(';');
