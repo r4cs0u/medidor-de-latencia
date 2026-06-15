@@ -494,6 +494,9 @@
     rtGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px';
 
     ML.CHANNELS.forEach((ch, i) => {
+      // ch0 (Referência) não tem dados a exibir no painel RT — omitir
+      if (i === 0) return;
+
       const card = document.createElement('div');
       card.style.cssText = [
         'display:flex;flex-direction:column;align-items:center;gap:2px',
@@ -506,63 +509,56 @@
       ch._rtCard = card;
 
       const lbl = document.createElement('div');
-      lbl.textContent = i === 0 ? 'REF' : ch.label;
+      lbl.textContent = ch.label;
       lbl.style.cssText = `color:${ch.color};font:bold 8px monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center`;
       ch._rtLbl = lbl;
 
-      if (i === 0) {
-        const val = document.createElement('div');
-        val.textContent = '\u2605 REF';
-        val.style.cssText = `font:bold 11px monospace;text-align:center;color:${ch.color};line-height:1.3`;
-        card.append(lbl, val);
-      } else {
-        const rowMed = document.createElement('div');
-        rowMed.style.cssText = 'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px';
+      const rowMed = document.createElement('div');
+      rowMed.style.cssText = 'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px';
 
-        const lblMed = document.createElement('div');
-        lblMed.textContent = 'MEDIDO';
-        lblMed.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
+      const lblMed = document.createElement('div');
+      lblMed.textContent = 'MEDIDO';
+      lblMed.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
 
-        const valMed = document.createElement('div');
-        valMed.textContent = '--';
-        valMed.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
-        ch._rtVal = valMed;
+      const valMed = document.createElement('div');
+      valMed.textContent = '--';
+      valMed.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
+      ch._rtVal = valMed;
 
-        const rowReal = document.createElement('div');
-        rowReal.style.cssText = [
-          'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px',
-          'margin-top:3px;padding-top:3px',
-          `border-top:1px solid ${ch.color}22`,
-        ].join(';');
+      const rowReal = document.createElement('div');
+      rowReal.style.cssText = [
+        'width:100%;display:flex;flex-direction:column;align-items:center;gap:0px',
+        'margin-top:3px;padding-top:3px',
+        `border-top:1px solid ${ch.color}22`,
+      ].join(';');
 
-        const lblReal = document.createElement('div');
-        lblReal.textContent = 'REAL';
-        lblReal.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
+      const lblReal = document.createElement('div');
+      lblReal.textContent = 'REAL';
+      lblReal.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.2';
 
-        const valReal = document.createElement('div');
-        valReal.textContent = '--';
-        valReal.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
-        ch._rtValReal = valReal;
+      const valReal = document.createElement('div');
+      valReal.textContent = '--';
+      valReal.style.cssText = 'font:bold 13px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc';
+      ch._rtValReal = valReal;
 
-        rowMed.append(lblMed, valMed);
-        rowReal.append(lblReal, valReal);
+      rowMed.append(lblMed, valMed);
+      rowReal.append(lblReal, valReal);
 
-        const histBadge = document.createElement('div');
-        histBadge.style.cssText = 'font:bold 7px monospace;text-align:center;opacity:.5;letter-spacing:.04em;height:9px;line-height:9px;margin-top:2px';
-        histBadge.textContent = '';
-        ch._rtHistBadge = histBadge;
+      const histBadge = document.createElement('div');
+      histBadge.style.cssText = 'font:bold 7px monospace;text-align:center;opacity:.5;letter-spacing:.04em;height:9px;line-height:9px;margin-top:2px';
+      histBadge.textContent = '';
+      ch._rtHistBadge = histBadge;
 
-        const confWrap = document.createElement('div');
-        confWrap.style.cssText = 'width:100%;height:3px;background:#ffffff18;border-radius:2px;overflow:hidden;margin-top:1px';
-        const confBar = document.createElement('div');
-        confBar.style.cssText = 'height:100%;width:0%;border-radius:2px;transition:width .4s,background .4s';
-        confWrap.appendChild(confBar);
-        ch._rtConfBar = confBar;
+      const confWrap = document.createElement('div');
+      confWrap.style.cssText = 'width:100%;height:3px;background:#ffffff18;border-radius:2px;overflow:hidden;margin-top:1px';
+      const confBar = document.createElement('div');
+      confBar.style.cssText = 'height:100%;width:0%;border-radius:2px;transition:width .4s,background .4s';
+      confWrap.appendChild(confBar);
+      ch._rtConfBar = confBar;
 
-        ch._rtHistory = [];
+      ch._rtHistory = [];
 
-        card.append(lbl, rowMed, rowReal, histBadge, confWrap);
-      }
+      card.append(lbl, rowMed, rowReal, histBadge, confWrap);
       rtGrid.appendChild(card);
     });
 
@@ -608,20 +604,22 @@
     thead.appendChild(trH); tbl.appendChild(thead);
     const tbody = document.createElement('tbody');
     ML.CHANNELS.forEach((ch, i) => {
+      // ch0 (Referência) não aparece na tabela de resultados
+      if (i === 0) return;
       const tr = document.createElement('tr');
       tr.style.cssText = `border-bottom:1px solid ${ui.T.rowBorder}`;
       ch._panelTr = tr;
       const tdName = document.createElement('td');
-      tdName.textContent = (i === 0 ? '\u2605 ' : '') + (i === 0 ? 'Referência' : ch.label);
+      tdName.textContent = ch.label;
       tdName.style.cssText = `color:${ch.color};padding:1px 2px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px`;
       ch._tdName = tdName;
       const tdOff = document.createElement('td');
-      tdOff.textContent = i === 0 ? '0.000s' : '--';
-      tdOff.style.cssText = `color:${i === 0 ? '#44ff88' : '#aaaacc'};padding:1px 4px;text-align:center;font-weight:bold`;
+      tdOff.textContent = '--';
+      tdOff.style.cssText = `color:#aaaacc;padding:1px 4px;text-align:center;font-weight:bold`;
       ch.offsetEl = tdOff;
       const tdReal = document.createElement('td');
-      tdReal.textContent = i === 0 ? '0.000s' : '--';
-      tdReal.style.cssText = `color:${i === 0 ? '#44ff88' : '#aaaacc'};padding:1px 4px;text-align:center;font-weight:bold`;
+      tdReal.textContent = '--';
+      tdReal.style.cssText = `color:#aaaacc;padding:1px 4px;text-align:center;font-weight:bold`;
       ch.realEl = tdReal;
       tr.append(tdName, tdOff, tdReal);
       tbody.appendChild(tr);
@@ -699,7 +697,7 @@
         if (ms === null) return { text: 'AGUARD.', color: '#555566', small: true };
         const s      = ms / 1000;
         const prefix = uncertain ? (s >= 0 ? '~+' : '~') : (s > 0 ? '+' : '');
-        return { text: prefix + s.toFixed(2) + 's', color: uncertain ? '#667788' : ui.colorByOffset(Math.abs(s)), small: false };
+        return { text: prefix + s.toFixed(3) + 's', color: uncertain ? '#667788' : ui.colorByOffset(Math.abs(s)), small: false };
       }
 
       if (r.error && !histLen) {
@@ -757,12 +755,12 @@
       if (elActive) elActive.textContent = activeCount;
       if (elMax && offsetsRaw.length) {
         const maxS = Math.max(...offsetsRaw) / 1000;
-        elMax.textContent = maxS.toFixed(2) + 's';
+        elMax.textContent = maxS.toFixed(3) + 's';
         elMax.style.color = ui.colorByOffset(maxS);
       } else if (elMax) elMax.textContent = '--';
       if (elAvg && offsetsRaw.length) {
         const avgS = offsetsRaw.reduce((a, b) => a + b, 0) / offsetsRaw.length / 1000;
-        elAvg.textContent = avgS.toFixed(2) + 's';
+        elAvg.textContent = avgS.toFixed(3) + 's';
         elAvg.style.color = ui.colorByOffset(avgS);
       } else if (elAvg) elAvg.textContent = '--';
       if (elConf && confs.length) {
@@ -826,7 +824,6 @@
       applyBtnRTStyle();
       applyModeLayout(ML.config.rtMode);
       if (!ML.config.rtMode) {
-        // ao entrar em LOG, para coleta RT se estiver rodando
         if (rtRunning) {
           clearInterval(rtIntervalId); rtIntervalId = null;
           ML.recorder.stop();
@@ -859,7 +856,6 @@
     panel.style.top  = '4px';
     ui.minimizePanel(panel);
 
-    // ── Layout inicial: RT visível, coleta PARADA ──
     applyModeLayout(true);
     applyBtnRTStyle();
     resetRTState();
@@ -912,5 +908,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. Modo RT: coleta manual via botões INICIAR/DESLIGAR.');
+  console.log('[MedLat] 50-panel carregado. 10 canais, 3 casas decimais, ref oculta nos resultados.');
 })();

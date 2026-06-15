@@ -267,7 +267,7 @@
   const responsiveW = Math.round(Math.max(120, Math.min(300, Math.min(vw, vh) * 0.22)) / 2) * 2;
   ML.state.probeW = responsiveW;
 
-  // Linha 1: ch0-ch5 em y~32%, linha 2: ch6-ch8 em y~58%
+  // Linha 1: ch0-ch5 em y~32%, linha 2: ch6-ch9 em y~58%
   const INIT_CENTER = [
     [0.555, 0.322],
     [0.308, 0.322],
@@ -275,9 +275,10 @@
     [0.681, 0.322],
     [0.804, 0.322],
     [0.927, 0.322],
-    [0.370, 0.580],
+    [0.308, 0.580],
+    [0.432, 0.580],
     [0.555, 0.580],
-    [0.740, 0.580],
+    [0.681, 0.580],
   ];
   const INIT_FINE = [
     [  0, -5],
@@ -286,6 +287,7 @@
     [ -2, -5],
     [ -2, -5],
     [ -2, -5],
+    [  0, -5],
     [  0, -5],
     [  0, -5],
     [ -2, -5],
@@ -303,5 +305,5 @@
   ML.getLum   = getLum;
   ML.setFocus = setFocus;
 
-  console.log(`[MedLat] 10-probes carregado. px responsivo=${responsiveW} (viewport ${vw}×${vh}). 9 canais posicionados.`);
+  console.log(`[MedLat] 10-probes carregado. px responsivo=${responsiveW} (viewport ${vw}×${vh}). 10 canais posicionados.`);
 })();

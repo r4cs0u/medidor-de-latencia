@@ -24,6 +24,7 @@
       { id:'ch6', label:'Tela 7',     color:'#aa88ff', active:false, lagPreset:'auto' },
       { id:'ch7', label:'Tela 8',     color:'#ff44aa', active:false, lagPreset:'auto' },
       { id:'ch8', label:'Tela 9',     color:'#44dddd', active:false, lagPreset:'auto' },
+      { id:'ch9', label:'Tela 10',    color:'#bbff44', active:false, lagPreset:'auto' },
     ],
 
     LAG_PRESETS,
@@ -63,5 +64,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. 9 canais (ch0–ch8), rtMode=true.');
+  console.log('[MedLat] 00-core carregado. 10 canais (ch0–ch9), rtMode=true.');
 })();
