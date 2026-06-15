@@ -17,20 +17,31 @@
     const maxLen = Math.ceil(ML.BUFFER_SECONDS * 1000 / ML.INTERVAL_MS);
 
     ML.CHANNELS.filter(ch => ch.active).forEach(ch => {
-      const y = ML.getLum(ch);
-      const v = (y !== null && y !== -1) ? Math.round(y) : null;
+      const s = ML.getSample(ch);
+      // s === null  → sem elemento sob a probe
+      // s === -1    → bloqueio CORS
+      const valid = s !== null && s !== -1;
+      const v = valid ? Math.round(s.lum) : null;
 
-      if (ch.lumEl) ch.lumEl.textContent = v !== null ? v : (y === -1 ? '\uD83D\uDD12' : '--');
+      if (ch.lumEl) ch.lumEl.textContent = v !== null ? v : (s === -1 ? '\uD83D\uDD12' : '--');
 
-      if (v !== null) {
-        ch.buffer.push({ ts, lum: v });
+      if (valid) {
+        ch.buffer.push({
+          ts,
+          lum: Math.round(s.lum),
+          r:   Math.round(s.r),
+          g:   Math.round(s.g),
+          b:   Math.round(s.b),
+          cb:  Math.round(s.cb),
+          cr:  Math.round(s.cr),
+        });
         if (ch.buffer.length > maxLen) ch.buffer.shift();
         ch.prevLum = v;
       }
     });
   }
 
-  // ── Alvo de pontos por preset ──────────────────────────────────────────
+  // ── Alvo de pontos por preset ───────────────────────────────────────────────────────
   // auto  ou lento  (≤30s) → 120s
   // normal          (≤15s) →  60s
   // rapido          (≤5s)  →  20s
@@ -50,7 +61,7 @@
     return Math.max(...active.map(ch => getTargetPts(ch)));
   }
 
-  // ── Modo Rolling (Tempo Real) ──────────────────────────────────────────
+  // ── Modo Rolling (Tempo Real) ──────────────────────────────────────────────────────
   // Buffer separado por canal: ch.rollingBuffer
   // Janela deslizante de ML.config.rtWindowMs ms.
   // RAF independente do modo gravação.
@@ -66,18 +77,26 @@
     if (now - rollingLastTs < ML.INTERVAL_MS) return;
     rollingLastTs = now;
 
-    const ts         = Date.now();
-    const windowMs   = (ML.config && ML.config.rtWindowMs) || 5000;
-    const cutoff     = ts - windowMs;
+    const ts       = Date.now();
+    const windowMs = (ML.config && ML.config.rtWindowMs) || 5000;
+    const cutoff   = ts - windowMs;
 
     ML.CHANNELS.filter(ch => ch.active).forEach(ch => {
       if (!ch.rollingBuffer) ch.rollingBuffer = [];
 
-      const y = ML.getLum(ch);
-      const v = (y !== null && y !== -1) ? Math.round(y) : null;
+      const s     = ML.getSample(ch);
+      const valid = s !== null && s !== -1;
 
-      if (v !== null) {
-        ch.rollingBuffer.push({ ts, lum: v });
+      if (valid) {
+        ch.rollingBuffer.push({
+          ts,
+          lum: Math.round(s.lum),
+          r:   Math.round(s.r),
+          g:   Math.round(s.g),
+          b:   Math.round(s.b),
+          cb:  Math.round(s.cb),
+          cr:  Math.round(s.cr),
+        });
       }
 
       // descarta amostras fora da janela
@@ -111,18 +130,24 @@
     clear() {
       ML.CHANNELS.forEach(ch => { ch.buffer = []; ch.prevLum = null; });
     },
+    // Retorna série completa (lum + canais de cor) de um canal gravado
     getSeries(ch) {
       return {
         label: ch.label,
         color: ch.color,
-        ts:    ch.buffer.map(p => p.ts),
-        lum:   ch.buffer.map(p => p.lum),
+        ts:  ch.buffer.map(p => p.ts),
+        lum: ch.buffer.map(p => p.lum),
+        r:   ch.buffer.map(p => p.r),
+        g:   ch.buffer.map(p => p.g),
+        b:   ch.buffer.map(p => p.b),
+        cb:  ch.buffer.map(p => p.cb),
+        cr:  ch.buffer.map(p => p.cr),
       };
     },
     getTargetPts,
     getGlobalTarget,
 
-    // ── Rolling ────────────────────────────────────────────────────────
+    // ── Rolling ──────────────────────────────────────────────────────────────────
     startRolling() {
       ML.CHANNELS.forEach(ch => { ch.rollingBuffer = []; });
       ML.state.rollingActive = true;
@@ -137,17 +162,22 @@
       rollingRafId = null;
       console.log('[MedLat] Rolling parado.');
     },
-    // Retorna série da janela atual de um canal (mesmo formato de getSeries)
+    // Retorna série da janela atual (mesmo formato de getSeries)
     getRollingSeries(ch) {
       const buf = ch.rollingBuffer || [];
       return {
         label: ch.label,
         color: ch.color,
-        ts:    buf.map(p => p.ts),
-        lum:   buf.map(p => p.lum),
+        ts:  buf.map(p => p.ts),
+        lum: buf.map(p => p.lum),
+        r:   buf.map(p => p.r),
+        g:   buf.map(p => p.g),
+        b:   buf.map(p => p.b),
+        cb:  buf.map(p => p.cb),
+        cr:  buf.map(p => p.cr),
       };
     },
   };
 
-  console.log('[MedLat] 20-recorder carregado. globalTarget = max das telas ativas (ref excluída). Rolling disponível via startRolling/stopRolling/getRollingSeries.');
+  console.log('[MedLat] 20-recorder carregado. Buffer agora inclui r,g,b,cb,cr por amostra. globalTarget = max das telas ativas (ref excluída). Rolling disponível via startRolling/stopRolling/getRollingSeries.');
 })();
