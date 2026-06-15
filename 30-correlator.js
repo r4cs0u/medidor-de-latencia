@@ -4,12 +4,58 @@
   const ADAPT_FACTOR          = 0.15;
   const DIFF_THRESHOLD_MIN    = 1;
   const ANCHOR_TOP_N          = 30;
-  const ANCHOR_MIN_ISOLATION  = 60;   // era 30 — aumentado para sinais web com jitter de GOP
-  const ANCHOR_STRENGTH_RATIO = 2.5;  // era 1.5 — só cortes de cena fortes viram âncoras
+  const ANCHOR_MIN_ISOLATION  = 60;
+  const ANCHOR_STRENGTH_RATIO = 2.5;
   const ANCHOR_CONSENSUS_TOL  = 2;
   const REFINE_WINDOW         = 15;
 
-  // ── Primitivas ───────────────────────────────────────────────────────────
+  // ── buildHybridSeries ──────────────────────────────────────────────────────
+  //
+  // Combina luma e crominância (cb, cr) numa única série de referência.
+  //
+  // O peso α é dinâmico:
+  //   - Quando a luma é estável (baixa variância de Δlum), α ≈ 1 → luma domina.
+  //   - Quando a luma salta muito (variância de Δlum alta), α cai → chroma ganha
+  //     peso, mantendo a série estável para correlação.
+  //
+  // chroma_ref[i] = (|cb[i]| + |cr[i]|) / 2  → intensidade de cor (0-255)
+  // score[i]      = α * lum[i] + (1-α) * chroma_ref[i]
+  //
+  // buf: array de amostras { lum, cb, cr } (formato do ch.buffer)
+  // Retorna array numérico pronto para crossCorrelation / anchorOffset.
+
+  const CHROMA_ALPHA_MIN  = 0.30;  // peso mínimo da luma (chroma pode chegar a 70%)
+  const CHROMA_ALPHA_MAX  = 0.95;  // peso máximo da luma (quase pura luma)
+  const CHROMA_VAR_FLOOR  = 4;     // variância mínima de Δlum para começar a mistura
+  const CHROMA_VAR_SCALE  = 200;   // variância de Δlum que leva α ao mínimo
+
+  function buildHybridSeries(buf) {
+    if (!buf || !buf.length) return [];
+    // Se não tiver chroma gravada (buffer legado), devolve só luma
+    if (buf[0].cb === undefined) return buf.map(p => p.lum);
+
+    const lums  = buf.map(p => p.lum);
+    const cbs   = buf.map(p => p.cb);
+    const crs   = buf.map(p => p.cr);
+    const n     = lums.length;
+
+    // Variância de Δlum
+    const deltas = [];
+    for (let i = 1; i < n; i++) deltas.push(Math.abs(lums[i] - lums[i - 1]));
+    const mu  = deltas.reduce((a, b) => a + b, 0) / (deltas.length || 1);
+    const vr  = deltas.reduce((a, b) => a + (b - mu) ** 2, 0) / (deltas.length || 1);
+
+    // α cai linearmente de MAX para MIN conforme a variância sobe
+    const t = Math.min(1, Math.max(0, (vr - CHROMA_VAR_FLOOR) / CHROMA_VAR_SCALE));
+    const alpha = CHROMA_ALPHA_MAX - t * (CHROMA_ALPHA_MAX - CHROMA_ALPHA_MIN);
+
+    return lums.map((lum, i) => {
+      const chroma = (Math.abs(cbs[i]) + Math.abs(crs[i])) / 2;
+      return alpha * lum + (1 - alpha) * chroma;
+    });
+  }
+
+  // ── Primitivas ──────────────────────────────────────────────────────────────────
 
   function adaptiveThreshold(arr) {
     const n = arr.length;
@@ -111,10 +157,7 @@
     return { minLagMs: 15000, maxLagMs: 35000 };
   }
 
-  // ── Âncoras de cena ───────────────────────────────────────────────────────
-  // ANCHOR_MIN_ISOLATION e ANCHOR_STRENGTH_RATIO aumentados para sinais web:
-  // - GOP corrompido por jitter pode gerar falsos picos de luminância
-  // - Só eventos fortes e isolados são usados como âncoras
+  // ── Âncoras de cena ──────────────────────────────────────────────────────────────────
 
   function extractAnchors(lum) {
     const diff = diffSeries(lum);
@@ -140,9 +183,6 @@
     return anchors;
   }
 
-  // anchorOffset: aceita offsets negativos (tela adiantada em relação à ref).
-  // minLagSamples=0 por padrão — passa explicitamente para restringir no modo LOG.
-  // Consenso exige count >= 3 (era >= 2) para reduzir falsos positivos em sinais web.
   function anchorOffset(lumA, lumB, maxLagSamples, minLagSamples) {
     const anchorsA = extractAnchors(lumA);
     const anchorsB = extractAnchors(lumB);
@@ -172,13 +212,13 @@
       }
     });
     const best = groups
-      .filter(g => g.count >= 3)   // era >= 2: exige mais consenso para sinais web
+      .filter(g => g.count >= 3)
       .sort((a, b) => b.count - a.count || b.totalScore - a.totalScore)[0];
     if (!best) return null;
     return { delta: best.delta, confidence: best.count / deltas.length };
   }
 
-  // ── shiftArr ──────────────────────────────────────────────────────────────
+  // ── shiftArr ───────────────────────────────────────────────────────────────────────
 
   function shiftArr(arr, shift) {
     if (!shift) return arr;
@@ -188,7 +228,10 @@
     return out;
   }
 
-  // ── analyze (modo LOG) ────────────────────────────────────────────────────
+  // ── analyze (modo LOG) ───────────────────────────────────────────────────────────────
+  // Usa buildHybridSeries para correlação e anchorOffset.
+  // serA.lum ainda é usado diretamente para o gráfico — a série híbrida
+  // é interna ao cálculo de offset.
 
   function analyze(chA, chB, maxLagMs) {
     const serA = ML.recorder.getSeries(chA);
@@ -206,13 +249,17 @@
     const maxLagSamples = Math.ceil(usedMaxLagMs / ivMs);
     const minLagSamples = Math.ceil(usedMinLagMs / ivMs);
 
-    const anchor = anchorOffset(serA.lum, serB.lum, maxLagSamples, minLagSamples);
+    // Séries híbridas para cálculo interno
+    const hybA = buildHybridSeries(chA.buffer);
+    const hybB = buildHybridSeries(chB.buffer);
+
+    const anchor        = anchorOffset(hybA, hybB, maxLagSamples, minLagSamples);
     const anchorSamples = anchor ? anchor.delta : null;
 
-    const lumBshifted = anchorSamples !== null ? shiftArr(serB.lum, anchorSamples) : serB.lum;
+    const hybBshifted  = anchorSamples !== null ? shiftArr(hybB, anchorSamples) : hybB;
     const refineWindow = anchorSamples !== null ? REFINE_WINDOW : maxLagSamples;
 
-    const corr     = crossCorrelation(serA.lum, lumBshifted, refineWindow);
+    const corr     = crossCorrelation(hybA, hybBshifted, refineWindow);
     const peak     = selectRobustPeak(corr);
     const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
     const subFrame = parabolicPeak(corr, peakIdx);
@@ -273,9 +320,7 @@
     return results;
   }
 
-  // ── Mediana aparada (trimmed median) ──────────────────────────────────────
-  // Descarta os 10% menores e 10% maiores do histórico antes de calcular
-  // a mediana. Reduz o impacto de outliers causados por jitter de rede.
+  // ── Mediana aparada (trimmed median) ──────────────────────────────────────────────
 
   function median(arr) {
     if (!arr.length) return null;
@@ -287,18 +332,14 @@
   function trimmedMedian(arr) {
     if (!arr.length) return null;
     const s = [...arr].sort((a, b) => a - b);
-    // Com menos de 10 pontos não faz sentido aparar — usa mediana simples
     if (s.length < 10) return median(s);
     const cut = Math.max(1, Math.floor(s.length * 0.10));
     const trimmed = s.slice(cut, s.length - cut);
     return median(trimmed);
   }
 
-  // ── correlateRolling (modo RT) ────────────────────────────────────────────
-  //
-  // No modo RT, minLagSamples = 0 para que offsets negativos (tela adiantada
-  // em relação à referência) sejam detectados normalmente.
-  // O valor exibido é a MEDIANA APARADA de ch._rtHistory (ticks confiantes).
+  // ── correlateRolling (modo RT) ────────────────────────────────────────────────────
+  // Usa buildHybridSeries sobre ch.buffer (janela corrente do RT).
 
   function correlateRolling(chA, chB) {
     const confThresh = (ML.config && ML.config.rtConfThreshold !== undefined)
@@ -312,22 +353,22 @@
       return { error: 'Aguardando amostras (' + Math.min(bufA.length, bufB.length) + '/' + MIN_SAMPLES + ')' };
     }
 
-    const lumA = bufA.map(p => p.lum);
-    const lumB = bufB.map(p => p.lum);
+    const hybA = buildHybridSeries(bufA);
+    const hybB = buildHybridSeries(bufB);
     const ivMs = (realIntervalMsFromBuf(bufA) + realIntervalMsFromBuf(bufB)) / 2;
 
     const lagRange    = effectiveLag({ label: chA.label }, { label: chB.label });
     let maxLagSamples = Math.ceil(lagRange.maxLagMs / ivMs);
     const minLagSamples = 0;
-    maxLagSamples = Math.min(maxLagSamples, Math.floor(Math.min(lumA.length, lumB.length) * 0.8));
+    maxLagSamples = Math.min(maxLagSamples, Math.floor(Math.min(hybA.length, hybB.length) * 0.8));
 
-    const anchor        = anchorOffset(lumA, lumB, maxLagSamples, minLagSamples);
+    const anchor        = anchorOffset(hybA, hybB, maxLagSamples, minLagSamples);
     const anchorSamples = anchor ? anchor.delta : null;
 
-    const lumBshifted  = anchorSamples !== null ? shiftArr(lumB, anchorSamples) : lumB;
+    const hybBshifted  = anchorSamples !== null ? shiftArr(hybB, anchorSamples) : hybB;
     const refineWindow = anchorSamples !== null ? REFINE_WINDOW : maxLagSamples;
 
-    const corr     = crossCorrelation(lumA, lumBshifted, refineWindow);
+    const corr     = crossCorrelation(hybA, hybBshifted, refineWindow);
     const peak     = selectRobustPeak(corr);
     const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
     const subFrame = parabolicPeak(corr, peakIdx);
@@ -345,12 +386,12 @@
     const stableOffsetMs = trimmedMedian(chB._rtHistory || []);
 
     return {
-      offsetMs:         stableOffsetMs,  // mediana aparada — valor estável para exibição
-      rawOffsetMs,                        // valor bruto do tick atual
+      offsetMs:         stableOffsetMs,
+      rawOffsetMs,
       confidence,
       anchorConfidence: anchor ? anchor.confidence : null,
       intervalMs:       ivMs,
-      samples:          Math.min(lumA.length, lumB.length),
+      samples:          Math.min(hybA.length, hybB.length),
       historyLen:       (chB._rtHistory || []).length,
       labelA:           chA.label,
       labelB:           chB.label,
@@ -387,7 +428,8 @@
     crossCorrelation, diffSeries, normalize,
     realIntervalMsFromBuf,
     median, trimmedMedian,
+    buildHybridSeries,
   };
 
-  console.log('[MedLat] 30-correlator carregado. RT: trimmedMedian (10% aparado), âncoras robustas (isolation=60, ratio=2.5, consenso>=3).');
+  console.log('[MedLat] 30-correlator carregado. buildHybridSeries ativo (α dinâmico luma+chroma). RT: trimmedMedian, âncoras robustas.');
 })();
