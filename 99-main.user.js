@@ -52,9 +52,6 @@
 
   carregarTodos().then(function () {
     console.log('[MedLat] Todos os módulos carregados.');
-    if (window.MedLat && window.MedLat.panel) {
-      window.MedLat.panel.init();
-    }
   }).catch(function (erro) {
     console.error('[MedLat] Falha ao carregar módulos:', erro);
   });
