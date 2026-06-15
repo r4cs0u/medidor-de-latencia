@@ -126,7 +126,6 @@
     }
     applyPanelStyle();
 
-    // ── Header ──
     const hdr = document.createElement('div');
     function applyHdrStyle() {
       const t = ui.T;
@@ -178,7 +177,6 @@
     hdr.append(ttl, btnMin, btnX);
     panel.appendChild(hdr);
 
-    // ── Drag ──
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => {
       if (e.target !== hdr && e.target !== ttl) return;
@@ -199,11 +197,9 @@
     });
     window.addEventListener('mouseup', () => pdrag = false);
 
-    // ── Scroll body ──
     const scrollBody = document.createElement('div');
     scrollBody.style.cssText = 'flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column';
 
-    /* ── Seção: Posicionamento ── */
     const secTG = ui.sec('Posicionamento');
     const pxInp = ui.mkNum(ML.state.probeW, 16, 500, 2, 44);
     pxInp.title = 'Tamanho das probes em pixels';
@@ -243,7 +239,6 @@
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); };
     updateColBtn();
 
-    // ── Seletor de número de telas (2–12) ──
     const selNumCh = document.createElement('select');
     selNumCh.title = 'Número total de telas ativas (inclui referência)';
     for (let n = 2; n <= 12; n++) {
@@ -263,7 +258,6 @@
     secTG.appendChild(rowPos);
     scrollBody.appendChild(secTG);
 
-    /* ── Seção: Telas ── */
     const secDet = ui.sec('Telas');
     const probeGrid = document.createElement('div');
     probeGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px';
@@ -399,7 +393,6 @@
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
-    /* ── Seção: Análise (modo LOG) — oculta ── */
     const secAn = ui.sec('Análise');
     secAn.style.display = 'none';
     const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
@@ -498,7 +491,6 @@
     secAn.appendChild(progWrap);
     scrollBody.appendChild(secAn);
 
-    /* ── Seção: Tempo Real ── */
     const secRT = ui.sec('\u26a1 Tempo Real');
 
     const btnRTStart = ui.mkBtn('\u25b6 INICIAR', '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
@@ -585,9 +577,14 @@
         confBar.style.cssText = 'height:100%;width:0%;border-radius:2px;transition:width .4s,background .4s';
         confWrap.appendChild(confBar);
         ch._rtConfBar = confBar;
+
+        const alphaBadge = document.createElement('div');
+        alphaBadge.style.cssText = 'font:bold 6px monospace;text-align:center;opacity:.6;letter-spacing:.06em;height:9px;line-height:9px;margin-top:1px;color:#aaaacc';
+        alphaBadge.textContent = '';
+        ch._rtAlphaBadge = alphaBadge;
         ch._rtHistory = [];
 
-        card.append(lbl, rowMed, rowReal, histBadge, confWrap);
+        card.append(lbl, rowMed, rowReal, histBadge, confWrap, alphaBadge);
         rtGrid.appendChild(card);
       });
     }
@@ -613,7 +610,6 @@
     secRT.append(rtGrid, rtSummary, rtStatusEl);
     scrollBody.appendChild(secRT);
 
-    /* ── Seção: Resultados (modo LOG) — oculta ── */
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
     btnCopyInline.title = 'Copiar tabela de resultados para a área de transferência';
@@ -660,7 +656,6 @@
     secRes.appendChild(tbl);
     scrollBody.appendChild(secRes);
 
-    /* ── Status (modo LOG) — oculto ── */
     const secSt = document.createElement('div');
     secSt.style.cssText = 'padding:3px 8px;flex-shrink:0;display:none';
     const statusElDisp = document.createElement('div');
@@ -670,7 +665,6 @@
     scrollBody.appendChild(secSt);
     panel.appendChild(scrollBody);
 
-    // ── Escala responsiva ──
     const BASE_W = 340, BASE_H = 640;
     function applyScale(w, h) {
       const scale = Math.min(Math.max(0.7, Math.min(2.5, w / BASE_W)), h != null ? Math.max(1.0, Math.min(2.5, h / BASE_H)) : 2.5);
@@ -701,6 +695,7 @@
         if (ch._rtValReal) { ch._rtValReal.textContent = DASH; ch._rtValReal.style.color = '#555566'; }
         if (ch._rtConfBar)   ch._rtConfBar.style.width = '0%';
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
+        if (ch._rtAlphaBadge) ch._rtAlphaBadge.textContent = '';
         return;
       }
       const conf        = r.confidence !== null ? r.confidence : 0;
@@ -745,6 +740,11 @@
         const pct = Math.round(conf * 100);
         ch._rtConfBar.style.width      = pct + '%';
         ch._rtConfBar.style.background = conf >= ML.config.rtConfThreshold ? '#44ff88' : conf > 0.4 ? '#ffd700' : '#ff4444';
+      }
+      if (ch._rtAlphaBadge) {
+        const alpha = r.alpha !== undefined ? r.alpha : null;
+        ch._rtAlphaBadge.textContent = alpha !== null ? 'α=' + alpha.toFixed(2) : '';
+        ch._rtAlphaBadge.style.color = alpha !== null && alpha < 0.7 ? '#ffd700' : '#aaaacc';
       }
     }
 
@@ -799,6 +799,7 @@
         if (ch._rtValReal)   { ch._rtValReal.textContent = '--'; ch._rtValReal.style.color = '#aaaacc'; ch._rtValReal.style.opacity = '1'; }
         if (ch._rtConfBar)   { ch._rtConfBar.style.width = '0%'; }
         if (ch._rtHistBadge) ch._rtHistBadge.textContent = '';
+        if (ch._rtAlphaBadge) ch._rtAlphaBadge.textContent = '';
       });
       const elActive = document.getElementById('ml-rt-active');
       const elMax    = document.getElementById('ml-rt-max');
@@ -869,10 +870,23 @@
     setInterval(() => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch.lumEl) return;
-        const y = ML.getLum ? ML.getLum(ch) : null;
-        if (y === null)    { ch.lumEl.textContent = '--';  ch.lumEl.style.color = ch.color; }
-        else if (y === -1) { ch.lumEl.textContent = '\ud83d\udd12'; ch.lumEl.style.color = '#ff4444'; }
-        else               { ch.lumEl.textContent = Math.round(y); ch.lumEl.style.color = ch.color; }
+        const s = ML.getSample ? ML.getSample(ch) : null;
+        const y = s ? s.lum : (ML.getLum ? ML.getLum(ch) : null);
+        if (y === null) {
+          ch.lumEl.textContent = '--';
+          ch.lumEl.style.color = ch.color;
+          ch.lumEl.title = '';
+        }
+        else if (y === -1) {
+          ch.lumEl.textContent = '\ud83d\udd12';
+          ch.lumEl.style.color = '#ff4444';
+          ch.lumEl.title = 'CORS bloqueado';
+        }
+        else {
+          ch.lumEl.textContent = Math.round(y);
+          ch.lumEl.style.color = ch.color;
+          ch.lumEl.title = s ? `Y:${Math.round(s.lum)}  R:${Math.round(s.r)}  G:${Math.round(s.g)}  B:${Math.round(s.b)}` : 'Luminância atual da probe (0–255)';
+        }
       });
     }, 200);
 
