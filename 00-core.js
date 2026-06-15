@@ -15,12 +15,15 @@
 
   window.MedLat = {
     CHANNELS: [
-      { id:'ch0', label:'Refer\u00eancia', color:'#00d4ff', active:false, lagPreset:'auto' },
-      { id:'ch1', label:'Tela 2',      color:'#ff4444',  active:false, lagPreset:'auto' },
-      { id:'ch2', label:'Tela 3',      color:'#44ff88',  active:false, lagPreset:'auto' },
-      { id:'ch3', label:'Tela 4',      color:'#ffd700',  active:false, lagPreset:'auto' },
-      { id:'ch4', label:'Tela 5',      color:'#ff66ff',  active:false, lagPreset:'auto' },
-      { id:'ch5', label:'Tela 6',      color:'#ff9933',  active:false, lagPreset:'auto' },
+      { id:'ch0', label:'Referência', color:'#00d4ff', active:false, lagPreset:'auto' },
+      { id:'ch1', label:'Tela 2',     color:'#ff4444', active:false, lagPreset:'auto' },
+      { id:'ch2', label:'Tela 3',     color:'#44ff88', active:false, lagPreset:'auto' },
+      { id:'ch3', label:'Tela 4',     color:'#ffd700', active:false, lagPreset:'auto' },
+      { id:'ch4', label:'Tela 5',     color:'#ff66ff', active:false, lagPreset:'auto' },
+      { id:'ch5', label:'Tela 6',     color:'#ff9933', active:false, lagPreset:'auto' },
+      { id:'ch6', label:'Tela 7',     color:'#aa88ff', active:false, lagPreset:'auto' },
+      { id:'ch7', label:'Tela 8',     color:'#ff44aa', active:false, lagPreset:'auto' },
+      { id:'ch8', label:'Tela 9',     color:'#44dddd', active:false, lagPreset:'auto' },
     ],
 
     LAG_PRESETS,
@@ -40,7 +43,7 @@
     },
 
     config: {
-      rtMode:          true,             // padrão: inicia em modo Tempo Real
+      rtMode:          true,
       rtConfThreshold: 0.60,
       rtIntervalMs:    500,
       rtWindowMs:      35000,
@@ -60,5 +63,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. rtMode=true (padrão RT), rtConfThreshold=0.60, rtWindowMs=35000.');
+  console.log('[MedLat] 00-core carregado. 9 canais (ch0–ch8), rtMode=true.');
 })();
