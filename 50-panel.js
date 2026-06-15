@@ -42,10 +42,9 @@
       updateSelColor();
     }
     [
-      { value: 'auto',   label: 'Auto'        },
-      { value: 'rapido', label: 'Rápido ≤5s'   },
-      { value: 'normal', label: 'Normal ≤15s'  },
-      { value: 'lento',  label: 'Lento ≤35s'   },
+      { value: 'auto',   label: 'Auto' },
+      { value: 'rapido', label: '\u26a1'  },
+      { value: 'web',    label: '\ud83c\udf10' },
     ].forEach(o => {
       const opt = document.createElement('option');
       opt.value = o.value; opt.textContent = o.label;
@@ -53,8 +52,8 @@
       sel.appendChild(opt);
     });
     function updateSelColor() {
-      const colors  = { auto: ui.T.selectColor, rapido: '#44ff88', normal: '#ffd700', lento: '#ff8844' };
-      const borders = { auto: ui.T.selectBorder, rapido: '#44ff8888', normal: '#ffd70088', lento: '#ff884488' };
+      const colors  = { auto: ui.T.selectColor, rapido: '#44ff88', web: '#00d4ff' };
+      const borders = { auto: ui.T.selectBorder, rapido: '#44ff8888', web: '#00d4ff88' };
       sel.style.color       = colors[sel.value]  || ui.T.selectColor;
       sel.style.borderColor = borders[sel.value] || ui.T.selectBorder;
     }
@@ -879,5 +878,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. Cards unificados probe+RT. Seletor de telas: 2–12.');
+  console.log('[MedLat] 50-panel carregado. Seletores de lag: Auto / \u26a1 / \ud83c\udf10.');
 })();
