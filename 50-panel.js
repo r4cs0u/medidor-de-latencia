@@ -143,13 +143,11 @@
     ttl.textContent = '\u26a1 MEDIDOR DE LAT\u00CANCIA';
     ttl.style.cssText = `color:${ui.T.textPrimary};font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
 
-    // btnTips e btnGuide mantidos no código mas NÃO adicionados ao header
     const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medição precisa', '#ffd700');
     const btnGuide = ui.mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
     btnTips.onclick  = () => ML.help && ML.help.toggleTips(panel);
     btnGuide.onclick = () => ML.help && ML.help.toggleGuide(panel);
 
-    // btnRT mantido no código mas NÃO adicionado ao header (RT é o modo fixo)
     const btnRT = document.createElement('button');
     btnRT.title = 'Alternar entre modo Tempo Real e modo Gravar/Analisar';
     btnRT.textContent = '\u26a1RT';
@@ -177,7 +175,6 @@
     };
     btnMin.onclick = () => ui.minimizePanel(panel);
 
-    // Header: apenas título, minimizar e fechar
     hdr.append(ttl, btnMin, btnX);
     panel.appendChild(hdr);
 
@@ -246,15 +243,15 @@
     btnCol.onclick = () => { ML.state.noOverlap = !ML.state.noOverlap; updateColBtn(); };
     updateColBtn();
 
-    // ── Seletor de número de telas ──
+    // ── Seletor de número de telas (2–12) ──
     const selNumCh = document.createElement('select');
     selNumCh.title = 'Número total de telas ativas (inclui referência)';
-    [10, 11, 12].forEach(n => {
+    for (let n = 2; n <= 12; n++) {
       const opt = document.createElement('option');
       opt.value = n; opt.textContent = n + ' telas';
       if (ML.state.numChannels === n) opt.selected = true;
       selNumCh.appendChild(opt);
-    });
+    }
     selNumCh.style.cssText = [
       `background:${ui.T.selectBg};border:1px solid ${ui.T.selectBorder};color:${ui.T.selectColor}`,
       'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
@@ -273,7 +270,7 @@
 
     function buildProbeCards() {
       probeGrid.innerHTML = '';
-      const n = parseInt(selNumCh.value) || 10;
+      const n = parseInt(selNumCh.value) || ML.state.numChannels;
       ML.state.numChannels = n;
       ML.CHANNELS.slice(0, n).forEach((ch, i) => {
         ch.deduction = ch.deduction || 0;
@@ -298,7 +295,7 @@
           ch.active = !ch.active;
           tog.style.background = ch.active ? ch.color : 'transparent';
           card.style.opacity = ch.active ? 1 : .4;
-          ch.probe.style.display = ch.active ? 'block' : 'none';
+          if (ch.probe) ch.probe.style.display = ch.active ? 'block' : 'none';
           if (!ch.active) { ch.prevLum = null; } else { if (ch.resize) ch.resize(); }
         };
 
@@ -385,7 +382,7 @@
           r4lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
           r4lag._logOnly = true;
           r4lag.setAttribute('data-logonly', '1');
-          r4lag.style.display = 'none'; // LOG oculto
+          r4lag.style.display = 'none';
           rows.push(r4lag);
         }
         rows.forEach(r => card.appendChild(r));
@@ -402,7 +399,7 @@
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
-    /* ── Seção: Análise (modo LOG) — oculta, código preservado ── */
+    /* ── Seção: Análise (modo LOG) — oculta ── */
     const secAn = ui.sec('Análise');
     secAn.style.display = 'none';
     const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
@@ -501,7 +498,7 @@
     secAn.appendChild(progWrap);
     scrollBody.appendChild(secAn);
 
-    /* ── Seção: Tempo Real (modo RT) — sempre visível ── */
+    /* ── Seção: Tempo Real ── */
     const secRT = ui.sec('\u26a1 Tempo Real');
 
     const btnRTStart = ui.mkBtn('\u25b6 INICIAR', '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
@@ -532,7 +529,7 @@
 
     function buildRTGrid() {
       rtGrid.innerHTML = '';
-      const n = parseInt(selNumCh.value) || 10;
+      const n = parseInt(selNumCh.value) || ML.state.numChannels;
       ML.CHANNELS.slice(1, n).forEach(ch => {
         const card = document.createElement('div');
         card.style.cssText = [
@@ -616,7 +613,7 @@
     secRT.append(rtGrid, rtSummary, rtStatusEl);
     scrollBody.appendChild(secRT);
 
-    /* ── Seção: Resultados (modo LOG) — oculta, código preservado ── */
+    /* ── Seção: Resultados (modo LOG) — oculta ── */
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
     btnCopyInline.title = 'Copiar tabela de resultados para a área de transferência';
@@ -695,7 +692,6 @@
 
     let rtIntervalId = null;
 
-    // ── updateRTCard ─────────────────────────────────────────
     function updateRTCard(ch, r) {
       if (r.isReference) return;
       const inactive = !ch.active || r.skipped;
@@ -835,7 +831,6 @@
       rtStatusEl.style.color = '#aaaacc';
     };
 
-    // btnRT.onclick mantido no código mas não exposto na UI
     btnRT.onclick = () => {
       ML.config.rtMode = !ML.config.rtMode;
       applyBtnRTStyle();
@@ -869,10 +864,8 @@
     panel.style.top  = '4px';
     ui.minimizePanel(panel);
 
-    // RT sempre ativo como modo padrão
     ML.config.rtMode = true;
 
-    /* ── Timer de luminância (sempre ativo) ── */
     setInterval(() => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch.lumEl) return;
@@ -883,7 +876,6 @@
       });
     }, 200);
 
-    /* ── Timer de progresso LOG (preservado, não ativo no RT) ── */
     setInterval(() => {
       if (!ML.state.recording) return;
       if (ML.config.rtMode) return;
@@ -918,5 +910,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. RT fixo, LOG oculto, seletor 10/11/12 telas.');
+  console.log('[MedLat] 50-panel carregado. Seletor de telas: 2–12. Default: 4 telas.');
 })();

@@ -37,13 +37,13 @@
     MIN_LAG_MS:     20000,
 
     state: {
-      running:    false,
-      recording:  false,
-      probeW:     232,
-      snapGrid:   true,
-      snapSize:   2,
-      noOverlap:  true,
-      numChannels: 10,   // 10, 11 ou 12
+      running:     false,
+      recording:   false,
+      probeW:      232,
+      snapGrid:    true,
+      snapSize:    2,
+      noOverlap:   true,
+      numChannels: 4,   // 2–12
     },
 
     config: {
@@ -67,5 +67,5 @@
     ch.probeW  = null;
   });
 
-  console.log('[MedLat] 00-core carregado. 12 canais (ch0–ch11), rtMode=true.');
+  console.log('[MedLat] 00-core carregado. 12 canais (ch0–ch11), rtMode=true, numChannels default=4.');
 })();
