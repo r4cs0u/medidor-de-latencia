@@ -812,6 +812,10 @@
     document.body.appendChild(panel);
     panel.style.left = '4px';
     panel.style.top  = '4px';
+
+    // ── aplica escala inicial após o painel estar no DOM ──────
+    requestAnimationFrame(() => applyScale(panel.offsetWidth, panel.offsetHeight));
+
     ui.minimizePanel(panel);
 
     ML.config.rtMode = true;
