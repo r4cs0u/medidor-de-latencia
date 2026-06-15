@@ -10,6 +10,12 @@
   const REFINE_RADIUS = 12;
   const DEFAULT_MIN_SAMPLES = 3;
 
+  // Peso mínimo da luma quando chroma está ativa (mesmo valor do 30-correlator)
+  const CHROMA_ALPHA_MIN = 0.30;
+  const CHROMA_ALPHA_MAX = 0.95;
+  const CHROMA_VAR_FLOOR = 4;
+  const CHROMA_VAR_SCALE = 200;
+
   function mean(arr) {
     return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
   }
@@ -67,8 +73,33 @@
     return (y0 - y2) / denom;
   }
 
-  function detectEvents(lum) {
-    const diff = diffSeries(lum);
+  // ── buildHybridSeries (local, mesmo algoritmo do 30-correlator) ───────────────
+  // Usada para obter a série combinada luma+chroma que alimenta detectEvents.
+
+  function buildHybridSeries(buf) {
+    if (!buf || !buf.length) return [];
+    if (buf[0].cb === undefined) return buf.map(p => p.lum);
+    const lums = buf.map(p => p.lum);
+    const cbs  = buf.map(p => p.cb);
+    const crs  = buf.map(p => p.cr);
+    const n    = lums.length;
+    const deltas = [];
+    for (let i = 1; i < n; i++) deltas.push(Math.abs(lums[i] - lums[i - 1]));
+    const mu = deltas.reduce((a, b) => a + b, 0) / (deltas.length || 1);
+    const vr = deltas.reduce((a, b) => a + (b - mu) ** 2, 0) / (deltas.length || 1);
+    const t  = Math.min(1, Math.max(0, (vr - CHROMA_VAR_FLOOR) / CHROMA_VAR_SCALE));
+    const alpha = CHROMA_ALPHA_MAX - t * (CHROMA_ALPHA_MAX - CHROMA_ALPHA_MIN);
+    return lums.map((lum, i) => {
+      const chroma = (Math.abs(cbs[i]) + Math.abs(crs[i])) / 2;
+      return alpha * lum + (1 - alpha) * chroma;
+    });
+  }
+
+  // ── detectEvents ────────────────────────────────────────────────────────────────
+  // Aceita qualquer array numérico (luma, chroma ou híbrido).
+
+  function detectEvents(series) {
+    const diff = diffSeries(series);
     const nonZero = diff.filter(v => v > 0);
     if (!nonZero.length) return { diff, events: [], threshold: EVENT_THRESHOLD_MIN };
 
@@ -93,6 +124,30 @@
     picked.sort((a, b) => a.index - b.index);
 
     return { diff, events: picked, threshold };
+  }
+
+  // ── mergeEvents ─────────────────────────────────────────────────────────────────
+  // Combina eventos de luma e chroma. Se um evento de chroma cair perto de um
+  // evento de luma (dentro de EVENT_MIN_DISTANCE), reforça o peso desse evento.
+  // Eventos de chroma sem correspondência em luma são adicionados com peso reduzido
+  // (50%) — atuam como reforço em momentos de luma instável, mas não dominam.
+
+  const CHROMA_REINFORCEMENT = 0.5;
+
+  function mergeEvents(lumaEvents, chromaEvents) {
+    const merged = lumaEvents.map(e => ({ index: e.index, mag: e.mag, source: 'luma' }));
+    chromaEvents.forEach(ce => {
+      const near = merged.find(e => Math.abs(e.index - ce.index) < EVENT_MIN_DISTANCE);
+      if (near) {
+        // Reforça evento de luma existente com a magnitude de chroma
+        near.mag += ce.mag * CHROMA_REINFORCEMENT;
+      } else {
+        // Evento exclusivo de chroma (luma estava estável nesse ponto)
+        merged.push({ index: ce.index, mag: ce.mag * CHROMA_REINFORCEMENT, source: 'chroma' });
+      }
+    });
+    merged.sort((a, b) => a.index - b.index);
+    return merged;
   }
 
   function intervalMsFromChannels(chA, chB) {
@@ -145,6 +200,11 @@
     return groups;
   }
 
+  // ── analyze ─────────────────────────────────────────────────────────────────────────────
+  // Detecta eventos tanto na série híbrida (principal) quanto em chroma puro,
+  // faz merge dos dois conjuntos antes de construir candidatos de lag.
+  // A correlação local de refine usa a série híbrida.
+
   function analyze(chA, chB) {
     const serA = ML.recorder.getSeries(chA);
     const serB = ML.recorder.getSeries(chB);
@@ -157,9 +217,28 @@
     const minLagSamples = Math.max(DEFAULT_MIN_SAMPLES, Math.ceil(lagRange.minLagMs / ivMs));
     const maxLagSamples = Math.max(minLagSamples + 1, Math.ceil(lagRange.maxLagMs / ivMs));
 
-    const detA = detectEvents(serA.lum);
-    const detB = detectEvents(serB.lum);
-    const candidates = buildCandidates(detA.events, detB.events, minLagSamples, maxLagSamples);
+    // Série híbrida (luma+chroma adaptativo)
+    const hybA = buildHybridSeries(chA.buffer);
+    const hybB = buildHybridSeries(chB.buffer);
+
+    // Detecção de eventos na série híbrida
+    const detA = detectEvents(hybA);
+    const detB = detectEvents(hybB);
+
+    // Detecção adicional de eventos em chroma puro (|cb|+|cr|)/2
+    const hasCb = chA.buffer.length && chA.buffer[0].cb !== undefined;
+    let mergedA = detA.events;
+    let mergedB = detB.events;
+    if (hasCb) {
+      const chromaA = chA.buffer.map(p => (Math.abs(p.cb) + Math.abs(p.cr)) / 2);
+      const chromaB = chB.buffer.map(p => (Math.abs(p.cb) + Math.abs(p.cr)) / 2);
+      const detChromaA = detectEvents(chromaA);
+      const detChromaB = detectEvents(chromaB);
+      mergedA = mergeEvents(detA.events, detChromaA.events);
+      mergedB = mergeEvents(detB.events, detChromaB.events);
+    }
+
+    const candidates = buildCandidates(mergedA, mergedB, minLagSamples, maxLagSamples);
     const groups = groupCandidates(candidates);
     const bestGroup = groups[0] || null;
 
@@ -169,15 +248,15 @@
         serA, serB,
         diffA: detA.diff,
         diffB: detB.diff,
-        eventsA: detA.events,
-        eventsB: detB.events,
+        eventsA: mergedA,
+        eventsB: mergedB,
         thresholdA: detA.threshold,
         thresholdB: detB.threshold,
       };
     }
 
     const coarseLag = bestGroup.lag;
-    const corr = buildLocalCorrelation(serA.lum, serB.lum, coarseLag, REFINE_RADIUS);
+    const corr = buildLocalCorrelation(hybA, hybB, coarseLag, REFINE_RADIUS);
     const peak = corr.reduce((best, cur) => (cur.r > best.r ? cur : best), corr[0]);
     const peakIdx = corr.findIndex(c => c.lag === peak.lag);
     const subFrame = parabolicPeak(corr, peakIdx);
@@ -198,8 +277,8 @@
       serB,
       diffA: detA.diff,
       diffB: detB.diff,
-      eventsA: detA.events,
-      eventsB: detB.events,
+      eventsA: mergedA,
+      eventsB: mergedB,
       candidateGroups: groups.slice(0, 8).map(g => ({ lag: g.lag, count: g.items.length, weight: g.weight })),
       thresholdA: detA.threshold,
       thresholdB: detB.threshold,
@@ -265,7 +344,9 @@
     detectEvents,
     diffSeries,
     normalize,
+    buildHybridSeries,
+    mergeEvents,
   };
 
-  console.log('[MedLat] 31-hybrid-analyzer carregado. Método: eventos fortes + correlação local.');
+  console.log('[MedLat] 31-hybrid-analyzer carregado. detectEvents genérico + mergeEvents luma/chroma ativo.');
 })();
