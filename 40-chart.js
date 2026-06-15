@@ -76,7 +76,6 @@
     };
   }
 
-  // ── helpers de cor para Chart.js (tema fixo dark) ─────────────────────────
   function gridColor()     { return 'transparent'; }
   function tickColor()     { return '#556688'; }
   function tickColorFaint(){ return '#445566'; }
@@ -88,12 +87,28 @@
   function rowBg(color)    { return color + '0d'; }
   function rowBorder(color){ return color + '22'; }
 
-  // ── calcRTReal: aplica dedução do canal e da referência (ms) ──────────────
+  // ── calcRTReal: dedução do canal menos dedução da referência ──────────────
   function calcRTReal(ch, offsetMs) {
     const refDed = (ML.CHANNELS[0].deduction || 0) * 1000;
     const chDed  = (ch.deduction || 0) * 1000;
     return offsetMs + chDed - refDed;
   }
+
+  // ── fmtMs: formata ms com sinal ───────────────────────────────────────────
+  function fmtMs(ms) {
+    const s = ms / 1000;
+    return (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
+  }
+
+  function lagColor(ms) {
+    return Math.abs(ms) < 100 ? '#44ff88' : Math.abs(ms) < 1000 ? '#ffd700' : '#ff8844';
+  }
+
+  // ── escala de fonte proporcional à largura do painel ─────────────────────
+  // BASE_W = largura de referência (px) para fs=1.0
+  const BASE_W = 480;
+  let _fs = 1.0;
+  function fs(base) { return Math.max(7, Math.round(base * _fs)); }
 
   // ── update leve: atualiza dados dos charts existentes sem recriar DOM ─────
   async function updateChart(newResults) {
@@ -120,23 +135,22 @@
         if (chart.data.datasets[idx]) chart.data.datasets[idx].data = lums;
       });
       chart.update('none');
-      return;
+    } else {
+      metaKeys.forEach(chId => {
+        const meta = chartMeta[chId];
+        if (!meta || !meta.chart || !meta.ch) return;
+        const ch   = meta.ch;
+        const raw  = ch.buffer.map(p => p.lum).slice(0, maxLen);
+        const iv   = ui.realIvMs(ch);
+        const offsetMs = ML.manualOffsets && ML.manualOffsets[chId] != null ? ML.manualOffsets[chId] : 0;
+        const shift    = Math.round(offsetMs / iv);
+        const lums     = _shiftSeries(raw, shift);
+        if (meta.chart.data.datasets[0]) meta.chart.data.datasets[0].data = lums;
+        meta.chart.update('none');
+      });
     }
 
-    metaKeys.forEach(chId => {
-      const meta = chartMeta[chId];
-      if (!meta || !meta.chart || !meta.ch) return;
-      const ch   = meta.ch;
-      const raw  = ch.buffer.map(p => p.lum).slice(0, maxLen);
-      const iv   = ui.realIvMs(ch);
-      const offsetMs = ML.manualOffsets && ML.manualOffsets[chId] != null ? ML.manualOffsets[chId] : 0;
-      const shift    = Math.round(offsetMs / iv);
-      const lums     = _shiftSeries(raw, shift);
-      if (meta.chart.data.datasets[0]) meta.chart.data.datasets[0].data = lums;
-      meta.chart.update('none');
-    });
-
-    // fix: usa calcRTReal para exibir valor já com dedução
+    // Atualiza cards RT com medido + real
     newResults.forEach(r => {
       if (r.isReference || !r.channel || r.error || r.skipped || r.offsetMs == null) return;
       _updateCardResultRT(r.channel, r.offsetMs);
@@ -149,17 +163,19 @@
     }
   }
 
-  // fix: recebe objeto ch completo para poder aplicar calcRTReal
+  // Atualiza card no modo RT — mostra medido E real em linhas separadas
   function _updateCardResultRT(ch, offsetMs) {
-    const chId = ch.id;
-    const card = document.querySelector(`#ml-chart-panel [data-ch-id="${chId}"]`);
+    const card = document.querySelector(`#ml-chart-panel [data-ch-id="${ch.id}"]`);
     if (!card) return;
-    const valEl = card._valEl || card.querySelector('[data-val]');
-    if (!valEl) return;
     const realMs = calcRTReal(ch, offsetMs);
-    const s = realMs / 1000;
-    valEl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
-    valEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+    if (card._measEl) {
+      card._measEl.textContent = fmtMs(offsetMs);
+      card._measEl.style.color = lagColor(offsetMs);
+    }
+    if (card._realEl) {
+      card._realEl.textContent = fmtMs(realMs);
+      card._realEl.style.color = lagColor(realMs);
+    }
   }
 
   function _shiftSeries(data, shift) {
@@ -190,6 +206,8 @@
     const INIT_W = Math.max(320, window.innerWidth - initLeft - GAP);
     const INIT_H = Math.max(260, window.innerHeight - initTop - GAP);
 
+    _fs = Math.max(0.7, Math.min(2.0, INIT_W / BASE_W));
+
     const panel = document.createElement('div');
     panel.id = 'ml-chart-panel';
 
@@ -200,11 +218,26 @@
         'z-index:99998;min-width:180px;min-height:200px',
         `background:${ui.T.panelBg};border:1px solid ${ui.T.panelBorder}`,
         'border-radius:8px;box-shadow:0 4px 24px #000d',
-        `font-family:monospace;font-size:10px;color:${ui.T.textPrimary}`,
+        `font-family:monospace;font-size:${fs(10)}px;color:${ui.T.textPrimary}`,
         'user-select:none;overflow:hidden;display:flex;flex-direction:column',
       ].join(';');
     }
     applyPanelStyle();
+
+    // ── ResizeObserver: recalcula _fs e atualiza fontes ao esticar ────────
+    const roFontEls = []; // { el, base } pares registrados
+    function registerFontEl(el, base) { roFontEls.push({ el, base }); }
+    function applyFontScale() {
+      _fs = Math.max(0.7, Math.min(2.0, panel.offsetWidth / BASE_W));
+      panel.style.fontSize = fs(10) + 'px';
+      roFontEls.forEach(({ el, base }) => { el.style.fontSize = fs(base) + 'px'; });
+    }
+    const ro = new ResizeObserver(() => { applyFontScale(); rebuildCharts(); });
+    ro.observe(panel);
+    panel.addEventListener('remove', () => ro.disconnect(), { once: true });
+    // cleanup quando painel for removido do DOM
+    const origRemove = panel.remove.bind(panel);
+    panel.remove = () => { ro.disconnect(); origRemove(); };
 
     const hdr = document.createElement('div');
     hdr.style.cssText = [
@@ -216,37 +249,42 @@
     const htitle = document.createElement('span');
     htitle.setAttribute('data-rt-title', '1');
     htitle.textContent = '📊 Luminância';
-    htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.06em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    htitle.style.cssText = `color:#00d4ff;font-weight:bold;font-size:${fs(10)}px;letter-spacing:.06em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+    registerFontEl(htitle, 10);
 
     let chartMode = 'parallel';
     const btnMode = document.createElement('button');
-    btnMode.style.cssText = `background:${ui.T.btnBg};border:1px solid ${ui.T.btnBorder};color:#00d4ff;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap`;
+    btnMode.style.cssText = `background:${ui.T.btnBg};border:1px solid ${ui.T.btnBorder};color:#00d4ff;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold ${fs(8)}px monospace;flex-shrink:0;white-space:nowrap`;
+    registerFontEl(btnMode, 8);
     function updateModeBtn() { btnMode.textContent = chartMode === 'parallel' ? '⫴ Paralelo' : '⧉ Sobreposto'; }
     updateModeBtn();
 
     let manualMode = false;
     const btnManual = document.createElement('button');
     function applyManualBtnStyle() {
-      btnManual.style.cssText = `background:${manualMode ? '#44ff8833' : ui.T.btnBg};border:1px solid ${manualMode ? '#44ff88' : '#44ff8855'};color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap`;
+      btnManual.style.cssText = `background:${manualMode ? '#44ff8833' : ui.T.btnBg};border:1px solid ${manualMode ? '#44ff88' : '#44ff8855'};color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold ${fs(8)}px monospace;flex-shrink:0;white-space:nowrap`;
     }
     applyManualBtnStyle();
+    registerFontEl(btnManual, 8);
     function updateManualBtn() { btnManual.textContent = manualMode ? '✎ Ajustando' : '✎ Manual'; applyManualBtnStyle(); }
     updateManualBtn();
 
     let showPeaks = true;
     const btnPeaks = document.createElement('button');
     function applyPeaksBtnStyle() {
-      btnPeaks.style.cssText = `background:${ui.T.btnBg};border:1px solid #44ff8855;color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap`;
+      btnPeaks.style.cssText = `background:${ui.T.btnBg};border:1px solid #44ff8855;color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold ${fs(8)}px monospace;flex-shrink:0;white-space:nowrap`;
       btnPeaks.style.opacity = showPeaks ? '1' : '0.45';
     }
     applyPeaksBtnStyle();
+    registerFontEl(btnPeaks, 8);
     function updatePeaksBtn() { btnPeaks.textContent = showPeaks ? '◼ Picos' : '◻ Picos'; applyPeaksBtnStyle(); }
     updatePeaksBtn();
     btnPeaks.onclick = () => { showPeaks = !showPeaks; updatePeaksBtn(); rebuildCharts(); };
 
     const btnClose = document.createElement('button');
     btnClose.textContent = '✕';
-    btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
+    btnClose.style.cssText = `background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:${fs(11)}px;line-height:17px;flex-shrink:0`;
+    registerFontEl(btnClose, 11);
     btnClose.onclick = () => panel.remove();
 
     hdr.append(htitle, btnManual, btnPeaks, btnMode, btnClose);
@@ -285,7 +323,6 @@
           if (isW){nw=Math.max(180,rsw-dx);nl=rsl+rsw-nw;}else{nw=Math.max(180,rsw+dx);}
           if (isN){nh=Math.max(200,rsh-dy);nt=rst+rsh-nh;}else{nh=Math.max(200,rsh+dy);}
           panel.style.width=nw+'px';panel.style.height=nh+'px';panel.style.left=nl+'px';panel.style.top=nt+'px';
-          rebuildCharts();
         }
         function onUp(){window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);}
         window.addEventListener('mousemove',onMove);window.addEventListener('mouseup',onUp);
@@ -304,16 +341,15 @@
       if (ch.buffer.length > maxLen) maxLen = ch.buffer.length;
     });
 
-    // fix: empty state com botão fechar em vez de painel vazio sem saída
     if (!activeChannels.length) {
       const wrap = document.createElement('div');
       wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:8px;padding:16px';
       const msg = document.createElement('div');
-      msg.style.cssText = 'color:#ff4444;font-size:10px;text-align:center';
+      msg.style.cssText = `color:#ff4444;font-size:${fs(10)}px;text-align:center`;
       msg.textContent = 'Nenhum canal com dados gravados.';
       const btn = document.createElement('button');
       btn.textContent = '✕ Fechar';
-      btn.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:3px 10px;cursor:pointer;font:bold 9px monospace';
+      btn.style.cssText = `background:#c62828;border:none;color:#fff;border-radius:3px;padding:3px 10px;cursor:pointer;font:bold ${fs(9)}px monospace`;
       btn.onclick = () => panel.remove();
       wrap.append(msg, btn);
       body.appendChild(wrap);
@@ -369,25 +405,17 @@
       const hasResults = results.some(r => !r.isReference && !r.error && !r.skipped);
       if (!hasResults) return;
       const bar = document.createElement('div');
-      bar.style.cssText = 'display:flex;flex-wrap:nowrap;gap:4px;flex-shrink:0;overflow-x:auto;padding-bottom:2px';
+      bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;flex-shrink:0;padding-bottom:2px';
       const ref = ML.CHANNELS[0];
-      bar.appendChild(mkCardCompact(ref.label, '★', ref.color, '0.000s', ref.color));
+      bar.appendChild(mkCardCompact(ref.label, '★', ref.color, 0, 0));
       results.forEach(r => {
         if (r.isReference || !r.channel) return;
         const ch = r.channel;
-        let autoTxt = '--', autoColor = ui.T.textMuted;
-        if (!r.error && !r.skipped) {
-          const realMs = calcRTReal(ch, originalAutoMs[ch.id]);
-          const s = realMs / 1000;
-          autoTxt   = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
-          autoColor = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
-        } else {
-          autoTxt   = r.error ? 'ERR' : '--';
-          autoColor = r.error ? '#ff4444' : ui.T.textMuted;
-        }
-        const card = mkCardCompact(ch.label, '', ch.color, autoTxt, autoColor);
+        const measMs = !r.error && !r.skipped ? (originalAutoMs[ch.id] || 0) : null;
+        const realMs = measMs != null ? calcRTReal(ch, measMs) : null;
+        const card = mkCardCompact(ch.label, '', ch.color, measMs, realMs, r.error);
         card.setAttribute('data-ch-id', ch.id);
-        cardRefs[ch.id] = { ch, manualEl: card._manualEl, valEl: card._valEl };
+        cardRefs[ch.id] = { ch, measEl: card._measEl, realEl: card._realEl };
         bar.appendChild(card);
       });
       body.appendChild(bar);
@@ -396,25 +424,25 @@
 
     function updateCardResult(chId, totalMs) {
       const ref = cardRefs[chId];
-      if (!ref || !ref.valEl) return;
+      if (!ref) return;
       const realMs = calcRTReal(ref.ch, totalMs);
-      const s = realMs / 1000;
-      ref.valEl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
-      ref.valEl.style.color = Math.abs(s) < 0.1 ? '#44ff88' : Math.abs(s) < 1 ? '#ffd700' : '#ff8844';
+      if (ref.measEl) { ref.measEl.textContent = fmtMs(totalMs); ref.measEl.style.color = lagColor(totalMs); }
+      if (ref.realEl) { ref.realEl.textContent = fmtMs(realMs);  ref.realEl.style.color = lagColor(realMs); }
     }
     function updateCardManual(chId, totalMs) {
       const ref = cardRefs[chId];
-      if (!ref || !ref.manualEl) return;
-      const el = ref.manualEl;
+      if (!ref || !ref.measEl) return;
       const realMs = calcRTReal(ref.ch, totalMs);
-      const s  = realMs / 1000;
-      el.style.display = 'inline';
-      el.textContent   = ' → ' + (s>=0?'+':'') + s.toFixed(3) + 's';
-      el.style.color   = Math.abs(s)<0.1?'#44ff88':Math.abs(s)<1?'#ffd700':'#00d4ff';
+      ref.measEl.textContent = fmtMs(totalMs); ref.measEl.style.color = '#00d4ff';
+      if (ref.realEl) { ref.realEl.textContent = '→ ' + fmtMs(realMs); ref.realEl.style.color = lagColor(realMs); }
     }
     function hideCardManual(chId) {
       const ref = cardRefs[chId];
-      if (ref && ref.manualEl) { ref.manualEl.style.display = 'none'; ref.manualEl.textContent = ''; }
+      if (!ref) return;
+      const measMs = confirmedMs[chId] || 0;
+      const realMs = calcRTReal(ref.ch, measMs);
+      if (ref.measEl) { ref.measEl.textContent = fmtMs(measMs); ref.measEl.style.color = lagColor(measMs); }
+      if (ref.realEl) { ref.realEl.textContent = fmtMs(realMs); ref.realEl.style.color = lagColor(realMs); }
     }
 
     const toggleBar = document.createElement('div');
@@ -424,8 +452,9 @@
       btn.dataset.active = '1';
       btn.style.cssText = [
         `background:${ch.color}22;border:1px solid ${ch.color}88;color:${ch.color}`,
-        'border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;transition:opacity .15s',
+        `border-radius:3px;padding:2px 6px;cursor:pointer;font:bold ${fs(8)}px monospace;transition:opacity .15s`,
       ].join(';');
+      registerFontEl(btn, 8);
       btn.textContent = (idx === 0 ? '★ ' : '') + ch.label;
       btn.onclick = () => { const on=btn.dataset.active==='1'; btn.dataset.active=on?'0':'1'; btn.style.opacity=on?'0.35':'1'; rebuildCharts(); };
       toggleBar.appendChild(btn);
@@ -436,7 +465,8 @@
     manualBar.style.cssText = 'display:none;flex-direction:column;gap:4px;padding:4px 0;flex-shrink:0';
 
     const manualHint = document.createElement('div');
-    manualHint.style.cssText = 'color:#ffd700;font-size:8px;text-align:center;opacity:.8';
+    manualHint.style.cssText = `color:#ffd700;font-size:${fs(8)}px;text-align:center;opacity:.8`;
+    registerFontEl(manualHint, 8);
     manualHint.textContent = '◄ dir = mais atraso  |  esq = menos atraso ►';
     manualBar.appendChild(manualHint);
 
@@ -445,8 +475,9 @@
     btnResetAll.title = 'Reseta todos os canais para o valor calculado automaticamente';
     btnResetAll.style.cssText = [
       `background:${ui.T.btnBg};border:1px solid #ff884455;color:#ff8844`,
-      'border-radius:3px;padding:2px 8px;cursor:pointer;font:bold 8px monospace;width:100%',
+      `border-radius:3px;padding:2px 8px;cursor:pointer;font:bold ${fs(8)}px monospace;width:100%`,
     ].join(';');
+    registerFontEl(btnResetAll, 8);
 
     const sliderRefs = {};
 
@@ -458,7 +489,8 @@
       row.style.cssText = 'display:flex;align-items:center;gap:4px';
 
       const lbl = document.createElement('span');
-      lbl.style.cssText = `color:${ch.color};font-weight:bold;font-size:8px;width:38px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`;
+      lbl.style.cssText = `color:${ch.color};font-weight:bold;font-size:${fs(8)}px;width:38px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`;
+      registerFontEl(lbl, 8);
       lbl.textContent = ch.label;
 
       const slider = document.createElement('input');
@@ -474,16 +506,18 @@
       const btnReset = document.createElement('button');
       btnReset.textContent = '↺';
       btnReset.title = 'Reset — volta ' + ch.label + ' para o valor calculado automaticamente';
-      btnReset.style.cssText = 'background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold 9px monospace;flex-shrink:0;line-height:14px;width:18px;text-align:center';
+      btnReset.style.cssText = `background:#2a1a1a;border:1px solid #ff884444;color:#ff8844;border-radius:3px;padding:0 4px;cursor:pointer;font:bold ${fs(9)}px monospace;flex-shrink:0;line-height:14px;width:18px;text-align:center`;
+      registerFontEl(btnReset, 9);
 
       const valLbl = document.createElement('span');
-      valLbl.style.cssText = `color:${ui.T.textMuted};font-size:8px;width:52px;flex-shrink:0;text-align:right;white-space:nowrap`;
+      valLbl.style.cssText = `color:${ui.T.textMuted};font-size:${fs(8)}px;width:60px;flex-shrink:0;text-align:right;white-space:nowrap`;
+      registerFontEl(valLbl, 8);
 
       function refreshLabel(fineVal) {
         const totalMs = (confirmedMs[ch.id] || 0) + fineVal * iv;
         const realMs  = calcRTReal(ch, totalMs);
         const s       = realMs / 1000;
-        valLbl.textContent = (s >= 0 ? '+' : '') + s.toFixed(3) + 's';
+        valLbl.textContent = fmtMs(realMs);
         valLbl.style.color = fineVal === 0 ? '#44ff88' : (realMs >= 0 ? '#ffd700' : '#00d4ff');
         return { totalMs };
       }
@@ -521,9 +555,10 @@
     btnConfirm.textContent = '✔ Confirmar ajuste';
     btnConfirm.style.cssText = [
       'background:#44ff8833;border:1px solid #44ff88;color:#44ff88',
-      'border-radius:3px;padding:3px 8px;cursor:pointer;font:bold 8px monospace',
+      `border-radius:3px;padding:3px 8px;cursor:pointer;font:bold ${fs(8)}px monospace`,
       'width:100%;margin-top:1px',
     ].join(';');
+    registerFontEl(btnConfirm, 8);
     btnConfirm.onclick = () => {
       ML.manualOffsets = ML.manualOffsets || {};
       activeChannels.forEach((ch, idx) => {
@@ -532,7 +567,6 @@
         fineShiftSamples[ch.id] = 0;
         ML.manualOffsets[ch.id] = totalMs;
         updateCardResult(ch.id, totalMs);
-        hideCardManual(ch.id);
       });
       if (ML.panel && ML.panel.refreshOffsets) ML.panel.refreshOffsets(ML.manualOffsets);
       rebuildCharts();
@@ -575,8 +609,12 @@
       destroyCharts();
       const visible = getVisibleChannels();
       if (!visible.length) return;
+      // Recalcula fs antes de construir charts (após resize)
+      _fs = Math.max(0.7, Math.min(2.0, panel.offsetWidth / BASE_W));
       chartMode === 'overlay' ? buildOverlay(visible) : buildParallel(visible);
     }
+
+    function chartFontSize() { return Math.max(6, Math.round(7 * _fs)); }
 
     function xMaxTicks() {
       return Math.max(5, Math.floor((chartsArea.offsetWidth || 400) / 60));
@@ -607,6 +645,7 @@
       const totalGap = (channels.length - 1) * 2;
       const rowH  = Math.max(48, Math.floor((chartsArea.offsetHeight - totalGap) / channels.length));
       const ticks = xMaxTicks();
+      const cfs   = chartFontSize();
       const refChVisible = channels[0];
       const refShift     = getTotalShift(refChVisible, 0);
       const refPeaks     = getFixedPeaks(refChVisible);
@@ -623,7 +662,7 @@
         const row = document.createElement('div');
         row.style.cssText = `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0;padding:2px 3px;border-radius:4px;background:${rowBg(ch.color)};box-shadow:inset 0 0 0 1px ${rowBorder(ch.color)};overflow:hidden`;
         const lblEl = document.createElement('div');
-        lblEl.style.cssText = `color:${ch.color};font-weight:bold;font-size:8px;width:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+        lblEl.style.cssText = `color:${ch.color};font-weight:bold;font-size:${cfs}px;width:${Math.round(36*_fs)}px;flex-shrink:0;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
         lblEl.textContent = (idx === 0 ? '★ ' : '') + ch.label;
         const wrap = document.createElement('div');
         wrap.style.cssText = 'flex:1;min-width:0;overflow:hidden';
@@ -644,12 +683,12 @@
             scales: {
               x: {
                 display: idx === channels.length - 1,
-                ticks: { color: tickColor(), font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks },
+                ticks: { color: tickColor(), font: { size: cfs }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks },
                 grid:  { color: 'transparent' },
               },
               y: {
                 min: yMin, max: yMax,
-                ticks: { color: tickColorFaint(), font: { size: 7 }, maxTicksLimit: 3 },
+                ticks: { color: tickColorFaint(), font: { size: cfs }, maxTicksLimit: 3 },
                 grid:  { color: 'transparent' },
               },
             },
@@ -663,6 +702,7 @@
 
     function buildOverlay(channels) {
       const ticks = xMaxTicks();
+      const cfs   = chartFontSize();
       const allLumsShifted = channels.map((ch, idx) => {
         const raw   = ch.buffer.map(p => p.lum).slice(0, maxLen);
         const shift = getTotalShift(ch, idx);
@@ -678,7 +718,7 @@
       wrap.style.cssText = `flex:1;min-height:0;overflow:hidden;border-radius:4px;background:#0a0a16;border:1px solid ${ui.T.panelBorder};position:relative`;
       if (manualMode) {
         const hint = document.createElement('div');
-        hint.style.cssText = 'position:absolute;top:2px;left:50%;transform:translateX(-50%);color:#ffd70088;font-size:7px;pointer-events:none;z-index:2;white-space:nowrap';
+        hint.style.cssText = `position:absolute;top:2px;left:50%;transform:translateX(-50%);color:#ffd70088;font-size:${cfs}px;pointer-events:none;z-index:2;white-space:nowrap`;
         hint.textContent = '▶ Ajuste fino pelas réguas abaixo';
         wrap.appendChild(hint);
       }
@@ -721,13 +761,13 @@
           plugins: {
             legend: {
               display: true, position: 'bottom',
-              labels: { color: legendColor(), font: { size: 8, family: 'monospace' }, boxWidth: 10, padding: 8 },
+              labels: { color: legendColor(), font: { size: cfs, family: 'monospace' }, boxWidth: 10, padding: 8 },
             },
             tooltip: {
               enabled: true, backgroundColor: tooltipBg(),
               titleColor: tooltipTitle(), bodyColor: tooltipBody(),
               borderColor: tooltipBorder(), borderWidth: 1,
-              titleFont: { size: 8, family: 'monospace' }, bodyFont: { size: 8, family: 'monospace' },
+              titleFont: { size: cfs, family: 'monospace' }, bodyFont: { size: cfs, family: 'monospace' },
               callbacks: {
                 title: items => items[0].label || '',
                 label: item => ` ${item.dataset.label}: ${item.parsed.y != null ? item.parsed.y.toFixed(1) : '--'}`,
@@ -736,8 +776,8 @@
           },
           layout: { padding: { top: 2, right: 4, bottom: 0, left: 0 } },
           scales: {
-            x: { ticks: { color: tickColor(),      font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks }, grid: { color: 'transparent' } },
-            y: { min: fixedGlobalYMin, max: fixedGlobalYMax, ticks: { color: tickColorFaint(), font: { size: 7 }, maxTicksLimit: 5 }, grid: { color: 'transparent' } },
+            x: { ticks: { color: tickColor(),      font: { size: cfs }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks }, grid: { color: 'transparent' } },
+            y: { min: fixedGlobalYMin, max: fixedGlobalYMax, ticks: { color: tickColorFaint(), font: { size: cfs }, maxTicksLimit: 5 }, grid: { color: 'transparent' } },
           },
         },
         plugins: allPeaksMerged.length ? [overlayPeakPlugin] : [],
@@ -750,28 +790,61 @@
     requestAnimationFrame(() => rebuildCharts());
   }
 
-  function mkCardCompact(label, prefix, color, autoTxt, autoColor) {
+  // ── mkCardCompact: 2 linhas — medido (bruto) e real (com dedução) ─────────
+  function mkCardCompact(label, prefix, color, measMs, realMs, isErr) {
     const card = document.createElement('div');
     card.style.cssText = [
-      'display:inline-flex;align-items:center;gap:5px;flex-shrink:0',
+      'display:inline-flex;flex-direction:column;align-items:flex-start;flex-shrink:0',
       `border:1px solid ${color}55;border-top:2px solid ${color}99`,
-      `background:${color}0d;border-radius:4px;padding:3px 6px`,
+      `background:${color}0d;border-radius:4px;padding:3px 7px 4px`,
+      'min-width:80px',
     ].join(';');
+
+    // Linha 1: ★ + label
+    const row1 = document.createElement('div');
+    row1.style.cssText = 'display:flex;align-items:center;gap:3px';
     if (prefix) {
       const sp = document.createElement('span');
-      sp.textContent = prefix; sp.style.cssText = `color:${color};font-size:9px;flex-shrink:0`;
-      card.appendChild(sp);
+      sp.textContent = prefix; sp.style.cssText = `color:${color};font-size:${fs(9)}px;flex-shrink:0`;
+      row1.appendChild(sp);
     }
     const nm = document.createElement('span');
     nm.textContent = label;
-    nm.style.cssText = `color:${color};font-weight:bold;font-size:8px;white-space:nowrap;max-width:56px;overflow:hidden;text-overflow:ellipsis`;
-    const vl = document.createElement('span');
-    vl.textContent = autoTxt; vl.style.cssText = `color:${autoColor};font-weight:bold;font-size:9px;white-space:nowrap`;
-    card._valEl = vl;
-    const manualEl = document.createElement('span');
-    manualEl.style.display = 'none';
-    card._manualEl = manualEl;
-    card.append(nm, vl, manualEl);
+    nm.style.cssText = `color:${color};font-weight:bold;font-size:${fs(8)}px;white-space:nowrap;max-width:64px;overflow:hidden;text-overflow:ellipsis`;
+    row1.appendChild(nm);
+    card.appendChild(row1);
+
+    // Linha 2: medido
+    const row2 = document.createElement('div');
+    row2.style.cssText = 'display:flex;align-items:baseline;gap:3px;margin-top:1px';
+    const measLbl = document.createElement('span');
+    measLbl.textContent = 'med';
+    measLbl.style.cssText = `color:#556677;font-size:${fs(7)}px;flex-shrink:0`;
+    const measVal = document.createElement('span');
+    if (isErr)          { measVal.textContent = 'ERR'; measVal.style.color = '#ff4444'; }
+    else if (measMs == null) { measVal.textContent = '--'; measVal.style.color = '#556677'; }
+    else                { measVal.textContent = fmtMs(measMs); measVal.style.color = lagColor(measMs); }
+    measVal.style.cssText += `;font-weight:bold;font-size:${fs(9)}px;white-space:nowrap`;
+    card._measEl = measVal;
+    row2.append(measLbl, measVal);
+    card.appendChild(row2);
+
+    // Linha 3: real (com dedução) — só exibida se não for referência
+    if (realMs != null || (!prefix && !isErr)) {
+      const row3 = document.createElement('div');
+      row3.style.cssText = 'display:flex;align-items:baseline;gap:3px';
+      const realLbl = document.createElement('span');
+      realLbl.textContent = 'real';
+      realLbl.style.cssText = `color:#556677;font-size:${fs(7)}px;flex-shrink:0`;
+      const realVal = document.createElement('span');
+      if (realMs == null) { realVal.textContent = '--'; realVal.style.color = '#556677'; }
+      else                { realVal.textContent = fmtMs(realMs); realVal.style.color = lagColor(realMs); }
+      realVal.style.cssText += `;font-weight:bold;font-size:${fs(9)}px;white-space:nowrap`;
+      card._realEl = realVal;
+      row3.append(realLbl, realVal);
+      card.appendChild(row3);
+    }
+
     return card;
   }
 
