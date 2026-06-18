@@ -405,7 +405,6 @@
       window.removeEventListener('mousemove', onWMove);
       window.removeEventListener('mouseup', onWUp);
       if (!wdrag) {
-        // clique simples: restaura
         clearInterval(pulseTimer);
         widget.remove();
         panel.style.display = 'flex';
@@ -480,32 +479,51 @@
   }
 
   // ── Toggle (botão liga/desliga) ────────────────────────────────────────
+  // Aceita duas assinaturas:
+  //   mkToggle(initialState, onChange)              ← usada pelo 50-panel
+  //   mkToggle(labelOn, labelOff, initialState, onChange)  ← forma extendida
 
-  function mkToggle(labelOn, labelOff, initialState, onChange) {
+  function mkToggle(a, b, c, d) {
     const t = ML.ui.T;
-    let state = !!initialState;
-    const b = document.createElement('button');
+    let labelOn, labelOff, initialState, onChange;
+
+    if (typeof a === 'boolean' || (typeof a !== 'string' && typeof a !== 'undefined' && typeof b === 'function')) {
+      // assinatura curta: mkToggle(initialState, onChange)
+      initialState = !!a;
+      onChange     = typeof b === 'function' ? b : null;
+      labelOn  = '\u25cf ON';
+      labelOff = '\u25cb OFF';
+    } else {
+      // assinatura longa: mkToggle(labelOn, labelOff, initialState, onChange)
+      labelOn      = a || '\u25cf ON';
+      labelOff     = b || '\u25cb OFF';
+      initialState = !!c;
+      onChange     = typeof d === 'function' ? d : null;
+    }
+
+    let state = initialState;
+    const btn = document.createElement('button');
 
     function render() {
-      b.textContent = state ? labelOn : labelOff;
-      b.style.cssText = [
+      btn.textContent = state ? labelOn : labelOff;
+      btn.style.cssText = [
         `background:${state ? t.accentColor + '22' : t.btnBg}`,
         `border:1px solid ${state ? t.accentColor : t.btnBorder}`,
         `color:${state ? t.accentColor : t.btnColor}`,
-        'border-radius:3px;padding:2px 6px;cursor:pointer',
-        'font-size:9px;font-family:monospace;font-weight:bold;white-space:nowrap',
+        'border-radius:3px;padding:1px 5px;cursor:pointer',
+        'font-size:8px;font-family:monospace;font-weight:bold;white-space:nowrap;flex-shrink:0',
       ].join(';');
     }
 
     render();
-    b.addEventListener('click', () => {
+    btn.addEventListener('click', () => {
       state = !state;
       render();
       if (onChange) onChange(state);
     });
-    b.getValue = () => state;
-    b.setValue = (v) => { state = !!v; render(); };
-    return b;
+    btn.getValue = () => state;
+    btn.setValue = (v) => { state = !!v; render(); };
+    return btn;
   }
 
   function sec(label, extraContent) {
@@ -536,7 +554,7 @@
     return s;
   }
 
-  // ── Init ───────────────────────────────────────────────────────────────
+  // ── Init ─────────────────────────────────────────────────────────────
 
   injectStyles();
 
