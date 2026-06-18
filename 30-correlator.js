@@ -1,26 +1,39 @@
 (function () {
   const ML = window.MedLat;
 
+  // ADAPT_FACTOR: fator sobre o desvio-padrão para calcular o limiar adaptativo de diff.
+  //   0.15 foi calibrado empiricamente: sensivel o suficiente para capturar cortes de cena
+  //   sem gerar falsos positivos em ruído de compressão.
   const ADAPT_FACTOR          = 0.15;
   const DIFF_THRESHOLD_MIN    = 1;
+  // ANCHOR_TOP_N: máximo de picos de maior magnitude a considerar como âncoras.
   const ANCHOR_TOP_N          = 30;
+  // ANCHOR_MIN_ISOLATION: separação mínima em amostras entre duas âncoras
+  //   (evita agrupar picos de um mesmo corte prolongado).
   const ANCHOR_MIN_ISOLATION  = 60;
+  // ANCHOR_STRENGTH_RATIO: âncora deve ser pelo menos 2.5x a mediana dos picos.
   const ANCHOR_STRENGTH_RATIO = 2.5;
+  // ANCHOR_CONSENSUS_TOL: tolerância em amostras para duas âncoras serem consideradas
+  //   o mesmo evento (evita fragmentar o mesmo corte de cena em grupos distintos).
   const ANCHOR_CONSENSUS_TOL  = 2;
+  // REFINE_WINDOW: janela de lag (± amostras) para a cross-correlação de refinamento
+  //   após o alinhamento grosseiro por âncoras.
   const REFINE_WINDOW         = 15;
 
   const RT_MIN_LAG_MS = -5000;
   const RT_MAX_LAG_MS = 30000;
   const MIN_SAMPLES   = 60;
 
-  // ── buildHybridSeries ────────────────────────────────────────────
+  // ── buildHybridSeries ─────────────────────────────────────────────────
+  // Extrai a série de luminância do buffer. Candidato futuro: combinar lum+cb+cr
+  // para melhorar a correlação em cenas de baixo contraste de luminância.
 
   function buildHybridSeries(buf) {
     if (!buf || !buf.length) return [];
     return buf.map(p => p.lum);
   }
 
-  // ── Primitivas ────────────────────────────────────────────────────────
+  // ── Primitivas ──────────────────────────────────────────────────────────
 
   function adaptiveThreshold(arr) {
     const n = arr.length;
@@ -101,7 +114,7 @@
     return (iv >= 10 && iv <= 200) ? iv : ML.INTERVAL_MS;
   }
 
-  // ── Âncoras de cena ───────────────────────────────────────────────
+  // ── Âncoras de cena ───────────────────────────────────────────────────
 
   function extractAnchors(lum) {
     const diff = diffSeries(lum);
@@ -161,7 +174,7 @@
     return { delta: best.delta, confidence: best.count / deltas.length };
   }
 
-  // ── shiftArr ──────────────────────────────────────────────────────────
+  // ── shiftArr ─────────────────────────────────────────────────────────────
 
   function shiftArr(arr, shift) {
     if (!shift) return arr;
@@ -171,7 +184,7 @@
     return out;
   }
 
-  // ── Mediana aparada ──────────────────────────────────────────────────
+  // ── Mediana aparada ───────────────────────────────────────────────────
 
   function median(arr) {
     if (!arr.length) return null;
@@ -188,16 +201,17 @@
     return median(s.slice(cut, s.length - cut));
   }
 
-  // ── correlateRolling (modo RT) ──────────────────────────────────────
-  // Lê ch.rollingBuffer (janela deslizante mantida pelo recorder).
+  // ── correlateRolling (modo RT) ──────────────────────────────────────────
+  // Lê ch.rollingBuffer (ring buffer mantido pelo 20-recorder).
 
   function correlateRolling(chA, chB) {
     const confThresh   = (ML.config && ML.config.rtConfThreshold !== undefined)
       ? ML.config.rtConfThreshold : 0.50;
     const rtIntervalMs = (ML.config && ML.config.rtIntervalMs) || 500;
 
-    const bufA = chA.rollingBuffer || [];
-    const bufB = chB.rollingBuffer || [];
+    // Materializa o ring buffer em array para processamento
+    const bufA = chA.rollingBuffer ? chA.rollingBuffer.toArray() : [];
+    const bufB = chB.rollingBuffer ? chB.rollingBuffer.toArray() : [];
 
     if (bufA.length < MIN_SAMPLES || bufB.length < MIN_SAMPLES) {
       return { error: 'Aguardando amostras (' + Math.min(bufA.length, bufB.length) + '/' + MIN_SAMPLES + ')' };
@@ -233,14 +247,15 @@
 
     if (confidence >= confThresh) {
       if (rawOffsetMs >= RT_MIN_LAG_MS && rawOffsetMs <= RT_MAX_LAG_MS) {
-        if (!chB._rtHistory) chB._rtHistory = [];
+        // _rtHistory é garantido pelo 00-core (inicializado como []) e resetado
+        // pelo recorder em start/stop. Não precisa de guard aqui.
         chB._rtHistory.push(rawOffsetMs);
         if (chB._rtHistory.length > historyMax) chB._rtHistory.shift();
       }
     }
 
     const stableOffsetMs = trimmedMedian(
-      chB._rtHistory && chB._rtHistory.length ? chB._rtHistory : [rawOffsetMs]
+      chB._rtHistory.length ? chB._rtHistory : [rawOffsetMs]
     );
 
     return {
@@ -250,7 +265,7 @@
       anchorConfidence: anchor ? anchor.confidence : null,
       intervalMs:       ivMs,
       samples:          Math.min(hybA.length, hybB.length),
-      historyLen:       (chB._rtHistory || []).length,
+      historyLen:       chB._rtHistory.length,
       labelA:           chA.label,
       labelB:           chB.label,
     };
@@ -292,5 +307,5 @@
     buildHybridSeries,
   };
 
-  console.log('[MedLat] 30-correlator v1.1. RT only. rollingBuffer. MIN_SAMPLES=' + MIN_SAMPLES + '. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
+  console.log('[MedLat] 30-correlator v1.2. RT only. rollingBuffer (ring). MIN_SAMPLES=' + MIN_SAMPLES + '. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
 })();
