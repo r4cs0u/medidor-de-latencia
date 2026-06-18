@@ -43,10 +43,10 @@
     }
     [
       { value: 'auto',    label: 'Auto' },
-      { value: 'minus5',  label: '◀ 5s' },
-      { value: 'plus5',   label: '▶ 5s' },
-      { value: 'plus10',  label: '▶ 10s' },
-      { value: 'plus30',  label: '▶ 30s' },
+      { value: 'neg5',  label: '◀ 5s' },
+      { value: 'pos5',  label: '▶ 5s' },
+      { value: 'pos10', label: '▶ 10s' },
+      { value: 'pos30', label: '▶ 30s' },
     ].forEach(o => {
       const opt = document.createElement('option');
       opt.value = o.value; opt.textContent = o.label;
@@ -56,17 +56,17 @@
     function updateSelColor() {
       const colors = {
         auto: ui.T.selectColor,
-        minus5: '#ffd166',
-        plus5: '#44ff88',
-        plus10: '#00d4ff',
-        plus30: '#ff9d00',
+        neg5: '#ffd166',
+        pos5: '#44ff88',
+        pos10: '#00d4ff',
+        pos30: '#ff9d00',
       };
       const borders = {
         auto: ui.T.selectBorder,
-        minus5: '#ffd16688',
-        plus5: '#44ff8888',
-        plus10: '#00d4ff88',
-        plus30: '#ff9d0088',
+        neg5: '#ffd16688',
+        pos5: '#44ff8888',
+        pos10: '#00d4ff88',
+        pos30: '#ff9d0088',
       };
       sel.style.color       = colors[sel.value] || ui.T.selectColor;
       sel.style.borderColor = borders[sel.value] || ui.T.selectBorder;
@@ -893,5 +893,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. Seletores de lag: Auto / ◀ 5s / ▶ 5s / ▶ 10s / ▶ 30s. RT com MEDIDO/REAL empilhados.');
+  console.log('[MedLat] 50-panel carregado. Seletores de lag: Auto / neg5 / pos5 / pos10 / pos30. RT com MEDIDO/REAL empilhados.');
 })();
