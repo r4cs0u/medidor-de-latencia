@@ -479,6 +479,35 @@
     return inp;
   }
 
+  // ── Toggle (botão liga/desliga) ────────────────────────────────────────
+
+  function mkToggle(labelOn, labelOff, initialState, onChange) {
+    const t = ML.ui.T;
+    let state = !!initialState;
+    const b = document.createElement('button');
+
+    function render() {
+      b.textContent = state ? labelOn : labelOff;
+      b.style.cssText = [
+        `background:${state ? t.accentColor + '22' : t.btnBg}`,
+        `border:1px solid ${state ? t.accentColor : t.btnBorder}`,
+        `color:${state ? t.accentColor : t.btnColor}`,
+        'border-radius:3px;padding:2px 6px;cursor:pointer',
+        'font-size:9px;font-family:monospace;font-weight:bold;white-space:nowrap',
+      ].join(';');
+    }
+
+    render();
+    b.addEventListener('click', () => {
+      state = !state;
+      render();
+      if (onChange) onChange(state);
+    });
+    b.getValue = () => state;
+    b.setValue = (v) => { state = !!v; render(); };
+    return b;
+  }
+
   function sec(label, extraContent) {
     const t = ML.ui.T;
     const wrap = document.createElement('div');
@@ -524,7 +553,7 @@
     parseDeductionS, formatDeduction, colorByOffset,
     fallbackCopy, copyResults,
     minimizePanel,
-    mkIconBtn, mkBtn, mkNum, sec, row, sp,
+    mkIconBtn, mkBtn, mkNum, mkToggle, sec, row, sp,
   });
 
   console.log('[MedLat] 15-ui-utils carregado (dark fixo).');
