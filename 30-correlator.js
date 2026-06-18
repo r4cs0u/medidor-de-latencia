@@ -13,14 +13,14 @@
   const RT_MAX_LAG_MS = 30000;
   const MIN_SAMPLES   = 60;
 
-  // ── buildHybridSeries ──────────────────────────────────────────────────────
+  // ── buildHybridSeries ────────────────────────────────────────────
 
   function buildHybridSeries(buf) {
     if (!buf || !buf.length) return [];
     return buf.map(p => p.lum);
   }
 
-  // ── Primitivas ───────────────────────────────────────────────────────────────
+  // ── Primitivas ────────────────────────────────────────────────────────
 
   function adaptiveThreshold(arr) {
     const n = arr.length;
@@ -93,18 +93,6 @@
     );
   }
 
-  function realIntervalMs(ser) {
-    const ch = ML.CHANNELS.find(c => c.label === ser.label);
-    if (ch && ch.buffer && ch.buffer.length > 1) {
-      const first = ch.buffer[0].ts;
-      const last  = ch.buffer[ch.buffer.length - 1].ts;
-      const n     = ch.buffer.length - 1;
-      const iv    = (last - first) / n;
-      if (iv >= 10 && iv <= 200) return iv;
-    }
-    return ML.INTERVAL_MS;
-  }
-
   function realIntervalMsFromBuf(buf) {
     if (!buf || buf.length < 2) return ML.INTERVAL_MS;
     const first = buf[0].ts;
@@ -113,7 +101,7 @@
     return (iv >= 10 && iv <= 200) ? iv : ML.INTERVAL_MS;
   }
 
-  // ── Âncoras de cena ───────────────────────────────────────────────────────
+  // ── Âncoras de cena ───────────────────────────────────────────────
 
   function extractAnchors(lum) {
     const diff = diffSeries(lum);
@@ -166,7 +154,6 @@
         groups.push({ delta: entry.delta, count: 1, totalScore: entry.scoreA + entry.scoreB });
       }
     });
-    // count >= 2 (era 3): mais rápido com poucos dados no início
     const best = groups
       .filter(g => g.count >= 2)
       .sort((a, b) => b.count - a.count || b.totalScore - a.totalScore)[0];
@@ -174,7 +161,7 @@
     return { delta: best.delta, confidence: best.count / deltas.length };
   }
 
-  // ── shiftArr ──────────────────────────────────────────────────────────────
+  // ── shiftArr ──────────────────────────────────────────────────────────
 
   function shiftArr(arr, shift) {
     if (!shift) return arr;
@@ -184,86 +171,7 @@
     return out;
   }
 
-  // ── analyze (modo LOG) ────────────────────────────────────────────────────
-
-  function analyze(chA, chB, maxLagMs) {
-    const serA = ML.recorder.getSeries(chA);
-    const serB = ML.recorder.getSeries(chB);
-    if (serA.lum.length < 30 || serB.lum.length < 30)
-      return { error: 'Dados insuficientes (mínimo 30 amostras por canal).' };
-
-    const ivA  = realIntervalMs(serA);
-    const ivB  = realIntervalMs(serB);
-    const ivMs = (ivA + ivB) / 2;
-
-    const usedMaxLagMs  = maxLagMs || RT_MAX_LAG_MS;
-    const maxLagSamples = Math.ceil(Math.abs(usedMaxLagMs) / ivMs);
-
-    const hybA = buildHybridSeries(chA.buffer);
-    const hybB = buildHybridSeries(chB.buffer);
-
-    const anchor        = anchorOffset(hybA, hybB, maxLagSamples);
-    const anchorSamples = anchor ? anchor.delta : null;
-
-    const hybBshifted  = anchorSamples !== null ? shiftArr(hybB, anchorSamples) : hybB;
-    const refineWindow = anchorSamples !== null ? REFINE_WINDOW : maxLagSamples;
-
-    const corr     = crossCorrelation(hybA, hybBshifted, refineWindow);
-    const peak     = selectRobustPeak(corr);
-    const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
-    const subFrame = parabolicPeak(corr, peakIdx);
-
-    const refineLag = peak.lag + subFrame;
-    const totalLag  = (anchorSamples !== null ? anchorSamples : 0) + refineLag;
-    const offsetMs  = totalLag * ivMs;
-
-    return {
-      offsetMs,
-      confidence:       peak.r,
-      anchorConfidence: anchor ? anchor.confidence : null,
-      lagUsedMs:        usedMaxLagMs,
-      intervalMs:       ivMs,
-      subFrame,
-      landmarkSamples:  anchorSamples,
-      corr, serA, serB,
-      labelA: serA.label, labelB: serB.label,
-    };
-  }
-
-  function analyzeBest(chA, chB) { return analyze(chA, chB, null); }
-
-  function analyzeBestAll() {
-    const chRef   = ML.CHANNELS[0];
-    const results = [];
-    results.push({
-      channel: chRef, label: chRef.label,
-      offsetMs: 0, confidence: 1, lagUsedMs: 0, isReference: true,
-    });
-    ML.CHANNELS.slice(1).forEach(ch => {
-      if (!ch.active) {
-        results.push({ channel: ch, label: ch.label, skipped: true });
-        return;
-      }
-      const r = analyzeBest(chRef, ch);
-      results.push({
-        channel:         ch,
-        label:           ch.label,
-        offsetMs:        r.error ? null : r.offsetMs,
-        confidence:      r.error ? null : r.confidence,
-        lagUsedMs:       r.error ? null : r.lagUsedMs,
-        intervalMs:      r.error ? null : r.intervalMs,
-        subFrame:        r.error ? null : r.subFrame,
-        landmarkSamples: r.error ? null : r.landmarkSamples,
-        error:           r.error || null,
-        corr:            r.corr  || null,
-        serA:            r.serA  || null,
-        serB:            r.serB  || null,
-      });
-    });
-    return results;
-  }
-
-  // ── Mediana aparada (trimmed median) ─────────────────────────────────────
+  // ── Mediana aparada ──────────────────────────────────────────────────
 
   function median(arr) {
     if (!arr.length) return null;
@@ -277,23 +185,19 @@
     const s = [...arr].sort((a, b) => a - b);
     if (s.length < 10) return median(s);
     const cut = Math.max(1, Math.floor(s.length * 0.10));
-    const trimmed = s.slice(cut, s.length - cut);
-    return median(trimmed);
+    return median(s.slice(cut, s.length - cut));
   }
 
-  // ── correlateRolling (modo RT) ────────────────────────────────────────────
-  // Busca adaptativa: âncoras de cena → refinamento cross-correlation.
-  // Sem presets: range fixo RT_MIN_LAG_MS … RT_MAX_LAG_MS.
-  // MIN_SAMPLES = 60 fixo — inicia em ~2s independente do lag.
-  // Sem âncoras: refineWindow = REFINE_WINDOW*4 (proporcional ao buffer, não ao range total).
+  // ── correlateRolling (modo RT) ──────────────────────────────────────
+  // Lê ch.rollingBuffer (janela deslizante mantida pelo recorder).
 
   function correlateRolling(chA, chB) {
     const confThresh   = (ML.config && ML.config.rtConfThreshold !== undefined)
       ? ML.config.rtConfThreshold : 0.50;
     const rtIntervalMs = (ML.config && ML.config.rtIntervalMs) || 500;
 
-    const bufA = chA.buffer || [];
-    const bufB = chB.buffer || [];
+    const bufA = chA.rollingBuffer || [];
+    const bufB = chB.rollingBuffer || [];
 
     if (bufA.length < MIN_SAMPLES || bufB.length < MIN_SAMPLES) {
       return { error: 'Aguardando amostras (' + Math.min(bufA.length, bufB.length) + '/' + MIN_SAMPLES + ')' };
@@ -362,28 +266,31 @@
       }
       const r = correlateRolling(chRef, ch);
       results.push({
-        channel:    ch,
-        label:      ch.label,
-        offsetMs:   r.error ? null : r.offsetMs,
-        rawOffsetMs:r.error ? null : r.rawOffsetMs,
-        confidence: r.error ? null : r.confidence,
-        intervalMs: r.error ? null : r.intervalMs,
-        samples:    r.error ? null : r.samples,
-        historyLen: r.error ? null : r.historyLen,
-        error:      r.error || null,
+        channel:     ch,
+        label:       ch.label,
+        offsetMs:    r.error ? null : r.offsetMs,
+        rawOffsetMs: r.error ? null : r.rawOffsetMs,
+        confidence:  r.error ? null : r.confidence,
+        intervalMs:  r.error ? null : r.intervalMs,
+        samples:     r.error ? null : r.samples,
+        historyLen:  r.error ? null : r.historyLen,
+        error:       r.error || null,
       });
     });
     return results;
   }
 
   ML.correlator = {
-    analyze, analyzeBest, analyzeBestAll,
-    correlateRolling, correlateRollingAll,
-    crossCorrelation, diffSeries, normalize,
+    correlateRolling,
+    correlateRollingAll,
+    crossCorrelation,
+    diffSeries,
+    normalize,
     realIntervalMsFromBuf,
-    median, trimmedMedian,
+    median,
+    trimmedMedian,
     buildHybridSeries,
   };
 
-  console.log('[MedLat] 30-correlator carregado. Busca adaptativa sem presets. MIN_SAMPLES=' + MIN_SAMPLES + '. Range RT: ' + RT_MIN_LAG_MS + 'ms … ' + RT_MAX_LAG_MS + 'ms.');
+  console.log('[MedLat] 30-correlator v1.1. RT only. rollingBuffer. MIN_SAMPLES=' + MIN_SAMPLES + '. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
 })();
