@@ -2,7 +2,7 @@
   const ML = window.MedLat;
 
   // ADAPT_FACTOR: fator sobre o desvio-padrão para calcular o limiar adaptativo de diff.
-  //   0.15 foi calibrado empiricamente: sensivel o suficiente para capturar cortes de cena
+  //   0.15 foi calibrado empiricamente: sensível o suficiente para capturar cortes de cena
   //   sem gerar falsos positivos em ruído de compressão.
   const ADAPT_FACTOR          = 0.15;
   const DIFF_THRESHOLD_MIN    = 1;
@@ -24,13 +24,14 @@
   const RT_MAX_LAG_MS = 30000;
   const MIN_SAMPLES   = 60;
 
-  // ── buildHybridSeries ─────────────────────────────────────────────────
-  // Extrai a série de luminância do buffer. Candidato futuro: combinar lum+cb+cr
-  // para melhorar a correlação em cenas de baixo contraste de luminância.
+  // ── buildHybridSeries ───────────────────────────────────────────────
+  // Combina lum + |cb| + |cr| para melhorar a detecção de eventos em cenas
+  // de baixo contraste de luminância (ex: fades, telas brancas, grafismos).
+  // Pesos: lum=80%, componentes de cor=10% cada (cb e cr já chegam como inteiros 0–255).
 
   function buildHybridSeries(buf) {
     if (!buf || !buf.length) return [];
-    return buf.map(p => p.lum);
+    return buf.map(p => p.lum * 0.8 + Math.abs(p.cb) * 0.1 + Math.abs(p.cr) * 0.1);
   }
 
   // ── Primitivas ──────────────────────────────────────────────────────────
@@ -162,33 +163,24 @@
       if (g) {
         g.count++;
         g.totalScore += entry.scoreA + entry.scoreB;
-        g.delta = Math.round((g.delta * (g.count - 1) + entry.delta) / g.count);
       } else {
         groups.push({ delta: entry.delta, count: 1, totalScore: entry.scoreA + entry.scoreB });
       }
     });
-    const best = groups
-      .filter(g => g.count >= 2)
-      .sort((a, b) => b.count - a.count || b.totalScore - a.totalScore)[0];
-    if (!best) return null;
+    const best = groups.sort((a, b) => b.count - a.count || b.totalScore - a.totalScore)[0];
+    if (!best || best.count < 2) return null;
     return { delta: best.delta, confidence: best.count / deltas.length };
   }
 
-  // ── shiftArr ─────────────────────────────────────────────────────────────
-
-  function shiftArr(arr, shift) {
-    if (!shift) return arr;
-    const n = arr.length, out = new Array(n).fill(0);
-    if (shift > 0) { for (let i = 0; i < n - shift; i++) out[i] = arr[i + shift]; }
-    else           { const s = -shift; for (let i = s; i < n; i++) out[i] = arr[i - s]; }
-    return out;
+  function shiftArr(arr, n) {
+    if (!n) return arr;
+    if (n > 0) return [...new Array(Math.min(n, arr.length)).fill(arr[0]), ...arr.slice(0, arr.length - n)];
+    return [...arr.slice(-n), ...new Array(Math.min(-n, arr.length)).fill(arr[arr.length - 1])];
   }
 
-  // ── Mediana aparada ───────────────────────────────────────────────────
+  // ── Estatísticas ─────────────────────────────────────────────────────
 
-  function median(arr) {
-    if (!arr.length) return null;
-    const s = [...arr].sort((a, b) => a - b);
+  function median(s) {
     const m = Math.floor(s.length / 2);
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
   }
@@ -201,7 +193,16 @@
     return median(s.slice(cut, s.length - cut));
   }
 
-  // ── correlateRolling (modo RT) ──────────────────────────────────────────
+  // Alpha EMA: mede o quanto o novo valor bruto diverge da mediana histórica.
+  // Próximo de 1.0 = estimativa estável; próximo de 0.0 = alta variância.
+  // Exibido no painel como indicador de qualidade da correlação.
+  function calcAlpha(rawOffsetMs, stableOffsetMs) {
+    if (stableOffsetMs === null || stableOffsetMs === 0) return null;
+    const relDiff = Math.abs(rawOffsetMs - stableOffsetMs) / (Math.abs(stableOffsetMs) + 1);
+    return Math.max(0, Math.min(1, 1 - relDiff));
+  }
+
+  // ── correlateRolling (modo RT) ─────────────────────────────────────────
   // Lê ch.rollingBuffer (ring buffer mantido pelo 20-recorder).
 
   function correlateRolling(chA, chB) {
@@ -248,9 +249,12 @@
     if (confidence >= confThresh) {
       if (rawOffsetMs >= RT_MIN_LAG_MS && rawOffsetMs <= RT_MAX_LAG_MS) {
         // _rtHistory é garantido pelo 00-core (inicializado como []) e resetado
-        // pelo recorder em start/stop. Não precisa de guard aqui.
+        // pelo recorder em start/stop.
         chB._rtHistory.push(rawOffsetMs);
-        if (chB._rtHistory.length > historyMax) chB._rtHistory.shift();
+        // splice em vez de shift: descarta várias entradas de uma vez se necessário
+        if (chB._rtHistory.length > historyMax) {
+          chB._rtHistory.splice(0, chB._rtHistory.length - historyMax);
+        }
       }
     }
 
@@ -258,10 +262,15 @@
       chB._rtHistory.length ? chB._rtHistory : [rawOffsetMs]
     );
 
+    // alpha: indicador de estabilidade (0=instável, 1=estável).
+    // Próximo de 1.0 quando rawOffset converge para stableOffset.
+    const alpha = calcAlpha(rawOffsetMs, stableOffsetMs);
+
     return {
       offsetMs:         stableOffsetMs,
       rawOffsetMs,
       confidence,
+      alpha,
       anchorConfidence: anchor ? anchor.confidence : null,
       intervalMs:       ivMs,
       samples:          Math.min(hybA.length, hybB.length),
@@ -286,6 +295,7 @@
         offsetMs:    r.error ? null : r.offsetMs,
         rawOffsetMs: r.error ? null : r.rawOffsetMs,
         confidence:  r.error ? null : r.confidence,
+        alpha:       r.error ? null : r.alpha,
         intervalMs:  r.error ? null : r.intervalMs,
         samples:     r.error ? null : r.samples,
         historyLen:  r.error ? null : r.historyLen,
@@ -305,7 +315,8 @@
     median,
     trimmedMedian,
     buildHybridSeries,
+    calcAlpha,
   };
 
-  console.log('[MedLat] 30-correlator v1.2. RT only. rollingBuffer (ring). MIN_SAMPLES=' + MIN_SAMPLES + '. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
+  console.log('[MedLat] 30-correlator v1.3. buildHybridSeries=lum+cb+cr. alpha exposto. MIN_SAMPLES=' + MIN_SAMPLES + '. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
 })();
