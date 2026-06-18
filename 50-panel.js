@@ -71,7 +71,14 @@
       sel.style.color       = colors[sel.value] || ui.T.selectColor;
       sel.style.borderColor = borders[sel.value] || ui.T.selectBorder;
     }
-    sel.addEventListener('change', () => { ch.lagPreset = sel.value; updateSelColor(); });
+    sel.addEventListener('change', () => {
+      ch.lagPreset = sel.value;
+      const preset = ML.LAG_PRESETS && ML.LAG_PRESETS[sel.value];
+      if (preset && ch._rtHistory) {
+        ch._rtHistory = ch._rtHistory.filter(v => v >= preset.min && v <= preset.max);
+      }
+      updateSelColor();
+    });
     applySelStyle();
     return sel;
   }
