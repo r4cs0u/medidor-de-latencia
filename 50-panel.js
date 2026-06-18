@@ -4,11 +4,7 @@
 
   (function injectStyles() { ui.injectStyles(); })();
 
-  function calcRTReal(ch, offsetMs) {
-    const refDed = (ML.CHANNELS[0].deduction || 0) * 1000;
-    const chDed  = (ch.deduction || 0) * 1000;
-    return offsetMs + chDed - refDed;
-  }
+  // calcRTReal removida daqui — centralizada em ML.calcRTReal (00-core.js)
 
   function mkDeductionInput(ch) {
     const inp = document.createElement('input');
@@ -45,10 +41,10 @@
     return inp;
   }
 
-  // ── init ────────────────────────────────────────────────────
+  // \u2500\u2500 init \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
   function init() {
-    ['ml-panel', 'ml-chart-overlay', 'ml-tips', 'ml-guide', 'ml-widget'].forEach(id => {
+    ['ml-panel', 'ml-tips', 'ml-guide', 'ml-widget'].forEach(id => {
       const el = document.getElementById(id); if (el) el.remove();
     });
 
@@ -130,7 +126,7 @@
     const scrollBody = document.createElement('div');
     scrollBody.style.cssText = 'flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column';
 
-    // ── Posicionamento ──
+    // \u2500\u2500 Posicionamento \u2500\u2500
     const secTG = ui.sec('Posicionamento');
     const pxInp = ui.mkNum(ML.state.probeW, 16, 500, 2, 44);
     pxInp.title = 'Tamanho das probes em pixels';
@@ -189,7 +185,7 @@
     secTG.appendChild(rowPos);
     scrollBody.appendChild(secTG);
 
-    // ── Cards de canal ──
+    // \u2500\u2500 Cards de canal \u2500\u2500
     const secDet = ui.sec('Telas');
     const probeGrid = document.createElement('div');
     probeGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px';
@@ -214,87 +210,42 @@
         ].join(';');
         ch._panelRow = card;
 
-        // linha 1: toggle · label · lum
+        // linha 1: toggle \u00b7 label \u00b7 lum
         const r1 = ui.row(3);
         r1.style.cssText += ';overflow:hidden;min-width:0';
-        const tog = document.createElement('button');
-        tog.title = 'Ativar ou desativar esta tela';
-        tog.style.cssText = `width:8px;height:8px;border-radius:50%;border:2px solid ${ch.color};background:${ch.active ? ch.color : 'transparent'};cursor:pointer;flex-shrink:0;padding:0`;
-        tog.onclick = () => {
-          ch.active = !ch.active;
-          tog.style.background = ch.active ? ch.color : 'transparent';
-          card.style.opacity = ch.active ? 1 : .4;
-          if (ch.probe) ch.probe.style.display = ch.active ? 'block' : 'none';
-          if (!ch.active) { ch.prevLum = null; } else { if (ch.resize) ch.resize(); }
-        };
-
-        const lblInp = document.createElement('input');
-        lblInp.value = isRef ? 'Refer\u00eancia' : ch.label;
-        lblInp.title = 'Clique para renomear a tela';
-        lblInp.style.cssText = `background:transparent;border:none;color:${ch.color};font:bold 8px monospace;flex:1;outline:none;cursor:text;min-width:0;overflow:hidden;text-overflow:ellipsis;width:0`;
-        lblInp.addEventListener('change', () => {
-          ch.label = lblInp.value.replace(/^\u2605\s*/, '');
-          if (ch.probeLabel) ch.probeLabel.textContent = ch.label;
+        const tog = ui.mkToggle(ch.active, v => {
+          ch.active = v;
+          if (ch.probe) { ch.probe.style.display = v ? 'block' : 'none'; }
+          card.style.opacity = v ? '1' : '.4';
         });
+        const lbl = document.createElement('div');
+        lbl.textContent = ch.label;
+        lbl.style.cssText = `color:${ch.color};font-weight:bold;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
+        const lumDisp = document.createElement('div');
+        lumDisp.style.cssText = `font:bold 8px monospace;color:${ch.color};opacity:.8;white-space:nowrap;flex-shrink:0`;
+        lumDisp.textContent = '--';
+        ch.lumEl = lumDisp;
+        r1.append(tog, lbl, lumDisp);
 
-        const lumEl = document.createElement('span');
-        lumEl.title = 'Lumin\u00e2ncia atual da probe (0\u2013255)';
-        lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;flex-shrink:0`;
-        lumEl.textContent = '--'; ch.lumEl = lumEl;
-
-        r1.append(tog, lblInp, lumEl);
-
-        // linha 2: px
-        const r2 = ui.row(2);
-        r2.style.cssText += ';overflow:hidden;min-width:0;align-items:center';
-        const szInp = document.createElement('input');
-        szInp.type = 'text';
-        szInp.value = ch.probeW != null ? ch.probeW : ML.state.probeW;
-        szInp.className = 'ml-sz-inp';
-        szInp.title = 'Tamanho desta probe em pixels';
-        function applySzStyle() {
-          const t = ui.T;
-          szInp.style.cssText = [
-            `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.textPrimary}`,
-            'font:bold 9px monospace;border-radius:3px;padding:1px 2px',
-            'text-align:center;outline:none;box-sizing:border-box',
-            'height:18px;width:28px;flex-shrink:0;min-width:0',
-          ].join(';');
-        }
-        applySzStyle();
-        szInp.addEventListener('focus', () => szInp.style.borderColor = ui.T.inputBorder + 'cc');
-        szInp.addEventListener('blur',  () => szInp.style.borderColor = ui.T.inputBorder);
-        ch._szInp = szInp;
-        function applyChanPx(v) {
-          const c = Math.max(16, Math.min(500, Math.round(v / 2) * 2));
-          ch.probeW = c; szInp.value = c;
+        // linha 2: posição XY + tamanho individual
+        const r2 = ui.row(3);
+        const posDisp = document.createElement('div');
+        posDisp.style.cssText = 'font:7px monospace;color:#667788;white-space:nowrap;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis';
+        posDisp.textContent = '---';
+        ch._posDisp = posDisp;
+        const szInp = ui.mkNum(ch.probeW || ML.state.probeW, 16, 500, 2, 38);
+        szInp.title = 'Tamanho desta probe individualmente';
+        szInp.addEventListener('change', () => {
+          ch.probeW = Math.max(16, Math.min(500, Math.round((parseInt(szInp.value) || ML.state.probeW) / 2) * 2));
+          szInp.value = ch.probeW;
           if (ch.active && ch.resize) ch.resize();
-        }
-        szInp.addEventListener('change', () => applyChanPx(parseInt(szInp.value) || ML.state.probeW));
-        szInp.addEventListener('keydown', e => {
-          if (e.key === 'Enter') { e.preventDefault(); applyChanPx(parseInt(szInp.value) || ML.state.probeW); szInp.blur(); }
         });
-        function mkSzBtn(symbol, title2) {
-          const b = document.createElement('button');
-          b.textContent = symbol; b.title = title2;
-          const t = ui.T;
-          b.style.cssText = [
-            `background:${t.btnBg};border:1px solid ${t.btnBorder};color:${t.textPrimary}`,
-            'font:bold 9px monospace;border-radius:3px;padding:0 3px',
-            'cursor:pointer;height:18px;flex-shrink:0;line-height:1',
-          ].join(';');
-          return b;
-        }
-        const btnSzM = mkSzBtn('\u2212', 'Diminuir probe');
-        const btnSzP = mkSzBtn('+', 'Aumentar probe');
-        btnSzM.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) - 2);
-        btnSzP.onclick = () => applyChanPx((parseInt(szInp.value) || ML.state.probeW) + 2);
-        r2.append(ui.sp('px', 'font-size:9px;flex-shrink:0'), btnSzM, szInp, btnSzP);
+        ch._szInp = szInp;
+        r2.append(posDisp, szInp);
 
-        // linha 3: ded
+        // linha 3: dedu\u00e7\u00e3o
         const r3ded = ui.row(2);
-        r3ded.style.cssText += ';overflow:hidden;min-width:0';
-        r3ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
+        r3ded.append(ui.sp('DED', 'flex-shrink:0;font-size:7px;opacity:.7'), mkDeductionInput(ch));
 
         if (!isRef) {
           // divisor + bloco RT
@@ -359,7 +310,7 @@
           card.append(r1, r2, r3ded);
         }
 
-        ch._rtHistory = [];
+        // _rtHistory \u00e9 inicializado em 00-core e resetado pelo recorder \u2014 n\u00e3o tocar aqui
         probeGrid.appendChild(card);
       });
     }
@@ -369,7 +320,7 @@
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
-    // ── Controles RT ──
+    // \u2500\u2500 Controles RT \u2500\u2500
     const secRT = ui.sec('\u26a1 Tempo Real');
     const btnRTStart = ui.mkBtn('\u25b6 INICIAR',  '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
     const btnRTStop  = ui.mkBtn('\u25a0 DESLIGAR', '#3a0d0d', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold;opacity:.45');
@@ -401,7 +352,7 @@
     scrollBody.appendChild(secRT);
     panel.appendChild(scrollBody);
 
-    // ── Resize / scale ──
+    // \u2500\u2500 Resize / scale \u2500\u2500
     const BASE_W = 340, BASE_H = 520;
     function applyScale(w, h) {
       const scale = Math.min(Math.max(0.7, Math.min(2.5, w / BASE_W)), h != null ? Math.max(1.0, Math.min(2.5, h / BASE_H)) : 2.5);
@@ -418,7 +369,7 @@
       }).observe(panel);
     }
 
-    // ── RT tick ──
+    // \u2500\u2500 RT tick \u2500\u2500
     let rtIntervalId = null;
 
     function updateRTCard(ch, r) {
@@ -457,7 +408,8 @@
           ch._rtVal.style.color = med.color;
           ch._rtVal.style.opacity = aboveThresh ? '1' : '0.75';
         }
-        const realMs = offsetMs !== null ? calcRTReal(ch, offsetMs) : null;
+        // usa ML.calcRTReal centralizado em 00-core
+        const realMs = offsetMs !== null ? ML.calcRTReal(ch, offsetMs) : null;
         const real   = fmtMs(realMs, !aboveThresh);
         if (ch._rtValReal) {
           ch._rtValReal.textContent = real.text;
@@ -490,12 +442,10 @@
     }
 
     function resetRTState() {
+      // Reseta apenas os elementos de UI \u2014 os buffers s\u00e3o responsabilidade do recorder
       ML.CHANNELS.forEach(ch => {
-        ch.rollingBuffer  = [];
-        ch._rtHistory     = [];
         ch._rtLastVal     = undefined;
         ch._rtLastConf    = undefined;
-        ch.prevLum        = null;
         if (ch._rtVal)       { ch._rtVal.textContent = '--';     ch._rtVal.style.color = '#aaaacc'; ch._rtVal.style.opacity = '1'; }
         if (ch._rtValReal)   { ch._rtValReal.textContent = '--'; ch._rtValReal.style.color = '#aaaacc'; ch._rtValReal.style.opacity = '1'; }
         if (ch._rtConfBar)   ch._rtConfBar.style.width = '0%';
@@ -531,7 +481,7 @@
     requestAnimationFrame(() => applyScale(panel.offsetWidth, panel.offsetHeight));
     ui.minimizePanel(panel);
 
-    // ── Lum display loop ──
+    // \u2500\u2500 Lum display loop \u2500\u2500
     setInterval(() => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch.lumEl) return;
@@ -556,5 +506,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado v1.1. Modo RT único. Sem LOG, sem toggle.');
+  console.log('[MedLat] 50-panel carregado v1.2. calcRTReal via ML. Sem 40-chart.');
 })();
