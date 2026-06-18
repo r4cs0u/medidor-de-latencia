@@ -9,11 +9,11 @@
   const ANCHOR_CONSENSUS_TOL  = 2;
   const REFINE_WINDOW         = 15;
 
+  const RT_MIN_LAG_MS = -5000;
+  const RT_MAX_LAG_MS = 30000;
+  const MIN_SAMPLES   = 60;
+
   // ── buildHybridSeries ──────────────────────────────────────────────────────
-  // Retorna luma puro como série base.
-  // O chroma NÃO entra aqui — ele atua como validador de âncoras em anchorOffset,
-  // via extractAnchors separado (luma) + mergeEvents (31-hybrid-analyzer).
-  // Manter chroma fora evita contaminação por ruído de compressão H.264/H.265.
 
   function buildHybridSeries(buf) {
     if (!buf || !buf.length) return [];
@@ -52,7 +52,7 @@
     return arr.slice(arr.length - windowSize);
   }
 
-  function crossCorrelation(a, b, maxLagSamples, onlyPositive, minLagSamples) {
+  function crossCorrelation(a, b, maxLagSamples) {
     const da = diffSeries(a);
     const db = diffSeries(b);
     const wa = windowedSlice(da, maxLagSamples);
@@ -60,10 +60,9 @@
     const na = normalize(wa);
     const nb = normalize(wb);
     const n  = Math.min(na.length, nb.length);
-    maxLagSamples = Math.min(maxLagSamples, n - 1);
-    const lagMin = onlyPositive ? Math.ceil(minLagSamples || 0) : -maxLagSamples;
+    const cap = Math.min(maxLagSamples, n - 1);
     const result = [];
-    for (let lag = lagMin; lag <= maxLagSamples; lag++) {
+    for (let lag = -cap; lag <= cap; lag++) {
       let sum = 0, count = 0;
       for (let i = 0; i < n; i++) {
         const j = i + lag;
@@ -114,23 +113,6 @@
     return (iv >= 10 && iv <= 200) ? iv : ML.INTERVAL_MS;
   }
 
-  // effectiveLag — aceita objeto ch completo ou { label } (retrocompatível)
-  // Retorna { minLagMs, maxLagMs, onlyPositive }
-  function effectiveLag(chAobj, chBobj) {
-    const chB = (chBobj && chBobj.lagPreset !== undefined)
-      ? chBobj
-      : ML.CHANNELS.find(c => c.label === (chBobj && chBobj.label));
-    const key    = (chB && chB.lagPreset) || 'auto';
-    const preset = ML.LAG_PRESETS ? ML.LAG_PRESETS[key] : null;
-    if (preset) return {
-      minLagMs:     preset.min,
-      maxLagMs:     preset.max,
-      onlyPositive: !!preset.onlyPositive,
-    };
-    // fallback: auto (-5s…+30s)
-    return { minLagMs: -5000, maxLagMs: 30000, onlyPositive: false };
-  }
-
   // ── Âncoras de cena ───────────────────────────────────────────────────────
 
   function extractAnchors(lum) {
@@ -157,7 +139,7 @@
     return anchors;
   }
 
-  function anchorOffset(lumA, lumB, maxLagSamples, minLagSamples, onlyPositive) {
+  function anchorOffset(lumA, lumB, maxLagSamples) {
     const anchorsA = extractAnchors(lumA);
     const anchorsB = extractAnchors(lumB);
     if (anchorsA.length < 2 || anchorsB.length < 2) return null;
@@ -167,8 +149,6 @@
       anchorsB.forEach(b => {
         const delta = b.i - a.i;
         if (Math.abs(delta) > maxLagSamples) return;
-        if (onlyPositive && delta < minLagSamples) return;
-        if (!onlyPositive && minLagSamples && Math.abs(delta) < minLagSamples) return;
         const dist = Math.abs(delta);
         if (dist < bestDist) { bestDist = dist; best = { delta, scoreA: a.d, scoreB: b.d }; }
       });
@@ -186,8 +166,9 @@
         groups.push({ delta: entry.delta, count: 1, totalScore: entry.scoreA + entry.scoreB });
       }
     });
+    // count >= 2 (era 3): mais rápido com poucos dados no início
     const best = groups
-      .filter(g => g.count >= 3)
+      .filter(g => g.count >= 2)
       .sort((a, b) => b.count - a.count || b.totalScore - a.totalScore)[0];
     if (!best) return null;
     return { delta: best.delta, confidence: best.count / deltas.length };
@@ -215,23 +196,19 @@
     const ivB  = realIntervalMs(serB);
     const ivMs = (ivA + ivB) / 2;
 
-    const lagRange      = effectiveLag(chA, chB);
-    const usedMaxLagMs  = maxLagMs || lagRange.maxLagMs;
-    const usedMinLagMs  = lagRange.minLagMs;
-    const onlyPositive  = lagRange.onlyPositive;
+    const usedMaxLagMs  = maxLagMs || RT_MAX_LAG_MS;
     const maxLagSamples = Math.ceil(Math.abs(usedMaxLagMs) / ivMs);
-    const minLagSamples = Math.ceil(Math.abs(usedMinLagMs) / ivMs);
 
     const hybA = buildHybridSeries(chA.buffer);
     const hybB = buildHybridSeries(chB.buffer);
 
-    const anchor        = anchorOffset(hybA, hybB, maxLagSamples, minLagSamples, onlyPositive);
+    const anchor        = anchorOffset(hybA, hybB, maxLagSamples);
     const anchorSamples = anchor ? anchor.delta : null;
 
     const hybBshifted  = anchorSamples !== null ? shiftArr(hybB, anchorSamples) : hybB;
     const refineWindow = anchorSamples !== null ? REFINE_WINDOW : maxLagSamples;
 
-    const corr     = crossCorrelation(hybA, hybBshifted, refineWindow, onlyPositive, minLagSamples);
+    const corr     = crossCorrelation(hybA, hybBshifted, refineWindow);
     const peak     = selectRobustPeak(corr);
     const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
     const subFrame = parabolicPeak(corr, peakIdx);
@@ -240,19 +217,14 @@
     const totalLag  = (anchorSamples !== null ? anchorSamples : 0) + refineLag;
     const offsetMs  = totalLag * ivMs;
 
-    const chBobj = ML.CHANNELS.find(c => c.label === serB.label);
-
     return {
       offsetMs,
       confidence:       peak.r,
       anchorConfidence: anchor ? anchor.confidence : null,
       lagUsedMs:        usedMaxLagMs,
-      lagMinMs:         usedMinLagMs,
-      onlyPositive,
       intervalMs:       ivMs,
       subFrame,
       landmarkSamples:  anchorSamples,
-      lagPreset:        chBobj ? (chBobj.lagPreset || 'auto') : 'auto',
       corr, serA, serB,
       labelA: serA.label, labelB: serB.label,
     };
@@ -274,21 +246,18 @@
       }
       const r = analyzeBest(chRef, ch);
       results.push({
-        channel:          ch,
-        label:            ch.label,
-        offsetMs:         r.error ? null : r.offsetMs,
-        confidence:       r.error ? null : r.confidence,
-        lagUsedMs:        r.error ? null : r.lagUsedMs,
-        lagMinMs:         r.error ? null : r.lagMinMs,
-        onlyPositive:     r.error ? null : r.onlyPositive,
-        intervalMs:       r.error ? null : r.intervalMs,
-        subFrame:         r.error ? null : r.subFrame,
-        landmarkSamples:  r.error ? null : r.landmarkSamples,
-        lagPreset:        r.error ? null : r.lagPreset,
-        error:            r.error || null,
-        corr:             r.corr  || null,
-        serA:             r.serA  || null,
-        serB:             r.serB  || null,
+        channel:         ch,
+        label:           ch.label,
+        offsetMs:        r.error ? null : r.offsetMs,
+        confidence:      r.error ? null : r.confidence,
+        lagUsedMs:       r.error ? null : r.lagUsedMs,
+        intervalMs:      r.error ? null : r.intervalMs,
+        subFrame:        r.error ? null : r.subFrame,
+        landmarkSamples: r.error ? null : r.landmarkSamples,
+        error:           r.error || null,
+        corr:            r.corr  || null,
+        serA:            r.serA  || null,
+        serB:            r.serB  || null,
       });
     });
     return results;
@@ -313,14 +282,10 @@
   }
 
   // ── correlateRolling (modo RT) ────────────────────────────────────────────
-  // Histórico RT com:
-  //   1. MIN_SAMPLES proporcional ao lag do preset: max(60, ceil(maxLagSamples * 1.5))
-  //      → garante buffer suficiente antes de iniciar correlação
-  //   2. Filtro de range: rawOffsetMs só entra se estiver dentro de [minLagMs, maxLagMs]
-  //   3. Janela deslizante proporcional: max(20, ceil(|maxLag|/rtIntervalMs)*2) amostras
-  //      → valores absurdos antigos caem naturalmente, velocidade proporcional ao preset
-  //   4. trimmedMedian calculada sobre histórico filtrado pelo range atual
-  //      → trocar preset converge imediatamente sem apagar o array
+  // Busca adaptativa: âncoras de cena → refinamento cross-correlation.
+  // Sem presets: range fixo RT_MIN_LAG_MS … RT_MAX_LAG_MS.
+  // MIN_SAMPLES = 60 fixo — inicia em ~2s independente do lag.
+  // Sem âncoras: refineWindow = REFINE_WINDOW*4 (proporcional ao buffer, não ao range total).
 
   function correlateRolling(chA, chB) {
     const confThresh   = (ML.config && ML.config.rtConfThreshold !== undefined)
@@ -330,33 +295,27 @@
     const bufA = chA.buffer || [];
     const bufB = chB.buffer || [];
 
-    // MIN_SAMPLES proporcional ao lag esperado pelo preset
-    const ivMsEarly     = (realIntervalMsFromBuf(bufA) + realIntervalMsFromBuf(bufB)) / 2;
-    const lagRangeEarly = effectiveLag(chA, chB);
-    const lagSamples    = Math.ceil(Math.abs(lagRangeEarly.maxLagMs) / ivMsEarly);
-    const MIN_SAMPLES   = Math.max(60, Math.ceil(lagSamples * 1.5));
-
     if (bufA.length < MIN_SAMPLES || bufB.length < MIN_SAMPLES) {
       return { error: 'Aguardando amostras (' + Math.min(bufA.length, bufB.length) + '/' + MIN_SAMPLES + ')' };
     }
 
     const hybA = buildHybridSeries(bufA);
     const hybB = buildHybridSeries(bufB);
-    const ivMs = ivMsEarly;
+    const ivMs = (realIntervalMsFromBuf(bufA) + realIntervalMsFromBuf(bufB)) / 2;
 
-    const lagRange      = lagRangeEarly;
-    const onlyPositive  = lagRange.onlyPositive;
-    const minLagSamples = Math.ceil(Math.abs(lagRange.minLagMs) / ivMs);
-    let   maxLagSamples = Math.ceil(Math.abs(lagRange.maxLagMs) / ivMs);
-    maxLagSamples = Math.min(maxLagSamples, Math.floor(Math.min(hybA.length, hybB.length) * 0.8));
+    const maxLagByRange = Math.ceil(Math.abs(RT_MAX_LAG_MS) / ivMs);
+    const maxLagByCap   = Math.floor(Math.min(hybA.length, hybB.length) * 0.8);
+    const maxLagSamples = Math.min(maxLagByRange, maxLagByCap);
 
-    const anchor        = anchorOffset(hybA, hybB, maxLagSamples, minLagSamples, onlyPositive);
+    const anchor        = anchorOffset(hybA, hybB, maxLagSamples);
     const anchorSamples = anchor ? anchor.delta : null;
 
     const hybBshifted  = anchorSamples !== null ? shiftArr(hybB, anchorSamples) : hybB;
-    const refineWindow = anchorSamples !== null ? REFINE_WINDOW : maxLagSamples;
+    const refineWindow = anchorSamples !== null
+      ? REFINE_WINDOW
+      : Math.min(REFINE_WINDOW * 4, maxLagByCap);
 
-    const corr     = crossCorrelation(hybA, hybBshifted, refineWindow, onlyPositive, minLagSamples);
+    const corr     = crossCorrelation(hybA, hybBshifted, refineWindow);
     const peak     = selectRobustPeak(corr);
     const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
     const subFrame = parabolicPeak(corr, peakIdx);
@@ -366,25 +325,19 @@
     const rawOffsetMs = totalLag * ivMs;
     const confidence  = peak.r;
 
-    // Tamanho máximo do histórico proporcional ao preset
-    const historyMax = Math.max(20, Math.ceil(Math.abs(lagRange.maxLagMs) / rtIntervalMs) * 2);
+    const historyMax = Math.max(20, Math.ceil(Math.abs(RT_MAX_LAG_MS) / rtIntervalMs) * 2);
 
     if (confidence >= confThresh) {
-      // Só acumula se estiver dentro do range do preset
-      if (rawOffsetMs >= lagRange.minLagMs && rawOffsetMs <= lagRange.maxLagMs) {
+      if (rawOffsetMs >= RT_MIN_LAG_MS && rawOffsetMs <= RT_MAX_LAG_MS) {
         if (!chB._rtHistory) chB._rtHistory = [];
         chB._rtHistory.push(rawOffsetMs);
-        // Janela deslizante: remove amostra mais antiga se ultrapassar o máximo
         if (chB._rtHistory.length > historyMax) chB._rtHistory.shift();
       }
     }
 
-    // trimmedMedian sobre valores do histórico que ainda estão no range atual
-    // (garante convergência imediata ao trocar preset sem apagar o array)
-    const filtered = (chB._rtHistory || []).filter(
-      v => v >= lagRange.minLagMs && v <= lagRange.maxLagMs
+    const stableOffsetMs = trimmedMedian(
+      chB._rtHistory && chB._rtHistory.length ? chB._rtHistory : [rawOffsetMs]
     );
-    const stableOffsetMs = trimmedMedian(filtered.length ? filtered : (chB._rtHistory || []));
 
     return {
       offsetMs:         stableOffsetMs,
@@ -394,7 +347,6 @@
       intervalMs:       ivMs,
       samples:          Math.min(hybA.length, hybB.length),
       historyLen:       (chB._rtHistory || []).length,
-      historyFiltered:  filtered.length,
       labelA:           chA.label,
       labelB:           chB.label,
     };
@@ -410,16 +362,15 @@
       }
       const r = correlateRolling(chRef, ch);
       results.push({
-        channel:          ch,
-        label:            ch.label,
-        offsetMs:         r.error ? null : r.offsetMs,
-        rawOffsetMs:      r.error ? null : r.rawOffsetMs,
-        confidence:       r.error ? null : r.confidence,
-        intervalMs:       r.error ? null : r.intervalMs,
-        samples:          r.error ? null : r.samples,
-        historyLen:       r.error ? null : r.historyLen,
-        historyFiltered:  r.error ? null : r.historyFiltered,
-        error:            r.error || null,
+        channel:    ch,
+        label:      ch.label,
+        offsetMs:   r.error ? null : r.offsetMs,
+        rawOffsetMs:r.error ? null : r.rawOffsetMs,
+        confidence: r.error ? null : r.confidence,
+        intervalMs: r.error ? null : r.intervalMs,
+        samples:    r.error ? null : r.samples,
+        historyLen: r.error ? null : r.historyLen,
+        error:      r.error || null,
       });
     });
     return results;
@@ -434,5 +385,5 @@
     buildHybridSeries,
   };
 
-  console.log('[MedLat] 30-correlator carregado. MIN_SAMPLES proporcional ao preset. RT: filtro de range + janela deslizante proporcional + trimmedMedian filtrada.');
+  console.log('[MedLat] 30-correlator carregado. Busca adaptativa sem presets. MIN_SAMPLES=' + MIN_SAMPLES + '. Range RT: ' + RT_MIN_LAG_MS + 'ms … ' + RT_MAX_LAG_MS + 'ms.');
 })();
