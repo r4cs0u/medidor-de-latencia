@@ -4,7 +4,7 @@
 
   (function injectStyles() { ui.injectStyles(); })();
 
-  // ── Resultados (modo LOG) ──────────────────────────────────
+  // ── Resultados (modo LOG) ──────────────────────────────
 
   function refreshRealColumn() {
     const refDed = ML.CHANNELS[0].deduction || 0;
@@ -27,61 +27,6 @@
     const refDed = (ML.CHANNELS[0].deduction || 0) * 1000;
     const chDed  = (ch.deduction || 0) * 1000;
     return offsetMs + chDed - refDed;
-  }
-
-  function mkLagSelect(ch) {
-    const sel = document.createElement('select');
-    sel.title = 'Faixa de atraso esperada em relação à referência';
-    function applySelStyle() {
-      const tt = ui.T;
-      sel.style.cssText = [
-        `background:${tt.selectBg};border:1px solid ${tt.selectBorder};color:${tt.selectColor}`,
-        'font:bold 8px monospace;border-radius:3px;padding:1px 2px',
-        'cursor:pointer;outline:none;width:100%;height:18px;box-sizing:border-box',
-      ].join(';');
-      updateSelColor();
-    }
-    [
-      { value: 'auto',  label: 'Auto' },
-      { value: 'neg5',  label: '\u25c0 5s' },
-      { value: 'pos5',  label: '\u25b6 5s' },
-      { value: 'pos10', label: '\u25b6 10s' },
-      { value: 'pos30', label: '\u25b6 30s' },
-    ].forEach(o => {
-      const opt = document.createElement('option');
-      opt.value = o.value; opt.textContent = o.label;
-      if ((ch.lagPreset || 'auto') === o.value) opt.selected = true;
-      sel.appendChild(opt);
-    });
-    function updateSelColor() {
-      const colors = {
-        auto:  ui.T.selectColor,
-        neg5:  '#ffd166',
-        pos5:  '#44ff88',
-        pos10: '#00d4ff',
-        pos30: '#ff9d00',
-      };
-      const borders = {
-        auto:  ui.T.selectBorder,
-        neg5:  '#ffd16688',
-        pos5:  '#44ff8888',
-        pos10: '#00d4ff88',
-        pos30: '#ff9d0088',
-      };
-      sel.style.color       = colors[sel.value]  || ui.T.selectColor;
-      sel.style.borderColor = borders[sel.value] || ui.T.selectBorder;
-    }
-    sel.addEventListener('change', () => {
-      ch.lagPreset = sel.value;
-      // filtra histórico RT: remove valores fora do novo range para convergência imediata
-      const preset = ML.LAG_PRESETS && ML.LAG_PRESETS[sel.value];
-      if (preset && ch._rtHistory) {
-        ch._rtHistory = ch._rtHistory.filter(v => v >= preset.min && v <= preset.max);
-      }
-      updateSelColor();
-    });
-    applySelStyle();
-    return sel;
   }
 
   function mkDeductionInput(ch) {
@@ -329,7 +274,7 @@
         });
 
         const lumEl = document.createElement('span');
-        lumEl.title = 'Luminância atual da probe (0\u2013255)';
+        lumEl.title = 'Lumin\u00e2ncia atual da probe (0\u2013255)';
         lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;flex-shrink:0`;
         lumEl.textContent = '--'; ch.lumEl = lumEl;
 
@@ -390,17 +335,10 @@
 
         r2.append(ui.sp('px', 'font-size:9px;flex-shrink:0'), btnSzM, szInp, btnSzP);
 
-        // ── linha 3: lag (não-ref) ──
-        const r3lag = ui.row(2);
-        r3lag.style.cssText += ';overflow:hidden;min-width:0';
-        if (!isRef) {
-          r3lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
-        }
-
-        // ── linha 4: ded ──
-        const r4ded = ui.row(2);
-        r4ded.style.cssText += ';overflow:hidden;min-width:0';
-        r4ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
+        // ── linha 3: ded ──
+        const r3ded = ui.row(2);
+        r3ded.style.cssText += ';overflow:hidden;min-width:0';
+        r3ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
 
         // ── divisor RT ──
         const rtDivider = document.createElement('div');
@@ -473,11 +411,11 @@
 
           rtMeta.append(histBadge, alphaBadge);
           rtFooter.append(confWrap, rtMeta);
-          card.append(r1, r2, r3lag, r4ded, rtDivider, rtRow, rtFooter);
+          card.append(r1, r2, r3ded, rtDivider, rtRow, rtFooter);
         } else {
           ch._rtVal = null; ch._rtValReal = null; ch._rtConfBar = null;
           ch._rtHistBadge = null; ch._rtAlphaBadge = null; ch._rtFooter = null;
-          card.append(r1, r2, r4ded);
+          card.append(r1, r2, r3ded);
         }
 
         ch._rtHistory = [];
@@ -501,13 +439,13 @@
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
-    // ── Análise (modo LOG) ─────────────────────────────────────
+    // ── Análise (modo LOG) ─────────────────────────────────
     const secAn = ui.sec('Análise');
     secAn.style.display = 'none';
     const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
     const btnAnalyze = ui.mkBtn('\u26a1 ANALISAR', '#4a148c', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;color:#ce93d8;opacity:.45');
-    btnRec.title     = 'Inicia a captura de luminância';
-    btnAnalyze.title = 'Calcula a latência com base nos dados gravados';
+    btnRec.title     = 'Inicia a captura de lumin\u00e2ncia';
+    btnAnalyze.title = 'Calcula a lat\u00eancia com base nos dados gravados';
 
     const progWrap = document.createElement('div');
     progWrap.style.cssText = 'display:none;flex-direction:column;gap:1px;padding:2px 0';
@@ -583,7 +521,7 @@
         const errs = results.filter(r => r.error);
         statusEl.textContent = errs.length
           ? errs.map(r => r.label + ': ' + r.error).join(' | ')
-          : 'Análise concluída';
+          : 'An\u00e1lise conclu\u00edda';
         statusEl.style.color = errs.length ? '#ff8844' : '#44ff88';
       }, 30);
     };
@@ -633,7 +571,7 @@
 
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
-    btnCopyInline.title = 'Copiar tabela de resultados para a área de transferência';
+    btnCopyInline.title = 'Copiar tabela de resultados para a \u00e1rea de transfer\u00eancia';
     btnCopyInline.style.cssText = `background:transparent;border:1px solid ${ui.T.accentColor}44;color:${ui.T.accentColor};border-radius:3px;padding:0 4px;cursor:pointer;font-size:10px;line-height:14px`;
     btnCopyInline.addEventListener('mouseenter', () => btnCopyInline.style.background = ui.T.accentColor + '18');
     btnCopyInline.addEventListener('mouseleave', () => btnCopyInline.style.background = 'transparent');
@@ -870,7 +808,7 @@
         } else {
           ch.lumEl.textContent = Math.round(y);
           ch.lumEl.style.color = ch.color;
-          ch.lumEl.title = s ? `Y:${Math.round(s.lum)}  R:${Math.round(s.r)}  G:${Math.round(s.g)}  B:${Math.round(s.b)}` : 'Luminância atual da probe (0\u2013255)';
+          ch.lumEl.title = s ? `Y:${Math.round(s.lum)}  R:${Math.round(s.r)}  G:${Math.round(s.g)}  B:${Math.round(s.b)}` : 'Lumin\u00e2ncia atual da probe (0\u2013255)';
         }
       });
     }, 200);
@@ -909,5 +847,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. Presets: auto/neg5/pos5/pos10/pos30. Filtro de histórico ao trocar preset. RT com MEDIDO/REAL empilhados.');
+  console.log('[MedLat] 50-panel carregado. Sem presets de lag. Busca adaptativa automática. RT com MEDIDO/REAL empilhados.');
 })();
