@@ -34,8 +34,10 @@
   };
 
   // Capacidade: janela em ms / intervalo de amostragem, com folga de 20%.
+  // O ring buffer descarta automaticamente amostras antigas quando cheio,
+  // por isso não é necessário truncar manualmente por timestamp.
   function makeRingForWindow() {
-    const windowMs  = (ML.config && ML.config.rtWindowMs) || 30000;
+    const windowMs   = (ML.config && ML.config.rtWindowMs) || 30000;
     const intervalMs = ML.INTERVAL_MS || 33;
     return new RingBuffer(Math.ceil(windowMs / intervalMs * 1.2));
   }
@@ -50,9 +52,7 @@
     if (now - rollingLastTs < ML.INTERVAL_MS) return;
     rollingLastTs = now;
 
-    const ts       = Date.now();
-    const windowMs = (ML.config && ML.config.rtWindowMs) || 30000;
-    const cutoff   = ts - windowMs;
+    const ts = Date.now();
 
     ML.CHANNELS.filter(ch => ch.active).forEach(ch => {
       const s     = ML.getSample(ch);
@@ -72,18 +72,6 @@
         if (ch.lumEl) ch.lumEl.textContent = Math.round(s.lum);
       } else {
         if (ch.lumEl) ch.lumEl.textContent = s === -1 ? '\uD83D\uDD12' : '--';
-      }
-
-      // Descarta amostras fora da janela de tempo.
-      // Com ring buffer de tamanho fixo isso é raramente necessário,
-      // mas garante consistência se rtWindowMs for reduzido em tempo de execução.
-      const arr = ch.rollingBuffer.toArray();
-      if (arr.length && arr[0].ts < cutoff) {
-        const firstValid = arr.findIndex(p => p.ts >= cutoff);
-        if (firstValid > 0) {
-          ch.rollingBuffer.clear();
-          arr.slice(firstValid).forEach(p => ch.rollingBuffer.push(p));
-        }
       }
     });
   }
@@ -130,5 +118,5 @@
     },
   };
 
-  console.log('[MedLat] 20-recorder v1.2 carregado. Ring buffer circular. Janela: ' + ((ML.config && ML.config.rtWindowMs) || 30000) + 'ms.');
+  console.log('[MedLat] 20-recorder v1.3 carregado. Ring buffer circular sem truncagem manual. Janela: ' + ((ML.config && ML.config.rtWindowMs) || 30000) + 'ms.');
 })();
