@@ -41,12 +41,17 @@
     return inp;
   }
 
-  // \u2500\u2500 init \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // ── init ────────────────────────────────────────────────────────
 
   function init() {
     ['ml-panel', 'ml-tips', 'ml-guide', 'ml-widget'].forEach(id => {
       const el = document.getElementById(id); if (el) el.remove();
     });
+
+    // lumIntervalId é guardado aqui e cancelado no btnX.onclick.
+    // Sem isso, cada F5 acumula uma nova instância do setInterval rodando
+    // em paralelo e gravando no DOM mesmo depois do painel ser fechado.
+    let lumIntervalId = null;
 
     const panel = document.createElement('div');
     panel.id = 'ml-panel';
@@ -95,7 +100,8 @@
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnX.onclick = () => {
       ML.recorder.stopRolling();
-      if (rtIntervalId) clearInterval(rtIntervalId);
+      if (rtIntervalId)  clearInterval(rtIntervalId);
+      if (lumIntervalId) clearInterval(lumIntervalId); // cancela o loop de lum
       document.querySelectorAll('[id^="ml-"], .ml-search-overlay').forEach(e => e.remove());
     };
     btnMin.onclick = () => ui.minimizePanel(panel);
@@ -126,7 +132,7 @@
     const scrollBody = document.createElement('div');
     scrollBody.style.cssText = 'flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column';
 
-    // \u2500\u2500 Posicionamento \u2500\u2500
+    // ── Posicionamento ──
     const secTG = ui.sec('Posicionamento');
     const pxInp = ui.mkNum(ML.state.probeW, 16, 500, 2, 44);
     pxInp.title = 'Tamanho das probes em pixels';
@@ -147,7 +153,7 @@
     pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
 
     const btnSnap = ui.mkBtn('', '#0d4f3c', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box');
-    btnSnap.title = 'Ativa grade magn\u00e9tica para alinhar probes';
+    btnSnap.title = 'Ativa grade magnética para alinhar probes';
     function updateSnapBtn() {
       btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF';
       btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : ui.T.btnBg;
@@ -185,7 +191,7 @@
     secTG.appendChild(rowPos);
     scrollBody.appendChild(secTG);
 
-    // \u2500\u2500 Cards de canal \u2500\u2500
+    // ── Cards de canal ──
     const secDet = ui.sec('Telas');
     const probeGrid = document.createElement('div');
     probeGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px';
@@ -210,7 +216,7 @@
         ].join(';');
         ch._panelRow = card;
 
-        // linha 1: toggle \u00b7 label \u00b7 lum
+        // linha 1: toggle · label · lum
         const r1 = ui.row(3);
         r1.style.cssText += ';overflow:hidden;min-width:0';
         const tog = ui.mkToggle(ch.active, v => {
@@ -243,7 +249,7 @@
         ch._szInp = szInp;
         r2.append(posDisp, szInp);
 
-        // linha 3: dedu\u00e7\u00e3o
+        // linha 3: dedução
         const r3ded = ui.row(2);
         r3ded.append(ui.sp('DED', 'flex-shrink:0;font-size:7px;opacity:.7'), mkDeductionInput(ch));
 
@@ -310,7 +316,7 @@
           card.append(r1, r2, r3ded);
         }
 
-        // _rtHistory \u00e9 inicializado em 00-core e resetado pelo recorder \u2014 n\u00e3o tocar aqui
+        // _rtHistory é inicializado em 00-core e resetado pelo recorder — não tocar aqui
         probeGrid.appendChild(card);
       });
     }
@@ -320,7 +326,7 @@
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
-    // \u2500\u2500 Controles RT \u2500\u2500
+    // ── Controles RT ──
     const secRT = ui.sec('\u26a1 Tempo Real');
     const btnRTStart = ui.mkBtn('\u25b6 INICIAR',  '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
     const btnRTStop  = ui.mkBtn('\u25a0 DESLIGAR', '#3a0d0d', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold;opacity:.45');
@@ -352,7 +358,7 @@
     scrollBody.appendChild(secRT);
     panel.appendChild(scrollBody);
 
-    // \u2500\u2500 Resize / scale \u2500\u2500
+    // ── Resize / scale ──
     const BASE_W = 340, BASE_H = 520;
     function applyScale(w, h) {
       const scale = Math.min(Math.max(0.7, Math.min(2.5, w / BASE_W)), h != null ? Math.max(1.0, Math.min(2.5, h / BASE_H)) : 2.5);
@@ -369,7 +375,7 @@
       }).observe(panel);
     }
 
-    // \u2500\u2500 RT tick \u2500\u2500
+    // ── RT tick ──
     let rtIntervalId = null;
 
     function updateRTCard(ch, r) {
@@ -427,7 +433,7 @@
         ch._rtConfBar.style.background = conf >= ML.config.rtConfThreshold ? '#44ff88' : conf > 0.4 ? '#ffd700' : '#ff4444';
       }
       if (ch._rtAlphaBadge) {
-        const alpha = r.alpha !== undefined ? r.alpha : null;
+        const alpha = r.alpha !== null && r.alpha !== undefined ? r.alpha : null;
         ch._rtAlphaBadge.textContent = alpha !== null ? '\u03b1=' + alpha.toFixed(2) : '';
         ch._rtAlphaBadge.style.color = alpha !== null && alpha < 0.7 ? '#ffd700' : '#aaaacc';
       }
@@ -442,7 +448,7 @@
     }
 
     function resetRTState() {
-      // Reseta apenas os elementos de UI \u2014 os buffers s\u00e3o responsabilidade do recorder
+      // Reseta apenas os elementos de UI — os buffers são responsabilidade do recorder
       ML.CHANNELS.forEach(ch => {
         ch._rtLastVal     = undefined;
         ch._rtLastConf    = undefined;
@@ -481,8 +487,9 @@
     requestAnimationFrame(() => applyScale(panel.offsetWidth, panel.offsetHeight));
     ui.minimizePanel(panel);
 
-    // \u2500\u2500 Lum display loop \u2500\u2500
-    setInterval(() => {
+    // ── Lum display loop ──
+    // lumIntervalId é guardado para ser cancelado no btnX.onclick.
+    lumIntervalId = setInterval(() => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch.lumEl) return;
         const s = ML.getSample ? ML.getSample(ch) : null;
@@ -506,5 +513,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado v1.2. calcRTReal via ML. Sem 40-chart.');
+  console.log('[MedLat] 50-panel carregado v1.3. lumIntervalId gerenciado. alpha badge funcional.');
 })();
