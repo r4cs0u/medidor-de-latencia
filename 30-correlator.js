@@ -314,30 +314,37 @@
 
   // ── correlateRolling (modo RT) ────────────────────────────────────────────
   // Histórico RT com:
-  //   1. Filtro de range: rawOffsetMs só entra se estiver dentro de [minLagMs, maxLagMs]
-  //   2. Janela deslizante proporcional: max(20, ceil(|maxLag|/rtIntervalMs)*2) amostras
+  //   1. MIN_SAMPLES proporcional ao lag do preset: max(60, ceil(maxLagSamples * 1.5))
+  //      → garante buffer suficiente antes de iniciar correlação
+  //   2. Filtro de range: rawOffsetMs só entra se estiver dentro de [minLagMs, maxLagMs]
+  //   3. Janela deslizante proporcional: max(20, ceil(|maxLag|/rtIntervalMs)*2) amostras
   //      → valores absurdos antigos caem naturalmente, velocidade proporcional ao preset
-  //   3. trimmedMedian calculada sobre histórico filtrado pelo range atual
+  //   4. trimmedMedian calculada sobre histórico filtrado pelo range atual
   //      → trocar preset converge imediatamente sem apagar o array
 
   function correlateRolling(chA, chB) {
-    const confThresh = (ML.config && ML.config.rtConfThreshold !== undefined)
+    const confThresh   = (ML.config && ML.config.rtConfThreshold !== undefined)
       ? ML.config.rtConfThreshold : 0.50;
     const rtIntervalMs = (ML.config && ML.config.rtIntervalMs) || 500;
 
     const bufA = chA.buffer || [];
     const bufB = chB.buffer || [];
 
-    const MIN_SAMPLES = 60;
+    // MIN_SAMPLES proporcional ao lag esperado pelo preset
+    const ivMsEarly     = (realIntervalMsFromBuf(bufA) + realIntervalMsFromBuf(bufB)) / 2;
+    const lagRangeEarly = effectiveLag(chA, chB);
+    const lagSamples    = Math.ceil(Math.abs(lagRangeEarly.maxLagMs) / ivMsEarly);
+    const MIN_SAMPLES   = Math.max(60, Math.ceil(lagSamples * 1.5));
+
     if (bufA.length < MIN_SAMPLES || bufB.length < MIN_SAMPLES) {
       return { error: 'Aguardando amostras (' + Math.min(bufA.length, bufB.length) + '/' + MIN_SAMPLES + ')' };
     }
 
     const hybA = buildHybridSeries(bufA);
     const hybB = buildHybridSeries(bufB);
-    const ivMs = (realIntervalMsFromBuf(bufA) + realIntervalMsFromBuf(bufB)) / 2;
+    const ivMs = ivMsEarly;
 
-    const lagRange      = effectiveLag(chA, chB);
+    const lagRange      = lagRangeEarly;
     const onlyPositive  = lagRange.onlyPositive;
     const minLagSamples = Math.ceil(Math.abs(lagRange.minLagMs) / ivMs);
     let   maxLagSamples = Math.ceil(Math.abs(lagRange.maxLagMs) / ivMs);
@@ -427,5 +434,5 @@
     buildHybridSeries,
   };
 
-  console.log('[MedLat] 30-correlator carregado. buildHybridSeries: luma puro. RT: filtro de range + janela deslizante proporcional + trimmedMedian filtrada.');
+  console.log('[MedLat] 30-correlator carregado. MIN_SAMPLES proporcional ao preset. RT: filtro de range + janela deslizante proporcional + trimmedMedian filtrada.');
 })();

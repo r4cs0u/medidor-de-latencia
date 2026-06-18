@@ -42,11 +42,11 @@
       updateSelColor();
     }
     [
-      { value: 'auto',    label: 'Auto' },
-      { value: 'neg5',  label: '◀ 5s' },
-      { value: 'pos5',  label: '▶ 5s' },
-      { value: 'pos10', label: '▶ 10s' },
-      { value: 'pos30', label: '▶ 30s' },
+      { value: 'auto',  label: 'Auto' },
+      { value: 'neg5',  label: '\u25c0 5s' },
+      { value: 'pos5',  label: '\u25b6 5s' },
+      { value: 'pos10', label: '\u25b6 10s' },
+      { value: 'pos30', label: '\u25b6 30s' },
     ].forEach(o => {
       const opt = document.createElement('option');
       opt.value = o.value; opt.textContent = o.label;
@@ -55,24 +55,25 @@
     });
     function updateSelColor() {
       const colors = {
-        auto: ui.T.selectColor,
-        neg5: '#ffd166',
-        pos5: '#44ff88',
+        auto:  ui.T.selectColor,
+        neg5:  '#ffd166',
+        pos5:  '#44ff88',
         pos10: '#00d4ff',
         pos30: '#ff9d00',
       };
       const borders = {
-        auto: ui.T.selectBorder,
-        neg5: '#ffd16688',
-        pos5: '#44ff8888',
+        auto:  ui.T.selectBorder,
+        neg5:  '#ffd16688',
+        pos5:  '#44ff8888',
         pos10: '#00d4ff88',
         pos30: '#ff9d0088',
       };
-      sel.style.color       = colors[sel.value] || ui.T.selectColor;
+      sel.style.color       = colors[sel.value]  || ui.T.selectColor;
       sel.style.borderColor = borders[sel.value] || ui.T.selectBorder;
     }
     sel.addEventListener('change', () => {
       ch.lagPreset = sel.value;
+      // filtra histórico RT: remove valores fora do novo range para convergência imediata
       const preset = ML.LAG_PRESETS && ML.LAG_PRESETS[sel.value];
       if (preset && ch._rtHistory) {
         ch._rtHistory = ch._rtHistory.filter(v => v >= preset.min && v <= preset.max);
@@ -87,7 +88,7 @@
     const inp = document.createElement('input');
     inp.type = 'text'; inp.placeholder = '0.000s';
     inp.value = ch.deduction ? ui.formatDeduction(ch.deduction) : '';
-    inp.title = 'Offset fixo do multiviewer. Ex: 3 → -3.000s  +1.5 → +1.500s';
+    inp.title = 'Offset fixo do multiviewer. Ex: 3 \u2192 -3.000s  +1.5 \u2192 +1.500s';
     function applyDedStyle() {
       const t = ui.T;
       const hasVal = inp.value && inp.value !== '' && inp.value !== '0.000s';
@@ -303,6 +304,7 @@
         ].join(';');
         ch._panelRow = card;
 
+        // ── linha 1: toggle · label · lum ──
         const r1 = ui.row(3);
         r1.style.cssText += ';overflow:hidden;min-width:0';
         const tog = document.createElement('button');
@@ -327,7 +329,7 @@
         });
 
         const lumEl = document.createElement('span');
-        lumEl.title = 'Luminância atual da probe (0–255)';
+        lumEl.title = 'Luminância atual da probe (0\u2013255)';
         lumEl.style.cssText = `color:${ch.color};font-size:11px;font-weight:bold;flex-shrink:0`;
         lumEl.textContent = '--'; ch.lumEl = lumEl;
 
@@ -337,6 +339,7 @@
 
         r1.append(tog, lblInp, lumEl, ptsEl);
 
+        // ── linha 2: px ──
         const r2 = ui.row(2);
         r2.style.cssText += ';overflow:hidden;min-width:0;align-items:center';
 
@@ -387,20 +390,24 @@
 
         r2.append(ui.sp('px', 'font-size:9px;flex-shrink:0'), btnSzM, szInp, btnSzP);
 
+        // ── linha 3: lag (não-ref) ──
         const r3lag = ui.row(2);
         r3lag.style.cssText += ';overflow:hidden;min-width:0';
         if (!isRef) {
           r3lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
         }
 
+        // ── linha 4: ded ──
         const r4ded = ui.row(2);
         r4ded.style.cssText += ';overflow:hidden;min-width:0';
         r4ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
 
+        // ── divisor RT ──
         const rtDivider = document.createElement('div');
         rtDivider.style.cssText = `height:1px;background:${ch.color}22;margin:2px 0;display:none`;
         ch._rtDivider = rtDivider;
 
+        // ── bloco RT: MEDIDO e REAL empilhados ──
         const rtRow = document.createElement('div');
         rtRow.style.cssText = 'display:none;flex-direction:column;align-items:stretch;width:100%;gap:3px';
         ch._rtRow = rtRow;
@@ -430,8 +437,8 @@
             return { wrap, val };
           };
 
-          const lineMed = mkValLine('MEDIDO');
-          const lineSep = document.createElement('div');
+          const lineMed  = mkValLine('MEDIDO');
+          const lineSep  = document.createElement('div');
           lineSep.style.cssText = `height:1px;background:${ch.color}18;width:100%;margin:1px 0`;
           const lineReal = mkValLine('REAL');
 
@@ -439,6 +446,7 @@
           ch._rtValReal = lineReal.val;
           rtRow.append(lineMed.wrap, lineSep, lineReal.wrap);
 
+          // ── barra conf + alpha ──
           const rtFooter = document.createElement('div');
           rtFooter.style.cssText = 'display:none;flex-direction:column;gap:1px;width:100%';
           ch._rtFooter = rtFooter;
@@ -493,6 +501,7 @@
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
+    // ── Análise (modo LOG) ─────────────────────────────────────
     const secAn = ui.sec('Análise');
     secAn.style.display = 'none';
     const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
@@ -752,7 +761,7 @@
       }
       if (ch._rtAlphaBadge) {
         const alpha = r.alpha !== undefined ? r.alpha : null;
-        ch._rtAlphaBadge.textContent = alpha !== null ? 'α=' + alpha.toFixed(2) : '';
+        ch._rtAlphaBadge.textContent = alpha !== null ? '\u03b1=' + alpha.toFixed(2) : '';
         ch._rtAlphaBadge.style.color = alpha !== null && alpha < 0.7 ? '#ffd700' : '#aaaacc';
       }
     }
@@ -861,7 +870,7 @@
         } else {
           ch.lumEl.textContent = Math.round(y);
           ch.lumEl.style.color = ch.color;
-          ch.lumEl.title = s ? `Y:${Math.round(s.lum)}  R:${Math.round(s.r)}  G:${Math.round(s.g)}  B:${Math.round(s.b)}` : 'Luminância atual da probe (0–255)';
+          ch.lumEl.title = s ? `Y:${Math.round(s.lum)}  R:${Math.round(s.r)}  G:${Math.round(s.g)}  B:${Math.round(s.b)}` : 'Luminância atual da probe (0\u2013255)';
         }
       });
     }, 200);
@@ -900,5 +909,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. Seletores de lag: Auto / neg5 / pos5 / pos10 / pos30. RT com MEDIDO/REAL empilhados.');
+  console.log('[MedLat] 50-panel carregado. Presets: auto/neg5/pos5/pos10/pos30. Filtro de histórico ao trocar preset. RT com MEDIDO/REAL empilhados.');
 })();
