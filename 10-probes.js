@@ -21,35 +21,49 @@
   // cb   = diferença de cor azul  B - lum  (proxy de Cb, -255..255)
   // cr   = diferença de cor vermelha R - lum (proxy de Cr, -255..255)
   // Retorna null se sem elemento, -1 se bloqueio CORS.
+  //
+  // Cache: ch._cachedMediaEl guarda o último elemento de mídia encontrado.
+  // É invalidado ao final de cada drag (mouseup) e ao redimensionar.
+  // Elimina ~99% das buscas DOM em cenas estáticas (probe parada sobre o vídeo).
   function getSample(ch) {
     const pw = probeW(ch), ph = probeH(ch);
     const d = ch.probe;
     if (!d) return null;
-    const cx = d.offsetLeft + pw / 2;
-    const cy = d.offsetTop  + ph / 2;
-    d.style.pointerEvents = 'none';
-    const el = document.elementFromPoint(cx, cy);
-    d.style.pointerEvents = 'auto';
-    if (!el) return null;
-    let m = null, node = el;
-    for (let i = 0; i < 6; i++) {
-      if (!node) break;
-      if (['VIDEO','CANVAS','IMG'].includes(node.tagName)) { m = node; break; }
-      const c = node.querySelector('video,canvas,img');
-      if (c) { m = c; break; }
-      node = node.parentElement;
+
+    // Tenta usar o cache antes de fazer a busca DOM
+    let m = ch._cachedMediaEl || null;
+
+    if (!m) {
+      const cx = d.offsetLeft + pw / 2;
+      const cy = d.offsetTop  + ph / 2;
+      d.style.pointerEvents = 'none';
+      const el = document.elementFromPoint(cx, cy);
+      d.style.pointerEvents = 'auto';
+      if (!el) return null;
+      let node = el;
+      for (let i = 0; i < 6; i++) {
+        if (!node) break;
+        if (['VIDEO','CANVAS','IMG'].includes(node.tagName)) { m = node; break; }
+        const c = node.querySelector('video,canvas,img');
+        if (c) { m = c; break; }
+        node = node.parentElement;
+      }
+      if (!m) return null;
+      ch._cachedMediaEl = m; // armazena para próximos ticks
     }
-    if (!m) return null;
+
     const r = m.getBoundingClientRect();
-    if (!r.width || !r.height) return null;
+    if (!r.width || !r.height) { ch._cachedMediaEl = null; return null; }
     const nw = m.videoWidth  || m.naturalWidth  || r.width;
     const nh = m.videoHeight || m.naturalHeight || r.height;
+    const cx = d.offsetLeft + pw / 2;
+    const cy = d.offsetTop  + ph / 2;
     const sx = Math.max(0, Math.min(nw - pw, Math.floor((cx - r.left) * (nw / r.width)  - pw / 2)));
     const sy = Math.max(0, Math.min(nh - ph, Math.floor((cy - r.top)  * (nh / r.height) - ph / 2)));
     ch.ctx.clearRect(0, 0, pw, ph);
-    try { ch.ctx.drawImage(m, sx, sy, pw, ph, 0, 0, pw, ph); } catch (e) { return -1; }
+    try { ch.ctx.drawImage(m, sx, sy, pw, ph, 0, 0, pw, ph); } catch (e) { ch._cachedMediaEl = null; return -1; }
     let px;
-    try { px = ch.ctx.getImageData(0, 0, pw, ph).data; } catch (e) { return -1; }
+    try { px = ch.ctx.getImageData(0, 0, pw, ph).data; } catch (e) { ch._cachedMediaEl = null; return -1; }
     const xMin = Math.floor(pw * 0.10), xMax = Math.floor(pw * 0.90);
     const yMin = Math.floor(ph * 0.10), yMax = Math.floor(ph * 0.90);
     let Y = 0, R = 0, G = 0, B = 0, n = 0;
@@ -147,7 +161,7 @@
       + `<rect x='0.5' y='0.5' width='${w-1}' height='${h-1}' fill='none'`
       + ` stroke='${c}' stroke-width='1' stroke-dasharray='4 8'/>`
       + `</svg>`;
-    return `url("data:image/svg+xml,${svg.replace(/#/g,'%23')}")` ;
+    return `url("data:image/svg+xml,${svg.replace(/#/g,'%23')}")`;
   }
 
   function applyDefaultStyle(ch) {
@@ -227,6 +241,7 @@
       mask.style.left = '10%'; mask.style.top = '10%';
       mask.style.width = '80%'; mask.style.height = '80%';
       makeOff(ch);
+      ch._cachedMediaEl = null; // invalida cache ao redimensionar
       refreshFocusBorder(ch);
     };
     d.style.display = ch.active ? 'block' : 'none';
@@ -253,7 +268,10 @@
       d.style.left = final.x + 'px';
       d.style.top  = final.y + 'px';
     });
-    window.addEventListener('mouseup', () => { drag = false; });
+    window.addEventListener('mouseup', () => {
+      if (drag) ch._cachedMediaEl = null; // invalida cache ao soltar o drag
+      drag = false;
+    });
   }
 
   window.addEventListener('keydown', e => {
@@ -277,6 +295,8 @@
     if (e.key === 'ArrowRight') left += step;
     if (e.key === 'ArrowUp')    top  = Math.max(0, top - step);
     if (e.key === 'ArrowDown')  top  += step;
+    // Invalida cache ao mover por teclado (probe pode ter saido do video)
+    focusedProbe._cachedMediaEl = null;
     const final = resolveCollision(focusedProbe, left, top);
     d.style.left = final.x + 'px';
     d.style.top  = final.y + 'px';
@@ -341,5 +361,5 @@
   ML.getSample = getSample;
   ML.setFocus  = setFocus;
 
-  console.log(`[MedLat] 10-probes carregado. getSample() disponível (lum+r+g+b+cb+cr). px responsivo=${responsiveW} (viewport ${vw}×${vh}). ${numCh} canais posicionados (de ${ML.CHANNELS.length} disponíveis).`);
+  console.log(`[MedLat] 10-probes v1.3 carregado. getSample() com cache de elemento. px responsivo=${responsiveW} (viewport ${vw}×${vh}). ${numCh} canais posicionados.`);
 })();
