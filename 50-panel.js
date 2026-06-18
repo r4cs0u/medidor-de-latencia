@@ -42,9 +42,11 @@
       updateSelColor();
     }
     [
-      { value: 'auto',   label: 'Auto' },
-      { value: 'rapido', label: '\u26a1'  },
-      { value: 'web',    label: '\ud83c\udf10' },
+      { value: 'auto',    label: 'Auto' },
+      { value: 'minus5',  label: '◀ 5s' },
+      { value: 'plus5',   label: '▶ 5s' },
+      { value: 'plus10',  label: '▶ 10s' },
+      { value: 'plus30',  label: '▶ 30s' },
     ].forEach(o => {
       const opt = document.createElement('option');
       opt.value = o.value; opt.textContent = o.label;
@@ -52,9 +54,21 @@
       sel.appendChild(opt);
     });
     function updateSelColor() {
-      const colors  = { auto: ui.T.selectColor, rapido: '#44ff88', web: '#00d4ff' };
-      const borders = { auto: ui.T.selectBorder, rapido: '#44ff8888', web: '#00d4ff88' };
-      sel.style.color       = colors[sel.value]  || ui.T.selectColor;
+      const colors = {
+        auto: ui.T.selectColor,
+        minus5: '#ffd166',
+        plus5: '#44ff88',
+        plus10: '#00d4ff',
+        plus30: '#ff9d00',
+      };
+      const borders = {
+        auto: ui.T.selectBorder,
+        minus5: '#ffd16688',
+        plus5: '#44ff8888',
+        plus10: '#00d4ff88',
+        plus30: '#ff9d0088',
+      };
+      sel.style.color       = colors[sel.value] || ui.T.selectColor;
       sel.style.borderColor = borders[sel.value] || ui.T.selectBorder;
     }
     sel.addEventListener('change', () => { ch.lagPreset = sel.value; updateSelColor(); });
@@ -282,7 +296,6 @@
         ].join(';');
         ch._panelRow = card;
 
-        // ── linha 1: toggle · label · lum ──
         const r1 = ui.row(3);
         r1.style.cssText += ';overflow:hidden;min-width:0';
         const tog = document.createElement('button');
@@ -317,7 +330,6 @@
 
         r1.append(tog, lblInp, lumEl, ptsEl);
 
-        // ── linha 2: px ──
         const r2 = ui.row(2);
         r2.style.cssText += ';overflow:hidden;min-width:0;align-items:center';
 
@@ -368,48 +380,58 @@
 
         r2.append(ui.sp('px', 'font-size:9px;flex-shrink:0'), btnSzM, szInp, btnSzP);
 
-        // ── linha 3: lag (não-ref) ──
         const r3lag = ui.row(2);
         r3lag.style.cssText += ';overflow:hidden;min-width:0';
         if (!isRef) {
           r3lag.append(ui.sp('lag', 'font-size:9px;flex-shrink:0'), mkLagSelect(ch));
         }
 
-        // ── linha 4: ded ──
         const r4ded = ui.row(2);
         r4ded.style.cssText += ';overflow:hidden;min-width:0';
         r4ded.append(ui.sp('ded', 'font-size:9px;flex-shrink:0'), mkDeductionInput(ch));
 
-        // ── divisor RT ──
         const rtDivider = document.createElement('div');
         rtDivider.style.cssText = `height:1px;background:${ch.color}22;margin:2px 0;display:none`;
         ch._rtDivider = rtDivider;
 
-        // ── linha RT: MEDIDO · REAL ──
         const rtRow = document.createElement('div');
-        rtRow.style.cssText = 'display:none;flex-direction:row;justify-content:space-around;align-items:flex-end;width:100%;gap:2px';
+        rtRow.style.cssText = 'display:none;flex-direction:column;align-items:stretch;width:100%;gap:3px';
         ch._rtRow = rtRow;
 
         if (!isRef) {
-          const mkValCol = (labelTxt) => {
+          const mkValLine = (labelTxt) => {
             const wrap = document.createElement('div');
-            wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;flex:1;min-width:0';
+            wrap.style.cssText = 'display:flex;flex-direction:column;align-items:stretch;width:100%;min-width:0';
             const lbl = document.createElement('div');
             lbl.textContent = labelTxt;
-            lbl.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.08em;opacity:.7;line-height:1.4';
+            lbl.style.cssText = 'font:bold 6px monospace;color:#aaaacc;letter-spacing:.10em;opacity:.75;line-height:1.2;text-align:left';
             const val = document.createElement('div');
             val.textContent = '--';
-            val.style.cssText = 'font:bold 12px monospace;letter-spacing:-.02em;text-align:center;line-height:1;transition:color .3s;color:#aaaacc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%';
+            val.style.cssText = [
+              'font:bold 14px monospace',
+              'letter-spacing:-.03em',
+              'text-align:left',
+              'line-height:1.05',
+              'transition:color .3s, opacity .3s',
+              'color:#aaaacc',
+              'white-space:nowrap',
+              'overflow:hidden',
+              'text-overflow:ellipsis',
+              'width:100%',
+            ].join(';');
             wrap.append(lbl, val);
             return { wrap, val };
           };
-          const colMed  = mkValCol('MEDIDO');
-          const colReal = mkValCol('REAL');
-          ch._rtVal     = colMed.val;
-          ch._rtValReal = colReal.val;
-          rtRow.append(colMed.wrap, colReal.wrap);
 
-          // ── barra conf + alpha ──
+          const lineMed = mkValLine('MEDIDO');
+          const lineSep = document.createElement('div');
+          lineSep.style.cssText = `height:1px;background:${ch.color}18;width:100%;margin:1px 0`;
+          const lineReal = mkValLine('REAL');
+
+          ch._rtVal     = lineMed.val;
+          ch._rtValReal = lineReal.val;
+          rtRow.append(lineMed.wrap, lineSep, lineReal.wrap);
+
           const rtFooter = document.createElement('div');
           rtFooter.style.cssText = 'display:none;flex-direction:column;gap:1px;width:100%';
           ch._rtFooter = rtFooter;
@@ -438,7 +460,6 @@
           rtFooter.append(confWrap, rtMeta);
           card.append(r1, r2, r3lag, r4ded, rtDivider, rtRow, rtFooter);
         } else {
-          // REF: sem RT rows
           ch._rtVal = null; ch._rtValReal = null; ch._rtConfBar = null;
           ch._rtHistBadge = null; ch._rtAlphaBadge = null; ch._rtFooter = null;
           card.append(r1, r2, r4ded);
@@ -465,7 +486,6 @@
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
-    // ── Análise (modo LOG) ─────────────────────────────────────
     const secAn = ui.sec('Análise');
     secAn.style.display = 'none';
     const btnRec     = ui.mkBtn('\u25cf GRAVAR',   '#1b5e20', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box;letter-spacing:.04em;box-shadow:0 0 8px #1b5e2066');
@@ -564,7 +584,6 @@
     secAn.appendChild(progWrap);
     scrollBody.appendChild(secAn);
 
-    // ── Seção Tempo Real (botões + status) ─────────────────────
     const secRT = ui.sec('\u26a1 Tempo Real');
 
     const btnRTStart = ui.mkBtn('\u25b6 INICIAR',  '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
@@ -596,7 +615,6 @@
     secRT.append(rowRTBtns, rtStatusEl);
     scrollBody.appendChild(secRT);
 
-    // ── Resultados (tabela LOG) ────────────────────────────────
     const btnCopyInline = document.createElement('button');
     btnCopyInline.innerHTML = '\ud83d\udccb';
     btnCopyInline.title = 'Copiar tabela de resultados para a área de transferência';
@@ -812,7 +830,6 @@
     panel.style.left = '4px';
     panel.style.top  = '4px';
 
-    // ── aplica escala inicial após o painel estar no DOM ──────
     requestAnimationFrame(() => applyScale(panel.offsetWidth, panel.offsetHeight));
 
     ui.minimizePanel(panel);
@@ -821,7 +838,6 @@
     applyBtnRTStyle();
     applyRTVisibility();
 
-    // ── Atualização contínua de luminância nos cards ───────────
     setInterval(() => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch.lumEl) return;
@@ -843,7 +859,6 @@
       });
     }, 200);
 
-    // ── Progresso da gravação (modo LOG) ───────────────────────
     setInterval(() => {
       if (!ML.state.recording) return;
       if (ML.config.rtMode) return;
@@ -878,5 +893,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado. Seletores de lag: Auto / \u26a1 / \ud83c\udf10.');
+  console.log('[MedLat] 50-panel carregado. Seletores de lag: Auto / ◀ 5s / ▶ 5s / ▶ 10s / ▶ 30s. RT com MEDIDO/REAL empilhados.');
 })();
