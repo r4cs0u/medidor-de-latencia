@@ -6,6 +6,13 @@
   });
   document.querySelectorAll('[id^="ml-probe-"]').forEach(e => e.remove());
 
+  // Stub de RingBuffer seguro para uso antes de recorder.startRolling().
+  // Evita crash em toArray() se algum módulo ler rollingBuffer antes do início.
+  function RingBufferStub() {}
+  RingBufferStub.prototype.toArray = function () { return []; };
+  RingBufferStub.prototype.push    = function () {};
+  RingBufferStub.prototype.clear   = function () {};
+
   window.MedLat = {
     CHANNELS: [
       { id:'ch0',  label:'Referência', color:'#00d4ff', active:false },
@@ -46,7 +53,7 @@
     },
 
     // Retorna o offset real em ms, descontando a dedução fixa do multiviewer.
-    // Centralizado aqui para evitar duplicação entre 40-chart.js e 50-panel.js.
+    // Centralizado aqui para evitar duplicação entre módulos.
     calcRTReal(ch, offsetMs) {
       const refDed = (this.CHANNELS[0].deduction || 0) * 1000;
       const chDed  = (ch.deduction || 0) * 1000;
@@ -57,14 +64,17 @@
   };
 
   window.MedLat.CHANNELS.forEach(ch => {
-    ch.rollingBuffer = [];
+    // RingBufferStub: seguro para toArray() antes de recorder.startRolling().
+    // recorder.startRolling() substitui por um RingBuffer real dimensionado.
+    ch.rollingBuffer = new RingBufferStub();
     ch._rtHistory    = [];   // histórico de offsets para trimmedMedian (30-correlator)
     ch.prevLum       = null;
     ch.off           = null;
     ch.ctx           = null;
     ch.probe         = null;
     ch.probeW        = null;
+    ch._cachedMediaEl = null; // cache do elemento de vídeo (10-probes)
   });
 
-  console.log('[MedLat] 00-core carregado v1.2. 12 canais (ch0–ch11). Modo RT único.');
+  console.log('[MedLat] 00-core carregado v1.3. 12 canais (ch0–ch11). rollingBuffer=RingBufferStub seguro.');
 })();
