@@ -8,7 +8,7 @@
 
   window.MedLat = {
     CHANNELS: [
-      { id:'ch0',  label:'Referência', color:'#00d4ff', active:false },
+      { id:'ch0',  label:'Refer\u00eancia', color:'#00d4ff', active:false },
       { id:'ch1',  label:'Tela 2',     color:'#ff4444', active:false },
       { id:'ch2',  label:'Tela 3',     color:'#44ff88', active:false },
       { id:'ch3',  label:'Tela 4',     color:'#ffd700', active:false },
@@ -28,17 +28,16 @@
     MIN_LAG_MS:     20000,
 
     state: {
-      running:     false,
-      recording:   false,
-      probeW:      232,
-      snapGrid:    true,
-      snapSize:    2,
-      noOverlap:   true,
-      numChannels: 4,
+      running:       false,
+      rollingActive: false,
+      probeW:        232,
+      snapGrid:      true,
+      snapSize:      2,
+      noOverlap:     true,
+      numChannels:   4,
     },
 
     config: {
-      rtMode:          true,
       rtConfThreshold: 0.60,
       rtIntervalMs:    500,
       rtWindowMs:      30000,
@@ -50,13 +49,13 @@
   };
 
   window.MedLat.CHANNELS.forEach(ch => {
-    ch.buffer  = [];
-    ch.prevLum = null;
-    ch.off     = null;
-    ch.ctx     = null;
-    ch.probe   = null;
-    ch.probeW  = null;
+    ch.rollingBuffer = [];
+    ch.prevLum       = null;
+    ch.off           = null;
+    ch.ctx           = null;
+    ch.probe         = null;
+    ch.probeW        = null;
   });
 
-  console.log('[MedLat] 00-core carregado. 12 canais (ch0–ch11). Sem presets de lag — busca adaptativa no correlator.');
+  console.log('[MedLat] 00-core carregado v1.1. 12 canais (ch0\u2013ch11). Modo RT único.');
 })();
