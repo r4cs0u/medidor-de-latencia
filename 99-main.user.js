@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Medidor de Latência
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Mede latência entre múltiplos sinais de vídeo por análise de luminância
 // @match        https://mediamonitor.rj.g.globo/actus5/channels*
 // @match        http://10.3.89.100/gridvision/mosaico*
@@ -51,7 +51,7 @@
   }
 
   carregarTodos().then(function () {
-    console.log('[MedLat] Todos os módulos carregados.');
+    console.log('[MedLat] Todos os módulos carregados. v1.1');
   }).catch(function (erro) {
     console.error('[MedLat] Falha ao carregar módulos:', erro);
   });
