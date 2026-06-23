@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Medidor de Latência
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  Mede latência entre múltiplos sinais de vídeo por análise de luminância teste
+// @version      1.3
+// @description  Mede latência entre múltiplos sinais de vídeo por análise de luminância
 // @match        https://mediamonitor.rj.g.globo/actus5/channels*
 // @match        http://10.3.89.100/gridvision/mosaico*
 // @grant        GM_xmlhttpRequest
@@ -12,6 +12,13 @@
 
 (function () {
   'use strict';
+
+  // ── Configuração ────────────────────────────────────────────────────────────
+  // Se o repositório for privado, gere um Personal Access Token (PAT) em:
+  //   GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens
+  // Permissão mínima: Contents → Read-only (somente neste repositório)
+  // Cole o token abaixo. Deixe vazio ('') para repositório público.
+  var GITHUB_TOKEN = '';
 
   var BASE = 'https://raw.githubusercontent.com/r4cs0u/medidor-de-latencia/main/';
   var MODULOS = [
@@ -26,14 +33,21 @@
 
   function carregarModulo(arquivo) {
     return new Promise(function (resolve, reject) {
+      var headers = {};
+      if (GITHUB_TOKEN) {
+        headers['Authorization'] = 'token ' + GITHUB_TOKEN;
+      }
       GM_xmlhttpRequest({
         method: 'GET',
         url: BASE + arquivo + '?_=' + Date.now(),
+        headers: headers,
         nocache: true,
         onload: function (r) {
           if (r.status === 200) {
             try { eval(r.responseText); resolve(); }
             catch (e) { reject('Erro ao executar ' + arquivo + ': ' + e); }
+          } else if (r.status === 401 || r.status === 404) {
+            reject('Acesso negado em ' + arquivo + ' (status ' + r.status + '). Verifique o GITHUB_TOKEN.');
           } else {
             reject('Falha HTTP ' + r.status + ' em ' + arquivo);
           }
@@ -50,7 +64,7 @@
   }
 
   carregarTodos().then(function () {
-    console.log('[MedLat] Todos os módulos carregados. v1.2');
+    console.log('[MedLat] Todos os módulos carregados. v1.3');
   }).catch(function (erro) {
     console.error('[MedLat] Falha ao carregar módulos:', erro);
   });
