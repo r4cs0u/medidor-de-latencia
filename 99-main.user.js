@@ -2,7 +2,7 @@
 // @name         Medidor de Latência
 // @namespace    http://tampermonkey.net/
 // @version      1.2
-// @description  Mede latência entre múltiplos sinais de vídeo por análise de luminância
+// @description  Mede latência entre múltiplos sinais de vídeo por análise de luminância teste
 // @match        https://mediamonitor.rj.g.globo/actus5/channels*
 // @match        http://10.3.89.100/gridvision/mosaico*
 // @grant        GM_xmlhttpRequest
