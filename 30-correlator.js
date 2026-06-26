@@ -13,8 +13,9 @@
   const ANCHOR_MIN_ISOLATION  = 60;
   // ANCHOR_STRENGTH_RATIO: âncora deve ser pelo menos 2.5x a mediana dos picos.
   const ANCHOR_STRENGTH_RATIO = 2.5;
-  // ANCHOR_CONSENSUS_TOL: tolerância em amostras para duas âncoras serem consideradas
-  //   o mesmo evento (evita fragmentar o mesmo corte de cena em grupos distintos).
+  // ANCHOR_CONSENSUS_TOL: tolerância base em amostras para duas âncoras serem consideradas
+  //   o mesmo evento. Escalada dinamicamente com o delta (0.5%) para absorver jitter
+  //   acumulado em latências longas.
   const ANCHOR_CONSENSUS_TOL  = 2;
   // REFINE_WINDOW: janela de lag (± amostras) para a cross-correlação de refinamento
   //   após o alinhamento grosseiro por âncoras.
@@ -61,18 +62,14 @@
     return arr.map(v => (v - mean) / std);
   }
 
-  function windowedSlice(arr, maxLagSamples) {
-    const windowSize = Math.min(arr.length, maxLagSamples * 2);
-    return arr.slice(arr.length - windowSize);
-  }
-
+  // crossCorrelation usa o array completo (sem windowedSlice) para que eventos
+  // em extremos opostos do buffer — situação comum em latências longas — sejam
+  // incluídos na correlação. O parâmetro maxLagSamples controla o range de lag.
   function crossCorrelation(a, b, maxLagSamples) {
     const da = diffSeries(a);
     const db = diffSeries(b);
-    const wa = windowedSlice(da, maxLagSamples);
-    const wb = windowedSlice(db, maxLagSamples);
-    const na = normalize(wa);
-    const nb = normalize(wb);
+    const na = normalize(da);
+    const nb = normalize(db);
     const n  = Math.min(na.length, nb.length);
     const cap = Math.min(maxLagSamples, n - 1);
     const result = [];
@@ -159,7 +156,10 @@
     if (deltas.length < 2) return null;
     const groups = [];
     deltas.forEach(entry => {
-      const g = groups.find(g => Math.abs(g.delta - entry.delta) <= ANCHOR_CONSENSUS_TOL);
+      // Tolerância escala com o delta para absorver jitter acumulado em latências longas
+      // (0.5% do delta, mínimo ANCHOR_CONSENSUS_TOL amostras).
+      const tol = Math.max(ANCHOR_CONSENSUS_TOL, Math.ceil(Math.abs(entry.delta) * 0.005));
+      const g = groups.find(g => Math.abs(g.delta - entry.delta) <= tol);
       if (g) {
         g.count++;
         g.totalScore += entry.scoreA + entry.scoreB;
@@ -230,9 +230,11 @@
     const anchorSamples = anchor ? anchor.delta : null;
 
     const hybBshifted  = anchorSamples !== null ? shiftArr(hybB, anchorSamples) : hybB;
+    // Sem âncoras: força bruta no range completo (maxLagSamples).
+    // Com âncoras: refinamento fino (REFINE_WINDOW) ao redor do alinhamento grosseiro.
     const refineWindow = anchorSamples !== null
       ? REFINE_WINDOW
-      : Math.min(REFINE_WINDOW * 4, maxLagByCap);
+      : maxLagSamples;
 
     const corr     = crossCorrelation(hybA, hybBshifted, refineWindow);
     const peak     = selectRobustPeak(corr);
@@ -318,5 +320,5 @@
     calcAlpha,
   };
 
-  console.log('[MedLat] 30-correlator v1.3. buildHybridSeries=lum+cb+cr. alpha exposto. MIN_SAMPLES=' + MIN_SAMPLES + '. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
+  console.log('[MedLat] 30-correlator v1.4. Fix latências longas: crossCorrelation sem windowedSlice, refineWindow=maxLagSamples sem âncoras, anchorConsensus tolerância adaptativa. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
 })();
