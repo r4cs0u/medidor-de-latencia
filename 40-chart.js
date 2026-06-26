@@ -22,11 +22,16 @@
     return color + Math.round(alpha * 255).toString(16).padStart(2, '0');
   }
 
-  // Magnitude de crominância: √(cb²+cr²), sempre positivo, 0–360 aprox.
-  // Mesma lógica do buildHybridSeries do correlator.
+  // Magnitude de crominância: √(cb²+cr²)
   function chromaMag(p) {
     if (p.cb == null || p.cr == null) return null;
     return Math.sqrt(p.cb * p.cb + p.cr * p.cr);
+  }
+
+  // Retorna o offset medido (manual tem prioridade) em ms para um canal
+  function getOffsetMs(ch) {
+    if (ML.manualOffsets && ML.manualOffsets[ch.id] != null) return ML.manualOffsets[ch.id];
+    return ch.offsetMs || 0;
   }
 
   // ── Carrega Chart.js sob demanda ──────────────────────────────────────────
@@ -41,10 +46,10 @@
   }
 
   // ── Âncoras via buildHybridSeries (mesma série do correlator) ─────────────
-  // Retorna índices absolutos no buf completo.
-  function computeAnchors(buf) {
-    if (!buf || buf.length < 2 || !ML.correlator) return [];
-    const hybrid = ML.correlator.buildHybridSeries(buf);
+  // Retorna índices absolutos dentro do slice recebido (não no buf completo).
+  function computeAnchors(slice) {
+    if (!slice || slice.length < 2 || !ML.correlator) return [];
+    const hybrid = ML.correlator.buildHybridSeries(slice);
     const diff   = ML.correlator.diffSeries(hybrid);
     const peaks  = [];
     diff.forEach((d, i) => { if (d > 0) peaks.push({ i, d }); });
@@ -53,23 +58,19 @@
   }
 
   // ── Plugin de linhas verticais (âncoras) ─────────────────────────────────
-  // anchorsAbs: índices absolutos no buf completo
-  // windowStart: primeiro índice do slice exibido
-  function makeAnchorPlugin(getAnchorsAbs, getWindowStart, color) {
+  function makeAnchorPlugin(getAnchors, color) {
     return {
       id: 'anchorLines_' + Math.random().toString(36).slice(2),
       afterDraw(chart) {
         if (!showAnchors) return;
-        const abs   = getAnchorsAbs();
-        const start = getWindowStart();
-        if (!abs.length) return;
+        const anchors = getAnchors();
+        if (!anchors.length) return;
         const ctx   = chart.ctx;
         const xAxis = chart.scales.x;
         const yAxis = chart.scales.y;
         if (!xAxis || !yAxis) return;
         ctx.save();
-        abs.forEach(absIdx => {
-          const relIdx = absIdx - start;
+        anchors.forEach(relIdx => {
           if (relIdx < 0 || relIdx > xAxis.max) return;
           const xPx = xAxis.getPixelForValue(relIdx);
           if (xPx < xAxis.left || xPx > xAxis.right) return;
@@ -85,31 +86,48 @@
     };
   }
 
-  // ── Janela deslizante de dados ──────────────────────────────────────────
-  function getWindowData(ch) {
-    const buf   = ch.rollingBuffer ? ch.rollingBuffer.toArray() : [];
-    if (!buf.length) return { lums: [], chromas: [], anchors: [], windowStart: 0, len: 0 };
-    const total       = buf.length;
-    const start       = Math.max(0, total - MAX_POINTS);
-    const slice       = buf.slice(start, total);
-    const anchorsAbs  = computeAnchors(buf); // sobre o buf completo
-    return {
-      lums:        slice.map(p => p.lum != null ? p.lum : null),
-      chromas:     slice.map(p => chromaMag(p)),
-      anchors:     anchorsAbs,
-      windowStart: start,
-      len:         slice.length,
-    };
+  // ── Janela deslizante com compensação de offset ────────────────────────────
+  // Canal de referência (idx 0): sempre mostra os últimos MAX_POINTS frames.
+  // Demais canais: a janela é deslocada pelo offset medido (em frames), de forma
+  // que eventos simultâneos na realidade apareçam alinhados horizontalmente.
+  //   offsetMs > 0  → canal chegou DEPOIS da ref → puxamos mais para o passado
+  //   offsetMs < 0  → canal chegou ANTES da ref  → avançamos a janela
+  function getWindowData(ch, isRef) {
+    const buf = ch.rollingBuffer ? ch.rollingBuffer.toArray() : [];
+    if (!buf.length) return { lums: [], chromas: [], anchors: [], len: 0 };
+
+    const total = buf.length;
+
+    let offsetSamples = 0;
+    if (!isRef) {
+      const ivMs        = (ui.realIvMs && ui.realIvMs(ch)) || (1000 / 30);
+      offsetSamples     = Math.round(getOffsetMs(ch) / ivMs);
+    }
+
+    // start deslocado: offset positivo → canal atrasado → recuamos no buffer
+    const rawStart = total - MAX_POINTS - offsetSamples;
+    const start    = Math.max(0, Math.min(total - 1, rawStart));
+    const end      = Math.min(total, start + MAX_POINTS);
+    const slice    = buf.slice(start, end);
+
+    // Preenche com nulls à esquerda se o slice ficou menor que MAX_POINTS
+    // (canal com offset tão grande que ultrapassa o início do buffer)
+    const padLeft  = Math.max(0, -rawStart);            // frames antes do início do buf
+    const lums     = new Array(padLeft).fill(null).concat(slice.map(p => p.lum != null ? p.lum : null));
+    const chromas  = new Array(padLeft).fill(null).concat(slice.map(p => chromaMag(p)));
+    const anchors  = computeAnchors(slice).map(i => i + padLeft); // ajusta índice pelo padding
+
+    return { lums, chromas, anchors, len: lums.length };
   }
 
-  // ── Destrói charts ───────────────────────────────────────────────────────────
+  // ── Destrói charts ────────────────────────────────────────────────────────
   function destroyCharts(area) {
     chartInstances.forEach(c => { try { c.destroy(); } catch (e) {} });
     chartInstances = [];
     if (area) area.innerHTML = '';
   }
 
-  // ── Opções base Chart.js ────────────────────────────────────────────────
+  // ── Opções base Chart.js ──────────────────────────────────────────────────
   function baseOptions(showXLabels) {
     return {
       animation: false,
@@ -131,13 +149,14 @@
     };
   }
 
-  // ── Build: modo paralelo ───────────────────────────────────────────────
+  // ── Build: modo paralelo ───────────────────────────────────────────────────
   function buildParallel(area, channels) {
     const totalGap = (channels.length - 1) * 2;
     const rowH     = Math.max(44, Math.floor((area.offsetHeight - totalGap) / channels.length));
 
     channels.forEach((ch, idx) => {
-      const { lums, chromas, anchors, windowStart, len } = getWindowData(ch);
+      const isRef = idx === 0;
+      const { lums, chromas, anchors, len } = getWindowData(ch, isRef);
       const isLast = idx === channels.length - 1;
 
       const row = document.createElement('div');
@@ -153,7 +172,7 @@
         'display:flex;align-items:center;justify-content:center;white-space:nowrap',
         'overflow:hidden;text-overflow:ellipsis',
       ].join(';');
-      lbl.textContent = (idx === 0 ? '★ ' : '') + ch.label;
+      lbl.textContent = (isRef ? '★ ' : '') + ch.label;
 
       const wrap = document.createElement('div');
       wrap.style.cssText = 'flex:1;min-width:0;overflow:hidden';
@@ -162,7 +181,7 @@
       row.append(lbl, wrap);
       area.appendChild(row);
 
-      const labels  = Array.from({ length: len }, (_, i) => i);
+      const labels   = Array.from({ length: len }, (_, i) => i);
       const datasets = [
         {
           label: 'Lum',
@@ -183,10 +202,9 @@
         });
       }
 
-      // Captura referências mutáveis para o plugin de âncoras
-      const state = { anchors: anchors.slice(), windowStart };
-      const plug  = makeAnchorPlugin(() => state.anchors, () => state.windowStart, ch.color);
-      ch._chartState = state; // armazena para atualização live
+      const state = { anchors: anchors.slice() };
+      const plug  = makeAnchorPlugin(() => state.anchors, ch.color);
+      ch._chartState = state;
 
       const ci = new Chart(cvs, {
         type: 'line',
@@ -194,12 +212,13 @@
         options: baseOptions(isLast),
         plugins: [plug],
       });
-      ch._liveChart = ci;
+      ch._liveChart  = ci;
+      ch._isRefChart = isRef;
       chartInstances.push(ci);
     });
   }
 
-  // ── Build: modo sobreposto ───────────────────────────────────────────────
+  // ── Build: modo sobreposto ─────────────────────────────────────────────────
   function buildOverlay(area, channels) {
     const wrap = document.createElement('div');
     wrap.style.cssText = [
@@ -214,10 +233,11 @@
     const anchorPlugs = [];
 
     channels.forEach((ch, idx) => {
-      const { lums, chromas, anchors, windowStart, len } = getWindowData(ch);
+      const isRef = idx === 0;
+      const { lums, chromas, anchors } = getWindowData(ch, isRef);
 
       datasets.push({
-        label: (idx === 0 ? '★ ' : '') + ch.label + ' Lum',
+        label: (isRef ? '★ ' : '') + ch.label + ' Lum',
         data: lums,
         borderColor: ch.color,
         backgroundColor: hex(ch.color, 0.07),
@@ -234,12 +254,12 @@
         });
       }
 
-      const state = { anchors: anchors.slice(), windowStart };
+      const state = { anchors: anchors.slice() };
       ch._chartState = state;
-      anchorPlugs.push(makeAnchorPlugin(() => state.anchors, () => state.windowStart, ch.color));
+      anchorPlugs.push(makeAnchorPlugin(() => state.anchors, ch.color));
     });
 
-    const opts       = baseOptions(true);
+    const opts = baseOptions(true);
     opts.plugins.legend = {
       display: true, position: 'bottom',
       labels: { color: '#778899', font: { size: 8, family: 'monospace' }, boxWidth: 10, padding: 6 },
@@ -255,7 +275,7 @@
     chartInstances.push(ci);
   }
 
-  // ── Rebuild completo ──────────────────────────────────────────────────────
+  // ── Rebuild completo ───────────────────────────────────────────────────────
   function rebuildCharts(area, channels) {
     destroyCharts(area);
     if (!channels || !channels.length) return;
@@ -264,22 +284,23 @@
       : buildParallel(area, channels);
   }
 
-  // ── Update live (só modo paralelo, sem recriar) ────────────────────────
+  // ── Update live (modo paralelo sem recriar o canvas) ──────────────────────
   function updateLive(area, channels) {
     if (!chartInstances.length) { rebuildCharts(area, channels); return; }
-    channels.forEach(ch => {
+    channels.forEach((ch, idx) => {
       const ci = ch._liveChart;
       if (!ci) return;
-      const { lums, chromas, anchors, windowStart, len } = getWindowData(ch);
-      ci.data.labels             = Array.from({ length: len }, (_, i) => i);
-      ci.data.datasets[0].data   = lums;
+      const isRef = idx === 0;
+      const { lums, chromas, anchors, len } = getWindowData(ch, isRef);
+      ci.data.labels           = Array.from({ length: len }, (_, i) => i);
+      ci.data.datasets[0].data = lums;
       if (showChroma && ci.data.datasets[1]) ci.data.datasets[1].data = chromas;
-      if (ch._chartState) { ch._chartState.anchors = anchors.slice(); ch._chartState.windowStart = windowStart; }
+      if (ch._chartState) ch._chartState.anchors = anchors.slice();
       ci.update('none');
     });
   }
 
-  // ── Loop de atualização ao vivo ────────────────────────────────────────
+  // ── Loop de atualização ao vivo ────────────────────────────────────────────
   function startLiveLoop(area, getChannels) {
     if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
     liveTimer = setInterval(() => {
@@ -291,7 +312,7 @@
     }, UPDATE_MS);
   }
 
-  // ── Abre o painel ─────────────────────────────────────────────────────
+  // ── Abre o painel ──────────────────────────────────────────────────────────
   async function openPanel() {
     await loadChartJs();
 
@@ -468,7 +489,7 @@
     document.body.appendChild(panel);
     chartPanel = panel;
 
-    // Conecta botões (chartsArea e getVisibleChannels precisam existir)
+    // Conecta botões
     btnMode.onclick = () => {
       chartMode = chartMode === 'parallel' ? 'overlay' : 'parallel';
       updateModeBtn();
@@ -489,7 +510,7 @@
     });
   }
 
-  // ── Fecha o painel ────────────────────────────────────────────────────
+  // ── Fecha o painel ─────────────────────────────────────────────────────────
   function closePanel() {
     if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
     destroyCharts(null);
@@ -499,12 +520,12 @@
     chartPanel = null;
   }
 
-  // ── API pública ───────────────────────────────────────────────────────────
+  // ── API pública ────────────────────────────────────────────────────────────
   ML.chart = {
     open:   openPanel,
     close:  closePanel,
     toggle: () => document.getElementById(PANEL_ID) ? closePanel() : openPanel(),
   };
 
-  console.log('[MedLat] 40-chart v2.0. Live sliding chart: Lum + Chroma (√cb²+cr²) + âncoras via buildHybridSeries. Botão 📊 no painel abre/fecha.');
+  console.log('[MedLat] 40-chart v2.1. Janelas alinhadas pelo offset medido (manual > automático).');
 })();
