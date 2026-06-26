@@ -46,7 +46,6 @@
   }
 
   // ── Âncoras via buildHybridSeries (mesma série do correlator) ─────────────
-  // Retorna índices absolutos dentro do slice recebido (não no buf completo).
   function computeAnchors(slice) {
     if (!slice || slice.length < 2 || !ML.correlator) return [];
     const hybrid = ML.correlator.buildHybridSeries(slice);
@@ -87,11 +86,15 @@
   }
 
   // ── Janela deslizante com compensação de offset ────────────────────────────
-  // Canal de referência (idx 0): sempre mostra os últimos MAX_POINTS frames.
-  // Demais canais: a janela é deslocada pelo offset medido (em frames), de forma
-  // que eventos simultâneos na realidade apareçam alinhados horizontalmente.
-  //   offsetMs > 0  → canal chegou DEPOIS da ref → puxamos mais para o passado
-  //   offsetMs < 0  → canal chegou ANTES da ref  → avançamos a janela
+  //
+  // Fórmula (p = índice do ponto no buffer, m = offsetSamples):
+  //   m >= 0  (canal atrasado)  → x = p - m  → recuamos a janela no buffer
+  //   m <  0  (canal adiantado) → x = p + m  → avançamos a janela no buffer
+  //
+  // Em ambos os casos: start = (total - MAX_POINTS) - m
+  //   m > 0 → start menor → pega frames mais antigos → eventos ficam alinhados
+  //   m < 0 → start maior → pega frames mais recentes → idem
+  //
   function getWindowData(ch, isRef) {
     const buf = ch.rollingBuffer ? ch.rollingBuffer.toArray() : [];
     if (!buf.length) return { lums: [], chromas: [], anchors: [], len: 0 };
@@ -100,22 +103,23 @@
 
     let offsetSamples = 0;
     if (!isRef) {
-      const ivMs        = (ui.realIvMs && ui.realIvMs(ch)) || (1000 / 30);
-      offsetSamples     = Math.round(getOffsetMs(ch) / ivMs);
+      const ivMs    = (ui.realIvMs && ui.realIvMs(ch)) || (1000 / 30);
+      const offMs   = getOffsetMs(ch);
+      // Para m >= 0: start recua (subtrai). Para m < 0: start avança (subtrai negativo = soma).
+      // A fórmula é a mesma: rawStart = (total - MAX_POINTS) - offsetSamples
+      offsetSamples = Math.round(offMs / ivMs);
     }
 
-    // start deslocado: offset positivo → canal atrasado → recuamos no buffer
-    const rawStart = total - MAX_POINTS - offsetSamples;
+    const rawStart = (total - MAX_POINTS) - offsetSamples;
     const start    = Math.max(0, Math.min(total - 1, rawStart));
     const end      = Math.min(total, start + MAX_POINTS);
     const slice    = buf.slice(start, end);
 
-    // Preenche com nulls à esquerda se o slice ficou menor que MAX_POINTS
-    // (canal com offset tão grande que ultrapassa o início do buffer)
-    const padLeft  = Math.max(0, -rawStart);            // frames antes do início do buf
-    const lums     = new Array(padLeft).fill(null).concat(slice.map(p => p.lum != null ? p.lum : null));
-    const chromas  = new Array(padLeft).fill(null).concat(slice.map(p => chromaMag(p)));
-    const anchors  = computeAnchors(slice).map(i => i + padLeft); // ajusta índice pelo padding
+    // Preenche com nulls à esquerda se a janela pediu antes do início do buffer
+    const padLeft = Math.max(0, -rawStart);
+    const lums    = new Array(padLeft).fill(null).concat(slice.map(p => p.lum != null ? p.lum : null));
+    const chromas = new Array(padLeft).fill(null).concat(slice.map(p => chromaMag(p)));
+    const anchors = computeAnchors(slice).map(i => i + padLeft);
 
     return { lums, chromas, anchors, len: lums.length };
   }
@@ -527,5 +531,5 @@
     toggle: () => document.getElementById(PANEL_ID) ? closePanel() : openPanel(),
   };
 
-  console.log('[MedLat] 40-chart v2.1. Janelas alinhadas pelo offset medido (manual > automático).');
+  console.log('[MedLat] 40-chart v2.2. Shift corrigido: m>=0 recua janela, m<0 avança.');
 })();
