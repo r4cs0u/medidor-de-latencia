@@ -29,7 +29,7 @@
     return anchors.slice(0, n).map(a => a.idx);
   }
 
-  // ── Plugin: linhas verticais de âncora ───────────────────────────────────
+  // ── Plugin legado (não usado nos builds atuais, mantido por compat) ───────
   function makeAnchorPlugin(getAnchors, getOffset) {
     return {
       id: 'anchorLines',
@@ -236,23 +236,31 @@
     }
 
     // Pega os últimos MAX_DISPLAY_PTS pontos do rollingBuffer do canal.
-    // Retorna { lums, cbs, crs, anchorsLum, offset }
-    // offset = índice global do primeiro ponto visível (para âncoras)
+    // Retorna { lums, cbs, crs, tsSec, offset }
+    // tsSec: tempo relativo em segundos desde o primeiro ponto da janela
     function getWindowedData(ch) {
       const buf  = ch.rollingBuffer ? ch.rollingBuffer.toArray() : [];
       const len  = buf.length;
       const from = Math.max(0, len - MAX_DISPLAY_PTS);
       const slice = buf.slice(from);
+      const t0   = slice.length ? slice[0].ts : 0;
       return {
-        lums:       slice.map(p => p.lum),
-        cbs:        slice.map(p => p.cb),
-        crs:        slice.map(p => p.cr),
-        offset:     from,
-        bufLen:     len,
+        lums:   slice.map(p => p.lum),
+        cbs:    slice.map(p => p.cb),
+        crs:    slice.map(p => p.cr),
+        tsSec:  slice.map(p => (p.ts - t0) / 1000),
+        offset: from,
+        bufLen: len,
       };
     }
 
-    // Xaxis labels: apenas índice relativo (0..N)
+    // Xaxis labels ajustados por latência: x = s - m  (m pode ser negativo)
+    // Se m>=0 → desloca curva para a esquerda; se m<0 → desloca para a direita.
+    function makeAdjustedLabels(tsSec, mMs) {
+      const mSec = (mMs !== null && mMs !== undefined) ? mMs / 1000 : 0;
+      return tsSec.map(s => parseFloat((s - mSec).toFixed(3)));
+    }
+    // Compat: makeLabels mantido para fallback sem ts
     function makeLabels(n) {
       const arr = [];
       for (let i = 0; i < n; i++) arr.push(i);
@@ -271,9 +279,8 @@
           x: {
             display:    showXAxis,
             type:       'linear',
-            min:        0,
-            max:        MAX_DISPLAY_PTS - 1,
-            ticks: { color: '#556688', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks, callback: v => v },
+            ticks: { color: '#556688', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks, callback: v => Number.isInteger(v) ? v.toFixed(0) : parseFloat(v).toFixed(1) },
+            title: { display: showXAxis, text: 's', color: '#556688', font: { size: 7 } },
             grid: { color: 'transparent' },
           },
           y: {
@@ -287,7 +294,7 @@
     }
 
     // ── Update incremental dos dados (sem rebuild do DOM) ─────────────────
-    // Mapeia chId → { ci, getAnchors, getOffset }
+    // Mapeia chId → { ci, anchorXSecs }
     const liveRefs = {};
 
     function updateLiveData() {
@@ -304,18 +311,19 @@
       channels.forEach(ch => {
         const ref = liveRefs[ch.id];
         if (!ref) return;
-        const { lums, cbs, crs, offset } = getWindowedData(ch);
-        const n = lums.length;
-        const labels = makeLabels(n);
+        const { lums, cbs, crs, tsSec, offset } = getWindowedData(ch);
+        const mMs   = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : null;
+        const xlbls = makeAdjustedLabels(tsSec, mMs);
 
-        ref.ci.data.labels = labels;
-        ref.ci.data.datasets[0].data = lums;
-        ref.ci.data.datasets[1].data = cbs;
-        ref.ci.data.datasets[2].data = crs;
+        ref.ci.data.labels = xlbls;
+        ref.ci.data.datasets[0].data = lums.map((y, i) => ({ x: xlbls[i], y }));
+        ref.ci.data.datasets[1].data = cbs.map((y, i) => ({ x: xlbls[i], y }));
+        ref.ci.data.datasets[2].data = crs.map((y, i) => ({ x: xlbls[i], y }));
 
         // atualiza âncoras
-        ref.anchors = showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [];
-        ref.offset  = offset;
+        ref.anchors     = showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [];
+        ref.anchorXSecs = ref.anchors.map(i => xlbls[i]);
+        ref.offset      = offset;
 
         ref.ci.update('none');
       });
@@ -325,12 +333,14 @@
       const ref = liveRefs['__overlay__'];
       if (!ref) return;
       channels.forEach((ch, idx) => {
-        const { lums, offset } = getWindowedData(ch);
-        const n = lums.length;
-        if (ref.ci.data.labels.length !== n) ref.ci.data.labels = makeLabels(n);
-        ref.ci.data.datasets[idx].data = lums;
+        const { lums, tsSec, offset } = getWindowedData(ch);
+        const mMs   = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : null;
+        const xlbls = makeAdjustedLabels(tsSec, mMs);
+        if (ref.ci.data.labels.length !== xlbls.length) ref.ci.data.labels = xlbls;
+        ref.ci.data.datasets[idx].data = lums.map((y, i) => ({ x: xlbls[i], y }));
         ref.anchorsMap[ch.id] = {
-          anchors: showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [],
+          anchors:     showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [],
+          anchorXSecs: showAnchors ? computeAnchors(lums, ANCHOR_TOP_N).map(i => xlbls[i]) : [],
           offset,
           color: ch.color,
         };
@@ -345,7 +355,9 @@
       const ticks   = xMaxTicks();
 
       channels.forEach((ch, idx) => {
-        const { lums, cbs, crs, offset } = getWindowedData(ch);
+        const { lums, cbs, crs, tsSec, offset } = getWindowedData(ch);
+        const mMs   = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : null;
+        const xlbls = makeAdjustedLabels(tsSec, mMs);
 
         const row = document.createElement('div');
         row.style.cssText = [
@@ -365,20 +377,36 @@
         row.append(lbl, wrap);
         chartsArea.appendChild(row);
 
-        const anchorsRef = { list: showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [], offset };
-        const ancPlugin = makeAnchorPlugin(
-          () => anchorsRef.list,
-          () => 0   // offset visual já aplicado no slice
-        );
+        const ancXSecsRef = { list: showAnchors ? computeAnchors(lums, ANCHOR_TOP_N).map(i => xlbls[i]) : [] };
+        const ancPlugin = {
+          id: 'anchorLines',
+          afterDraw(chart) {
+            if (!ancXSecsRef.list.length) return;
+            const ctx = chart.ctx, xScale = chart.scales.x, yScale = chart.scales.y;
+            if (!xScale || !yScale) return;
+            ctx.save();
+            ancXSecsRef.list.forEach(xVal => {
+              const xPx = xScale.getPixelForValue(xVal);
+              if (xPx < xScale.left || xPx > xScale.right) return;
+              ctx.beginPath();
+              ctx.moveTo(xPx, yScale.top);
+              ctx.lineTo(xPx, yScale.bottom);
+              ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+              ctx.lineWidth   = 1;
+              ctx.stroke();
+            });
+            ctx.restore();
+          },
+        };
 
         const ci = new Chart(cvs, {
           type: 'line',
           data: {
-            labels:   makeLabels(lums.length),
+            labels:   xlbls,
             datasets: [
-              { data: lums, borderColor: ch.color,     backgroundColor: ch.color + '18', borderWidth: 1.4, pointRadius: 0, tension: 0.2, fill: true,  spanGaps: false },
-              { data: cbs,  borderColor: '#00d4ff',    backgroundColor: 'transparent',   borderWidth: 1,   pointRadius: 0, tension: 0.2, fill: false, spanGaps: false },
-              { data: crs,  borderColor: '#ff6680',    backgroundColor: 'transparent',   borderWidth: 1,   pointRadius: 0, tension: 0.2, fill: false, spanGaps: false },
+              { data: lums.map((y,i) => ({ x: xlbls[i], y })), borderColor: ch.color,  backgroundColor: ch.color + '18', borderWidth: 1.4, pointRadius: 0, tension: 0.2, fill: true,  spanGaps: false },
+              { data: cbs.map((y,i)  => ({ x: xlbls[i], y })), borderColor: '#00d4ff', backgroundColor: 'transparent',   borderWidth: 1,   pointRadius: 0, tension: 0.2, fill: false, spanGaps: false },
+              { data: crs.map((y,i)  => ({ x: xlbls[i], y })), borderColor: '#ff6680', backgroundColor: 'transparent',   borderWidth: 1,   pointRadius: 0, tension: 0.2, fill: false, spanGaps: false },
             ],
           },
           options: baseOptions(idx === channels.length - 1, 0, 255, ticks),
@@ -388,10 +416,12 @@
         chartInstances.push(ci);
         liveRefs[ch.id] = {
           ci,
-          get anchors() { return anchorsRef.list; },
-          set anchors(v) { anchorsRef.list = v; },
-          get offset() { return anchorsRef.offset; },
-          set offset(v) { anchorsRef.offset = v; },
+          get anchors()     { return []; },
+          set anchors(_v)   {},
+          get anchorXSecs() { return ancXSecsRef.list; },
+          set anchorXSecs(v){ ancXSecsRef.list = v; },
+          get offset()      { return 0; },
+          set offset(_v)    {},
         };
       });
     }
@@ -408,15 +438,19 @@
 
       const anchorsMap = {};
       const datasets   = channels.map(ch => {
-        const { lums, offset } = getWindowedData(ch);
+        const { lums, tsSec, offset } = getWindowedData(ch);
+        const mMs   = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : null;
+        const xlbls = makeAdjustedLabels(tsSec, mMs);
+        const ancs  = showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [];
         anchorsMap[ch.id] = {
-          anchors: showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [],
+          anchors:     ancs,
+          anchorXSecs: ancs.map(i => xlbls[i]),
           offset,
           color: ch.color,
         };
         return {
           label:           ch.label,
-          data:            lums,
+          data:            lums.map((y, i) => ({ x: xlbls[i], y })),
           borderColor:     ch.color,
           backgroundColor: ch.color + '18',
           borderWidth:     1.6,
@@ -434,10 +468,9 @@
           const ctx = chart.ctx, xScale = chart.scales.x, yScale = chart.scales.y;
           if (!xScale || !yScale) return;
           ctx.save();
-          Object.values(anchorsMap).forEach(({ anchors, color }) => {
-            anchors.forEach(idx => {
-              if (idx < 0 || idx >= MAX_DISPLAY_PTS) return;
-              const xPx = xScale.getPixelForValue(idx);
+          Object.values(anchorsMap).forEach(({ anchorXSecs, color }) => {
+            (anchorXSecs || []).forEach(xVal => {
+              const xPx = xScale.getPixelForValue(xVal);
               if (xPx < xScale.left || xPx > xScale.right) return;
               ctx.beginPath();
               ctx.moveTo(xPx, yScale.top);
@@ -458,9 +491,10 @@
       };
       opts.interaction = { mode: 'index', intersect: false };
 
+      const firstLabels = datasets.length ? datasets[0].data.map(p => p.x) : [];
       const ci = new Chart(cvs, {
         type: 'line',
-        data: { labels: makeLabels(datasets[0].data.length), datasets },
+        data: { labels: firstLabels, datasets },
         options: opts,
         plugins: [overlayAncPlugin],
       });
@@ -495,5 +529,5 @@
     show:   () => openPanel(),
   };
 
-  console.log('[MedLat] 40-chart v2.0 carregado (live sliding, lum+chroma+âncoras).');
+  console.log('[MedLat] 40-chart v2.1 carregado (eixo X em segundos ajustado por latência).');
 })();

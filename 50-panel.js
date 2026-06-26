@@ -397,6 +397,7 @@
       const conf        = r.confidence !== null ? r.confidence : 0;
       const aboveThresh = conf >= ML.config.rtConfThreshold;
       const offsetMs    = r.offsetMs;
+      ch._measuredOffsetMs = offsetMs; // persiste para o gráfico usar
       const histLen     = r.historyLen || 0;
 
       function fmtMs(ms, uncertain) {
