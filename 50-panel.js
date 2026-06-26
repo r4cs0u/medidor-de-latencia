@@ -89,11 +89,6 @@
     ttl.textContent = '\u26a1 MEDIDOR DE LAT\u00CANCIA';
     ttl.style.cssText = `color:${ui.T.textPrimary};font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
 
-    const btnTips  = ui.mkIconBtn('\ud83d\udca1', 'Dicas para uma medi\u00e7\u00e3o precisa', '#ffd700');
-    const btnGuide = ui.mkIconBtn('\ud83d\udccb', 'Passo a passo de uso do medidor', '#00d4ff');
-    btnTips.onclick  = () => ML.help && ML.help.toggleTips(panel);
-    btnGuide.onclick = () => ML.help && ML.help.toggleGuide(panel);
-
     const btnChart = ui.mkIconBtn('\ud83d\udcca', 'Abrir/fechar gr\u00e1ficos ao vivo', '#44ff88');
     btnChart.onclick = () => ML.chart && ML.chart.toggle();
 
@@ -110,7 +105,7 @@
     };
     btnMin.onclick = () => ui.minimizePanel(panel);
 
-    hdr.append(ttl, btnTips, btnGuide, btnChart, btnMin, btnX);
+    hdr.append(ttl, btnChart, btnMin, btnX);
     panel.appendChild(hdr);
 
     let pdrag = false, pox = 0, poy = 0;
@@ -195,7 +190,6 @@
     secTG.appendChild(rowPos);
     scrollBody.appendChild(secTG);
 
-    // ── Cards de canal ──
     const secDet = ui.sec('Telas');
     const probeGrid = document.createElement('div');
     probeGrid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:4px';
@@ -220,7 +214,6 @@
         ].join(';');
         ch._panelRow = card;
 
-        // linha 1: toggle · label · lum
         const r1 = ui.row(3);
         r1.style.cssText += ';overflow:hidden;min-width:0';
         const tog = ui.mkToggle(ch.active, v => {
@@ -237,7 +230,6 @@
         ch.lumEl = lumDisp;
         r1.append(tog, lbl, lumDisp);
 
-        // linha 2: posição XY + tamanho individual
         const r2 = ui.row(3);
         const posDisp = document.createElement('div');
         posDisp.style.cssText = 'font:7px monospace;color:#667788;white-space:nowrap;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis';
@@ -253,12 +245,10 @@
         ch._szInp = szInp;
         r2.append(posDisp, szInp);
 
-        // linha 3: dedução
         const r3ded = ui.row(2);
         r3ded.append(ui.sp('DED', 'flex-shrink:0;font-size:7px;opacity:.7'), mkDeductionInput(ch));
 
         if (!isRef) {
-          // divisor + bloco RT
           const rtDivider = document.createElement('div');
           rtDivider.style.cssText = `height:1px;background:${ch.color}22;margin:2px 0`;
 
@@ -320,7 +310,6 @@
           card.append(r1, r2, r3ded);
         }
 
-        // _rtHistory é inicializado em 00-core e resetado pelo recorder — não tocar aqui
         probeGrid.appendChild(card);
       });
     }
@@ -330,7 +319,6 @@
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
-    // ── Controles RT ──
     const secRT = ui.sec('\u26a1 Tempo Real');
     const btnRTStart = ui.mkBtn('\u25b6 INICIAR',  '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
     const btnRTStop  = ui.mkBtn('\u25a0 DESLIGAR', '#3a0d0d', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold;opacity:.45');
@@ -362,7 +350,6 @@
     scrollBody.appendChild(secRT);
     panel.appendChild(scrollBody);
 
-    // ── Resize / scale ──
     const BASE_W = 340, BASE_H = 520;
     function applyScale(w, h) {
       const scale = Math.min(Math.max(0.7, Math.min(2.5, w / BASE_W)), h != null ? Math.max(1.0, Math.min(2.5, h / BASE_H)) : 2.5);
@@ -379,7 +366,6 @@
       }).observe(panel);
     }
 
-    // ── RT tick ──
     let rtIntervalId = null;
 
     function updateRTCard(ch, r) {
@@ -397,7 +383,7 @@
       const conf        = r.confidence !== null ? r.confidence : 0;
       const aboveThresh = conf >= ML.config.rtConfThreshold;
       const offsetMs    = r.offsetMs;
-      ch._measuredOffsetMs = offsetMs; // persiste para o gráfico usar
+      ch._measuredOffsetMs = offsetMs;
       const histLen     = r.historyLen || 0;
 
       function fmtMs(ms, uncertain) {
@@ -419,7 +405,6 @@
           ch._rtVal.style.color = med.color;
           ch._rtVal.style.opacity = aboveThresh ? '1' : '0.75';
         }
-        // usa ML.calcRTReal centralizado em 00-core
         const realMs = offsetMs !== null ? ML.calcRTReal(ch, offsetMs) : null;
         const real   = fmtMs(realMs, !aboveThresh);
         if (ch._rtValReal) {
@@ -453,7 +438,6 @@
     }
 
     function resetRTState() {
-      // Reseta apenas os elementos de UI — os buffers são responsabilidade do recorder
       ML.CHANNELS.forEach(ch => {
         ch._rtLastVal     = undefined;
         ch._rtLastConf    = undefined;
@@ -492,8 +476,6 @@
     requestAnimationFrame(() => applyScale(panel.offsetWidth, panel.offsetHeight));
     ui.minimizePanel(panel);
 
-    // ── Lum display loop ──
-    // lumIntervalId é guardado para ser cancelado no btnX.onclick.
     lumIntervalId = setInterval(() => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch.lumEl) return;
@@ -518,5 +500,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado v1.4. Botão 📊 charts adicionado ao header.');
+  console.log('[MedLat] 50-panel carregado v1.5. Botões de ajuda removidos do header.');
 })();
