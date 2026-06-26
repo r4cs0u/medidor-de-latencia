@@ -1,83 +1,57 @@
 (function () {
   const ML = window.MedLat;
-  const ui  = ML.ui;
+  const ui = ML.ui;
 
-  // ── Constantes ──────────────────────────────────────────────────────────
-  const CHART_JS_URL  = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
-  const PANEL_ID      = 'ml-chart-panel';
-  const UPDATE_MS     = 500;    // intervalo de refresh ao vivo
-  const MAX_POINTS    = 600;    // janela deslizante (~20s a 30fps)
-  const MAX_ANCHORS   = 30;     // máx de âncoras por canal
+  // ── Constantes ───────────────────────────────────────────────────────────
+  const CHART_INTERVAL_MS = 500;   // atualiza a cada 500ms
+  const MAX_DISPLAY_PTS   = 300;   // pontos visíveis na janela deslizante
+  const ANCHOR_TOP_N      = 8;     // número máximo de âncoras por canal
 
-  // ── Estado interno ───────────────────────────────────────────────────────
-  let chartPanel     = null;
-  let liveTimer      = null;
-  let chartInstances = [];
-  let chartMode      = 'parallel'; // 'parallel' | 'overlay'
-  let showAnchors    = true;
-  let showChroma     = true;
-
-  // ── Helpers ───────────────────────────────────────────────────────────
-  function hex(color, alpha) {
-    return color + Math.round(alpha * 255).toString(16).padStart(2, '0');
-  }
-
-  // Magnitude de crominância: √(cb²+cr²)
-  function chromaMag(p) {
-    if (p.cb == null || p.cr == null) return null;
-    return Math.sqrt(p.cb * p.cb + p.cr * p.cr);
-  }
-
-  // Retorna o offset medido (manual tem prioridade) em ms para um canal
-  function getOffsetMs(ch) {
-    if (ML.manualOffsets && ML.manualOffsets[ch.id] != null) return ML.manualOffsets[ch.id];
-    return ch.offsetMs || 0;
-  }
-
-  // ── Carrega Chart.js sob demanda ──────────────────────────────────────────
+  // ── Carrega Chart.js via CDN ──────────────────────────────────────────────
   function loadChartJs() {
     return new Promise(resolve => {
       if (window.Chart) { resolve(); return; }
       const s = document.createElement('script');
-      s.src = CHART_JS_URL;
+      s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
       s.onload = resolve;
       document.head.appendChild(s);
     });
   }
 
-  // ── Âncoras via buildHybridSeries (mesma série do correlator) ─────────────
-  function computeAnchors(slice) {
-    if (!slice || slice.length < 2 || !ML.correlator) return [];
-    const hybrid = ML.correlator.buildHybridSeries(slice);
-    const diff   = ML.correlator.diffSeries(hybrid);
-    const peaks  = [];
-    diff.forEach((d, i) => { if (d > 0) peaks.push({ i, d }); });
-    peaks.sort((a, b) => b.d - a.d);
-    return peaks.slice(0, MAX_ANCHORS).map(p => p.i);
+  // ── Calcula âncoras (picos de |diff| da série de lum) ────────────────────
+  function computeAnchors(lumArr, n) {
+    const anchors = [];
+    for (let i = 1; i < lumArr.length; i++) {
+      const d = Math.abs(lumArr[i] - lumArr[i - 1]);
+      if (d > 0) anchors.push({ idx: i, mag: d });
+    }
+    anchors.sort((a, b) => b.mag - a.mag);
+    return anchors.slice(0, n).map(a => a.idx);
   }
 
-  // ── Plugin de linhas verticais (âncoras) ─────────────────────────────────
-  function makeAnchorPlugin(getAnchors, color) {
+  // ── Plugin: linhas verticais de âncora ───────────────────────────────────
+  function makeAnchorPlugin(getAnchors, getOffset) {
     return {
-      id: 'anchorLines_' + Math.random().toString(36).slice(2),
+      id: 'anchorLines',
       afterDraw(chart) {
-        if (!showAnchors) return;
         const anchors = getAnchors();
         if (!anchors.length) return;
-        const ctx   = chart.ctx;
-        const xAxis = chart.scales.x;
-        const yAxis = chart.scales.y;
-        if (!xAxis || !yAxis) return;
+        const offset = getOffset();
+        const ctx    = chart.ctx;
+        const xScale = chart.scales.x;
+        const yScale = chart.scales.y;
+        if (!xScale || !yScale) return;
         ctx.save();
-        anchors.forEach(relIdx => {
-          if (relIdx < 0 || relIdx > xAxis.max) return;
-          const xPx = xAxis.getPixelForValue(relIdx);
-          if (xPx < xAxis.left || xPx > xAxis.right) return;
+        anchors.forEach(idx => {
+          const visual = idx - offset;
+          if (visual < 0 || visual >= MAX_DISPLAY_PTS) return;
+          const xPx = xScale.getPixelForValue(visual);
+          if (xPx < xScale.left || xPx > xScale.right) return;
           ctx.beginPath();
-          ctx.moveTo(xPx, yAxis.top);
-          ctx.lineTo(xPx, yAxis.bottom);
-          ctx.strokeStyle = color + 'aa';
-          ctx.lineWidth   = 1.5;
+          ctx.moveTo(xPx, yScale.top);
+          ctx.lineTo(xPx, yScale.bottom);
+          ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+          ctx.lineWidth   = 1;
           ctx.stroke();
         });
         ctx.restore();
@@ -85,313 +59,105 @@
     };
   }
 
-  // ── Janela deslizante com compensação de offset ────────────────────────────
-  //
-  // Fórmula (p = índice do ponto no buffer, m = offsetSamples):
-  //   m >= 0  (canal atrasado)  → x = p - m  → recuamos a janela no buffer
-  //   m <  0  (canal adiantado) → x = p + m  → avançamos a janela no buffer
-  //
-  // Em ambos os casos: start = (total - MAX_POINTS) - m
-  //   m > 0 → start menor → pega frames mais antigos → eventos ficam alinhados
-  //   m < 0 → start maior → pega frames mais recentes → idem
-  //
-  function getWindowData(ch, isRef) {
-    const buf = ch.rollingBuffer ? ch.rollingBuffer.toArray() : [];
-    if (!buf.length) return { lums: [], chromas: [], anchors: [], len: 0 };
+  // ── Estado do painel ──────────────────────────────────────────────────────
+  let panel       = null;
+  let intervalId  = null;
+  let chartMode   = 'parallel'; // 'parallel' | 'overlay'
+  let showAnchors = true;
+  let chartInstances = [];
 
-    const total = buf.length;
+  function isOpen() { return !!document.getElementById('ml-chart-panel'); }
 
-    let offsetSamples = 0;
-    if (!isRef) {
-      const ivMs    = (ui.realIvMs && ui.realIvMs(ch)) || (1000 / 30);
-      const offMs   = getOffsetMs(ch);
-      // Para m >= 0: start recua (subtrai). Para m < 0: start avança (subtrai negativo = soma).
-      // A fórmula é a mesma: rawStart = (total - MAX_POINTS) - offsetSamples
-      offsetSamples = Math.round(offMs / ivMs);
-    }
-
-    const rawStart = (total - MAX_POINTS) - offsetSamples;
-    const start    = Math.max(0, Math.min(total - 1, rawStart));
-    const end      = Math.min(total, start + MAX_POINTS);
-    const slice    = buf.slice(start, end);
-
-    // Preenche com nulls à esquerda se a janela pediu antes do início do buffer
-    const padLeft = Math.max(0, -rawStart);
-    const lums    = new Array(padLeft).fill(null).concat(slice.map(p => p.lum != null ? p.lum : null));
-    const chromas = new Array(padLeft).fill(null).concat(slice.map(p => chromaMag(p)));
-    const anchors = computeAnchors(slice).map(i => i + padLeft);
-
-    return { lums, chromas, anchors, len: lums.length };
-  }
-
-  // ── Destrói charts ────────────────────────────────────────────────────────
-  function destroyCharts(area) {
-    chartInstances.forEach(c => { try { c.destroy(); } catch (e) {} });
+  function closePanel() {
+    if (intervalId) { clearInterval(intervalId); intervalId = null; }
+    chartInstances.forEach(c => { try { c.destroy(); } catch(e) {} });
     chartInstances = [];
-    if (area) area.innerHTML = '';
+    const el = document.getElementById('ml-chart-panel');
+    if (el) el.remove();
+    panel = null;
   }
 
-  // ── Opções base Chart.js ──────────────────────────────────────────────────
-  function baseOptions(showXLabels) {
-    return {
-      animation: false,
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { enabled: false } },
-      layout: { padding: { top: 1, right: 2, bottom: 0, left: 0 } },
-      scales: {
-        x: {
-          display: showXLabels,
-          ticks: { color: '#556688', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 6 },
-          grid: { color: 'transparent' },
-        },
-        y: {
-          ticks: { color: '#445566', font: { size: 7 }, maxTicksLimit: 3 },
-          grid: { color: 'transparent' },
-        },
-      },
-    };
-  }
-
-  // ── Build: modo paralelo ───────────────────────────────────────────────────
-  function buildParallel(area, channels) {
-    const totalGap = (channels.length - 1) * 2;
-    const rowH     = Math.max(44, Math.floor((area.offsetHeight - totalGap) / channels.length));
-
-    channels.forEach((ch, idx) => {
-      const isRef = idx === 0;
-      const { lums, chromas, anchors, len } = getWindowData(ch, isRef);
-      const isLast = idx === channels.length - 1;
-
-      const row = document.createElement('div');
-      row.style.cssText = [
-        `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0`,
-        `padding:2px 3px;border-radius:4px;overflow:hidden`,
-        `background:${hex(ch.color, 0.05)};box-shadow:inset 0 0 0 1px ${hex(ch.color, 0.13)}`,
-      ].join(';');
-
-      const lbl = document.createElement('div');
-      lbl.style.cssText = [
-        `color:${ch.color};font-weight:bold;font-size:8px;width:34px;flex-shrink:0`,
-        'display:flex;align-items:center;justify-content:center;white-space:nowrap',
-        'overflow:hidden;text-overflow:ellipsis',
-      ].join(';');
-      lbl.textContent = (isRef ? '★ ' : '') + ch.label;
-
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'flex:1;min-width:0;overflow:hidden';
-      const cvs = document.createElement('canvas');
-      wrap.appendChild(cvs);
-      row.append(lbl, wrap);
-      area.appendChild(row);
-
-      const labels   = Array.from({ length: len }, (_, i) => i);
-      const datasets = [
-        {
-          label: 'Lum',
-          data: lums,
-          borderColor: ch.color,
-          backgroundColor: hex(ch.color, 0.08),
-          borderWidth: 1.4, pointRadius: 0, tension: 0.2, fill: true, spanGaps: false,
-        },
-      ];
-      if (showChroma) {
-        datasets.push({
-          label: 'Chroma',
-          data: chromas,
-          borderColor: hex(ch.color, 0.45),
-          backgroundColor: 'transparent',
-          borderWidth: 1, borderDash: [3, 3],
-          pointRadius: 0, tension: 0.2, fill: false, spanGaps: false,
-        });
-      }
-
-      const state = { anchors: anchors.slice() };
-      const plug  = makeAnchorPlugin(() => state.anchors, ch.color);
-      ch._chartState = state;
-
-      const ci = new Chart(cvs, {
-        type: 'line',
-        data: { labels, datasets },
-        options: baseOptions(isLast),
-        plugins: [plug],
-      });
-      ch._liveChart  = ci;
-      ch._isRefChart = isRef;
-      chartInstances.push(ci);
-    });
-  }
-
-  // ── Build: modo sobreposto ─────────────────────────────────────────────────
-  function buildOverlay(area, channels) {
-    const wrap = document.createElement('div');
-    wrap.style.cssText = [
-      'flex:1;min-height:0;overflow:hidden;border-radius:4px',
-      'background:#0a0a16;border:1px solid #2a2a4a',
-    ].join(';');
-    const cvs = document.createElement('canvas');
-    wrap.appendChild(cvs);
-    area.appendChild(wrap);
-
-    const datasets    = [];
-    const anchorPlugs = [];
-
-    channels.forEach((ch, idx) => {
-      const isRef = idx === 0;
-      const { lums, chromas, anchors } = getWindowData(ch, isRef);
-
-      datasets.push({
-        label: (isRef ? '★ ' : '') + ch.label + ' Lum',
-        data: lums,
-        borderColor: ch.color,
-        backgroundColor: hex(ch.color, 0.07),
-        borderWidth: 1.5, pointRadius: 0, tension: 0.2, fill: true, spanGaps: false,
-      });
-      if (showChroma) {
-        datasets.push({
-          label: ch.label + ' Chr',
-          data: chromas,
-          borderColor: hex(ch.color, 0.4),
-          backgroundColor: 'transparent',
-          borderWidth: 1, borderDash: [3, 3],
-          pointRadius: 0, tension: 0.2, fill: false, spanGaps: false,
-        });
-      }
-
-      const state = { anchors: anchors.slice() };
-      ch._chartState = state;
-      anchorPlugs.push(makeAnchorPlugin(() => state.anchors, ch.color));
-    });
-
-    const opts = baseOptions(true);
-    opts.plugins.legend = {
-      display: true, position: 'bottom',
-      labels: { color: '#778899', font: { size: 8, family: 'monospace' }, boxWidth: 10, padding: 6 },
-    };
-    opts.interaction = { mode: 'index', intersect: false };
-
-    const ci = new Chart(cvs, {
-      type: 'line',
-      data: { labels: Array.from({ length: MAX_POINTS }, (_, i) => i), datasets },
-      options: opts,
-      plugins: anchorPlugs,
-    });
-    chartInstances.push(ci);
-  }
-
-  // ── Rebuild completo ───────────────────────────────────────────────────────
-  function rebuildCharts(area, channels) {
-    destroyCharts(area);
-    if (!channels || !channels.length) return;
-    chartMode === 'overlay'
-      ? buildOverlay(area, channels)
-      : buildParallel(area, channels);
-  }
-
-  // ── Update live (modo paralelo sem recriar o canvas) ──────────────────────
-  function updateLive(area, channels) {
-    if (!chartInstances.length) { rebuildCharts(area, channels); return; }
-    channels.forEach((ch, idx) => {
-      const ci = ch._liveChart;
-      if (!ci) return;
-      const isRef = idx === 0;
-      const { lums, chromas, anchors, len } = getWindowData(ch, isRef);
-      ci.data.labels           = Array.from({ length: len }, (_, i) => i);
-      ci.data.datasets[0].data = lums;
-      if (showChroma && ci.data.datasets[1]) ci.data.datasets[1].data = chromas;
-      if (ch._chartState) ch._chartState.anchors = anchors.slice();
-      ci.update('none');
-    });
-  }
-
-  // ── Loop de atualização ao vivo ────────────────────────────────────────────
-  function startLiveLoop(area, getChannels) {
-    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
-    liveTimer = setInterval(() => {
-      if (!document.getElementById(PANEL_ID)) { clearInterval(liveTimer); liveTimer = null; return; }
-      const chs = getChannels();
-      chartMode === 'overlay'
-        ? rebuildCharts(area, chs)
-        : updateLive(area, chs);
-    }, UPDATE_MS);
-  }
-
-  // ── Abre o painel ──────────────────────────────────────────────────────────
+  // ── Abre (ou fecha) o painel ──────────────────────────────────────────────
   async function openPanel() {
-    await loadChartJs();
+    if (isOpen()) { closePanel(); return; }
 
-    const old = document.getElementById(PANEL_ID);
-    if (old) { old.remove(); }
+    await loadChartJs();
 
     const mainPanel = document.getElementById('ml-panel');
     const mpRect    = mainPanel
       ? mainPanel.getBoundingClientRect()
-      : { right: 4 + 340, top: 4 };
-    const GAP   = 6;
-    const initL = mpRect.right + GAP;
-    const initT = mpRect.top;
-    const initW = Math.max(320, window.innerWidth  - initL - GAP);
-    const initH = Math.max(260, window.innerHeight - initT - GAP);
+      : { right: window.innerWidth - 20 };
 
-    const panel = document.createElement('div');
-    panel.id    = PANEL_ID;
-    panel.style.cssText = [
-      `position:fixed;left:${initL}px;top:${initT}px`,
-      `width:${initW}px;height:${initH}px`,
-      'z-index:99998;min-width:200px;min-height:200px',
-      `background:${ui.T.panelBg};border:1px solid ${ui.T.panelBorder}`,
-      'border-radius:8px;box-shadow:0 4px 24px #000d',
-      `font-family:monospace;font-size:10px;color:${ui.T.textPrimary}`,
-      'user-select:none;overflow:hidden;display:flex;flex-direction:column',
-    ].join(';');
+    const GAP    = 6;
+    const initL  = mpRect.right + GAP;
+    const initT  = GAP;
+    const initW  = Math.max(360, window.innerWidth  - initL - GAP);
+    const initH  = Math.max(280, window.innerHeight - initT - GAP);
 
-    // ─ Header ─
+    panel = document.createElement('div');
+    panel.id = 'ml-chart-panel';
+
+    function applyPanelStyle() {
+      panel.style.cssText = [
+        `position:fixed;left:${initL}px;top:${initT}px`,
+        `width:${initW}px;height:${initH}px`,
+        'z-index:99998;min-width:200px;min-height:220px',
+        `background:${ui.T.panelBg};border:1px solid ${ui.T.panelBorder}`,
+        'border-radius:8px;box-shadow:0 4px 24px #000d',
+        `font-family:monospace;font-size:10px;color:${ui.T.textPrimary}`,
+        'user-select:none;overflow:hidden;display:flex;flex-direction:column',
+      ].join(';');
+    }
+    applyPanelStyle();
+
+    // ── Header ──────────────────────────────────────────────────────────────
     const hdr = document.createElement('div');
     hdr.style.cssText = [
-      'display:flex;align-items:center;gap:5px;padding:5px 8px 4px',
+      'display:flex;align-items:center;gap:5px;padding:5px 8px 4px;flex-shrink:0',
       `background:${ui.T.headerBg};border-bottom:1px solid ${ui.T.panelBorder}`,
-      'border-radius:8px 8px 0 0;cursor:move;flex-shrink:0',
+      'border-radius:8px 8px 0 0;cursor:move',
     ].join(';');
 
     const htitle = document.createElement('span');
     htitle.textContent = '📊 Gráficos ao vivo';
-    htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.05em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 
+    // botão modo paralelo/sobreposto
     const btnMode = document.createElement('button');
-    btnMode.style.cssText = `background:${ui.T.btnBg};border:1px solid ${ui.T.btnBorder};color:#00d4ff;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap`;
+    btnMode.style.cssText = `background:${ui.T.btnBg};border:1px solid ${ui.T.btnBorder};color:#00d4ff;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0`;
     function updateModeBtn() { btnMode.textContent = chartMode === 'parallel' ? '⫴ Paralelo' : '⧉ Sobreposto'; }
     updateModeBtn();
+    btnMode.onclick = () => { chartMode = chartMode === 'parallel' ? 'overlay' : 'parallel'; updateModeBtn(); rebuildCharts(); };
 
-    const btnAnchors = document.createElement('button');
-    function updateAnchorsBtn() {
-      btnAnchors.textContent = showAnchors ? '◼ Âncoras' : '◻ Âncoras';
-      btnAnchors.style.cssText = `background:${ui.T.btnBg};border:1px solid #44ff8855;color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap;opacity:${showAnchors ? '1' : '0.45'}`;
+    // botão âncoras
+    const btnAnc = document.createElement('button');
+    function updateAncBtn() {
+      btnAnc.textContent = showAnchors ? '◼ Âncoras' : '◻ Âncoras';
+      btnAnc.style.opacity = showAnchors ? '1' : '0.45';
     }
-    updateAnchorsBtn();
+    btnAnc.style.cssText = `background:${ui.T.btnBg};border:1px solid #44ff8855;color:#44ff88;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0`;
+    updateAncBtn();
+    btnAnc.onclick = () => { showAnchors = !showAnchors; updateAncBtn(); rebuildCharts(); };
 
-    const btnChroma = document.createElement('button');
-    function updateChromaBtn() {
-      btnChroma.textContent = showChroma ? '◼ Chroma' : '◻ Chroma';
-      btnChroma.style.cssText = `background:${ui.T.btnBg};border:1px solid #ffd70055;color:#ffd700;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0;white-space:nowrap;opacity:${showChroma ? '1' : '0.45'}`;
-    }
-    updateChromaBtn();
-
+    // fechar
     const btnClose = document.createElement('button');
     btnClose.textContent = '✕';
     btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
-    btnClose.onclick = () => closePanel();
+    btnClose.onclick = closePanel;
 
-    hdr.append(htitle, btnAnchors, btnChroma, btnMode, btnClose);
+    hdr.append(htitle, btnMode, btnAnc, btnClose);
     panel.appendChild(hdr);
 
-    // ─ Drag ─
+    // drag
     let pdrag = false, pox = 0, poy = 0;
     hdr.addEventListener('mousedown', e => {
       if (e.target !== hdr && e.target !== htitle) return;
       pdrag = true;
       const r = panel.getBoundingClientRect();
-      panel.style.left = r.left + 'px'; panel.style.right = 'auto';
-      pox = e.clientX - r.left; poy = e.clientY - r.top;
+      panel.style.left  = r.left + 'px';
+      panel.style.right = 'auto';
+      pox = e.clientX - r.left;
+      poy = e.clientY - r.top;
       e.preventDefault();
     });
     window.addEventListener('mousemove', e => {
@@ -401,135 +167,333 @@
     });
     window.addEventListener('mouseup', () => pdrag = false);
 
-    // ─ Resize handles (4 cantos) ─
-    [['nw','top:0;left:0'],['ne','top:0;right:0'],['sw','bottom:0;left:0'],['se','bottom:0;right:0']].forEach(([cls, pos]) => {
-      const isN = cls[0] === 'n', isW = cls[1] === 'w';
-      const h   = document.createElement('div');
-      h.style.cssText = `position:absolute;width:14px;height:14px;cursor:${cls}-resize;z-index:10;${pos}`;
-      const dot = document.createElement('div');
-      dot.style.cssText = `position:absolute;width:5px;height:5px;border-radius:2px;background:#2a3a6a;${isN?'top:3px':'bottom:3px'};${isW?'left:3px':'right:3px'}`;
-      h.appendChild(dot); panel.appendChild(h);
+    // resize corners
+    [['nw','nw-resize','top:0;left:0'],['ne','ne-resize','top:0;right:0'],
+     ['sw','sw-resize','bottom:0;left:0'],['se','se-resize','bottom:0;right:0']]
+    .forEach(([cls, cur, pos]) => {
+      const h = document.createElement('div');
+      h.style.cssText = `position:absolute;width:14px;height:14px;cursor:${cur};z-index:10;${pos}`;
+      panel.appendChild(h);
       let rsx=0,rsy=0,rsw=0,rsh=0,rsl=0,rst=0;
+      const isN = cls[0]==='n', isW = cls[1]==='w';
       h.addEventListener('mousedown', e => {
         e.stopPropagation(); e.preventDefault();
-        rsx=e.clientX; rsy=e.clientY; rsw=panel.offsetWidth; rsh=panel.offsetHeight; rsl=panel.offsetLeft; rst=panel.offsetTop;
-        const onMove = ev => {
-          const dx=ev.clientX-rsx, dy=ev.clientY-rsy;
+        rsx=e.clientX;rsy=e.clientY;rsw=panel.offsetWidth;rsh=panel.offsetHeight;rsl=panel.offsetLeft;rst=panel.offsetTop;
+        function onMove(ev) {
+          const dx=ev.clientX-rsx,dy=ev.clientY-rsy;
           let nw=rsw,nh=rsh,nl=rsl,nt=rst;
           if (isW){nw=Math.max(200,rsw-dx);nl=rsl+rsw-nw;}else{nw=Math.max(200,rsw+dx);}
-          if (isN){nh=Math.max(200,rsh-dy);nt=rst+rsh-nh;}else{nh=Math.max(200,rsh+dy);}
-          panel.style.width=nw+'px'; panel.style.height=nh+'px'; panel.style.left=nl+'px'; panel.style.top=nt+'px';
-          rebuildCharts(chartsArea, getVisibleChannels());
-        };
-        const onUp = () => { window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp); };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
+          if (isN){nh=Math.max(220,rsh-dy);nt=rst+rsh-nh;}else{nh=Math.max(220,rsh+dy);}
+          panel.style.width=nw+'px';panel.style.height=nh+'px';panel.style.left=nl+'px';panel.style.top=nt+'px';
+          rebuildCharts();
+        }
+        function onUp(){window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);}
+        window.addEventListener('mousemove',onMove);window.addEventListener('mouseup',onUp);
       });
     });
 
-    // ─ Body ─
-    const body = document.createElement('div');
-    body.style.cssText = `flex:1;overflow-y:auto;padding:4px 8px 6px;display:flex;flex-direction:column;gap:4px;min-height:0;color:${ui.T.textPrimary}`;
-    panel.appendChild(body);
-
-    // Toggle de canais
+    // ── Toggle de canais ────────────────────────────────────────────────────
     const toggleBar = document.createElement('div');
-    toggleBar.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;flex-shrink:0';
+    toggleBar.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;padding:4px 8px 2px;flex-shrink:0';
+
     const activeChannels = ML.CHANNELS.filter(ch => ch.active);
     activeChannels.forEach((ch, idx) => {
       const btn = document.createElement('button');
-      btn.dataset.active = '1';
+      btn.dataset.on = '1';
       btn.style.cssText = [
-        `background:${hex(ch.color, 0.13)};border:1px solid ${hex(ch.color, 0.53)};color:${ch.color}`,
-        'border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;transition:opacity .15s',
+        `background:${ch.color}22;border:1px solid ${ch.color}88;color:${ch.color}`,
+        'border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace',
       ].join(';');
       btn.textContent = (idx === 0 ? '★ ' : '') + ch.label;
-      btn.onclick = () => {
-        const on = btn.dataset.active === '1';
-        btn.dataset.active = on ? '0' : '1';
-        btn.style.opacity  = on ? '0.35' : '1';
-        rebuildCharts(chartsArea, getVisibleChannels());
-      };
+      btn.onclick = () => { const on=btn.dataset.on==='1'; btn.dataset.on=on?'0':'1'; btn.style.opacity=on?'0.35':'1'; rebuildCharts(); };
       toggleBar.appendChild(btn);
     });
-    body.appendChild(toggleBar);
+    panel.appendChild(toggleBar);
 
-    function getVisibleChannels() {
+    // ── Área de gráficos ────────────────────────────────────────────────────
+    const chartsArea = document.createElement('div');
+    chartsArea.style.cssText = 'flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;overflow:hidden;padding:2px 6px 4px';
+    panel.appendChild(chartsArea);
+
+    document.body.appendChild(panel);
+
+    // ── Rebuild ──────────────────────────────────────────────────────────────
+    function getVisible() {
       return activeChannels.filter((_, i) => {
         const b = toggleBar.children[i];
-        return b && b.dataset.active === '1';
+        return b && b.dataset.on === '1';
       });
     }
 
-    if (!activeChannels.length) {
-      const msg = document.createElement('div');
-      msg.style.cssText = 'color:#ff4444;padding:16px;text-align:center;flex:1';
-      msg.textContent   = 'Nenhum canal ativo. Ative canais no painel principal.';
-      body.appendChild(msg);
-      document.body.appendChild(panel);
-      chartPanel = panel;
-      return;
+    function destroyCharts() {
+      chartInstances.forEach(c => { try { c.destroy(); } catch(e) {} });
+      chartInstances = [];
+      chartsArea.innerHTML = '';
     }
 
-    // Legenda Lum / Chroma
-    const legBar = document.createElement('div');
-    legBar.style.cssText = 'display:flex;gap:10px;flex-shrink:0;align-items:center;padding:1px 0';
-    [['Lum', '#ffffff', ''], ['Chroma (√cb²+cr²)', '#ffd700', '3,3']].forEach(([name, color, dash]) => {
-      const line = document.createElement('span');
-      line.style.cssText = `display:inline-block;width:14px;height:2px;background:${dash ? 'none' : color};border-top:${dash ? '1px dashed ' + color : 'none'};margin-right:3px;vertical-align:middle`;
-      const lbl = document.createElement('span');
-      lbl.textContent = name;
-      lbl.style.cssText = `color:${color};font-size:8px`;
-      const w = document.createElement('span');
-      w.append(line, lbl); legBar.appendChild(w);
-    });
-    body.appendChild(legBar);
+    function xMaxTicks() {
+      return Math.max(4, Math.floor((chartsArea.offsetWidth || 400) / 65));
+    }
 
-    // Área dos gráficos
-    const chartsArea = document.createElement('div');
-    chartsArea.style.cssText = 'flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;overflow:hidden';
-    body.appendChild(chartsArea);
+    // Pega os últimos MAX_DISPLAY_PTS pontos do rollingBuffer do canal.
+    // Retorna { lums, cbs, crs, anchorsLum, offset }
+    // offset = índice global do primeiro ponto visível (para âncoras)
+    function getWindowedData(ch) {
+      const buf  = ch.rollingBuffer ? ch.rollingBuffer.toArray() : [];
+      const len  = buf.length;
+      const from = Math.max(0, len - MAX_DISPLAY_PTS);
+      const slice = buf.slice(from);
+      return {
+        lums:       slice.map(p => p.lum),
+        cbs:        slice.map(p => p.cb),
+        crs:        slice.map(p => p.cr),
+        offset:     from,
+        bufLen:     len,
+      };
+    }
 
-    document.body.appendChild(panel);
-    chartPanel = panel;
+    // Xaxis labels: apenas índice relativo (0..N)
+    function makeLabels(n) {
+      const arr = [];
+      for (let i = 0; i < n; i++) arr.push(i);
+      return arr;
+    }
 
-    // Conecta botões
-    btnMode.onclick = () => {
-      chartMode = chartMode === 'parallel' ? 'overlay' : 'parallel';
-      updateModeBtn();
-      rebuildCharts(chartsArea, getVisibleChannels());
-    };
-    btnAnchors.onclick = () => {
-      showAnchors = !showAnchors; updateAnchorsBtn();
-      rebuildCharts(chartsArea, getVisibleChannels());
-    };
-    btnChroma.onclick = () => {
-      showChroma = !showChroma; updateChromaBtn();
-      rebuildCharts(chartsArea, getVisibleChannels());
-    };
+    // ── Chart options base ────────────────────────────────────────────────
+    function baseOptions(showXAxis, yMin, yMax, ticks) {
+      return {
+        animation:    false,
+        responsive:   true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        layout: { padding: { top: 1, right: 2, bottom: 0, left: 0 } },
+        scales: {
+          x: {
+            display:    showXAxis,
+            type:       'linear',
+            min:        0,
+            max:        MAX_DISPLAY_PTS - 1,
+            ticks: { color: '#556688', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks, callback: v => v },
+            grid: { color: 'transparent' },
+          },
+          y: {
+            min:  yMin,
+            max:  yMax,
+            ticks: { color: '#445566', font: { size: 7 }, maxTicksLimit: 3 },
+            grid:  { color: 'transparent' },
+          },
+        },
+      };
+    }
 
-    requestAnimationFrame(() => {
-      rebuildCharts(chartsArea, getVisibleChannels());
-      startLiveLoop(chartsArea, getVisibleChannels);
-    });
+    // ── Update incremental dos dados (sem rebuild do DOM) ─────────────────
+    // Mapeia chId → { ci, getAnchors, getOffset }
+    const liveRefs = {};
+
+    function updateLiveData() {
+      const visible = getVisible();
+      if (!visible.length) return;
+      if (chartMode === 'overlay') {
+        updateOverlay(visible);
+      } else {
+        updateParallel(visible);
+      }
+    }
+
+    function updateParallel(channels) {
+      channels.forEach(ch => {
+        const ref = liveRefs[ch.id];
+        if (!ref) return;
+        const { lums, cbs, crs, offset } = getWindowedData(ch);
+        const n = lums.length;
+        const labels = makeLabels(n);
+
+        ref.ci.data.labels = labels;
+        ref.ci.data.datasets[0].data = lums;
+        ref.ci.data.datasets[1].data = cbs;
+        ref.ci.data.datasets[2].data = crs;
+
+        // atualiza âncoras
+        ref.anchors = showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [];
+        ref.offset  = offset;
+
+        ref.ci.update('none');
+      });
+    }
+
+    function updateOverlay(channels) {
+      const ref = liveRefs['__overlay__'];
+      if (!ref) return;
+      channels.forEach((ch, idx) => {
+        const { lums, offset } = getWindowedData(ch);
+        const n = lums.length;
+        if (ref.ci.data.labels.length !== n) ref.ci.data.labels = makeLabels(n);
+        ref.ci.data.datasets[idx].data = lums;
+        ref.anchorsMap[ch.id] = {
+          anchors: showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [],
+          offset,
+          color: ch.color,
+        };
+      });
+      ref.ci.update('none');
+    }
+
+    // ── Build parallel ────────────────────────────────────────────────────
+    function buildParallel(channels) {
+      const gap     = (channels.length - 1) * 2;
+      const rowH    = Math.max(52, Math.floor((chartsArea.offsetHeight - gap) / channels.length));
+      const ticks   = xMaxTicks();
+
+      channels.forEach((ch, idx) => {
+        const { lums, cbs, crs, offset } = getWindowedData(ch);
+
+        const row = document.createElement('div');
+        row.style.cssText = [
+          `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0`,
+          `padding:2px 3px;border-radius:4px`,
+          `background:${ch.color}0d;box-shadow:inset 0 0 0 1px ${ch.color}22;overflow:hidden`,
+        ].join(';');
+
+        const lbl = document.createElement('div');
+        lbl.style.cssText = `color:${ch.color};font-weight:bold;font-size:8px;width:32px;flex-shrink:0;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+        lbl.textContent = (idx === 0 ? '★ ' : '') + ch.label;
+
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'flex:1;min-width:0;overflow:hidden';
+        const cvs = document.createElement('canvas');
+        wrap.appendChild(cvs);
+        row.append(lbl, wrap);
+        chartsArea.appendChild(row);
+
+        const anchorsRef = { list: showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [], offset };
+        const ancPlugin = makeAnchorPlugin(
+          () => anchorsRef.list,
+          () => 0   // offset visual já aplicado no slice
+        );
+
+        const ci = new Chart(cvs, {
+          type: 'line',
+          data: {
+            labels:   makeLabels(lums.length),
+            datasets: [
+              { data: lums, borderColor: ch.color,     backgroundColor: ch.color + '18', borderWidth: 1.4, pointRadius: 0, tension: 0.2, fill: true,  spanGaps: false },
+              { data: cbs,  borderColor: '#00d4ff',    backgroundColor: 'transparent',   borderWidth: 1,   pointRadius: 0, tension: 0.2, fill: false, spanGaps: false },
+              { data: crs,  borderColor: '#ff6680',    backgroundColor: 'transparent',   borderWidth: 1,   pointRadius: 0, tension: 0.2, fill: false, spanGaps: false },
+            ],
+          },
+          options: baseOptions(idx === channels.length - 1, 0, 255, ticks),
+          plugins: [ancPlugin],
+        });
+
+        chartInstances.push(ci);
+        liveRefs[ch.id] = {
+          ci,
+          get anchors() { return anchorsRef.list; },
+          set anchors(v) { anchorsRef.list = v; },
+          get offset() { return anchorsRef.offset; },
+          set offset(v) { anchorsRef.offset = v; },
+        };
+      });
+    }
+
+    // ── Build overlay ─────────────────────────────────────────────────────
+    function buildOverlay(channels) {
+      const ticks = xMaxTicks();
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = `flex:1;min-height:0;overflow:hidden;border-radius:4px;background:#0a0a16;border:1px solid ${ui.T.panelBorder}`;
+      const cvs = document.createElement('canvas');
+      wrap.appendChild(cvs);
+      chartsArea.appendChild(wrap);
+
+      const anchorsMap = {};
+      const datasets   = channels.map(ch => {
+        const { lums, offset } = getWindowedData(ch);
+        anchorsMap[ch.id] = {
+          anchors: showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [],
+          offset,
+          color: ch.color,
+        };
+        return {
+          label:           ch.label,
+          data:            lums,
+          borderColor:     ch.color,
+          backgroundColor: ch.color + '18',
+          borderWidth:     1.6,
+          pointRadius:     0,
+          tension:         0.2,
+          fill:            false,
+          spanGaps:        false,
+        };
+      });
+
+      const overlayAncPlugin = {
+        id: 'anchorLinesOverlay',
+        afterDraw(chart) {
+          if (!showAnchors) return;
+          const ctx = chart.ctx, xScale = chart.scales.x, yScale = chart.scales.y;
+          if (!xScale || !yScale) return;
+          ctx.save();
+          Object.values(anchorsMap).forEach(({ anchors, color }) => {
+            anchors.forEach(idx => {
+              if (idx < 0 || idx >= MAX_DISPLAY_PTS) return;
+              const xPx = xScale.getPixelForValue(idx);
+              if (xPx < xScale.left || xPx > xScale.right) return;
+              ctx.beginPath();
+              ctx.moveTo(xPx, yScale.top);
+              ctx.lineTo(xPx, yScale.bottom);
+              ctx.strokeStyle = color + '77';
+              ctx.lineWidth   = 1;
+              ctx.stroke();
+            });
+          });
+          ctx.restore();
+        },
+      };
+
+      const opts = baseOptions(true, 0, 255, ticks);
+      opts.plugins.legend = {
+        display: true, position: 'bottom',
+        labels: { color: '#778899', font: { size: 8, family: 'monospace' }, boxWidth: 10, padding: 8 },
+      };
+      opts.interaction = { mode: 'index', intersect: false };
+
+      const ci = new Chart(cvs, {
+        type: 'line',
+        data: { labels: makeLabels(datasets[0].data.length), datasets },
+        options: opts,
+        plugins: [overlayAncPlugin],
+      });
+
+      chartInstances.push(ci);
+      liveRefs['__overlay__'] = { ci, anchorsMap };
+    }
+
+    // ── Rebuild completo ──────────────────────────────────────────────────
+    function rebuildCharts() {
+      destroyCharts();
+      Object.keys(liveRefs).forEach(k => delete liveRefs[k]);
+      const visible = getVisible();
+      if (!visible.length) return;
+      if (chartMode === 'overlay') buildOverlay(visible);
+      else                         buildParallel(visible);
+    }
+
+    // ── Loop de atualização ───────────────────────────────────────────────
+    if (intervalId) clearInterval(intervalId);
+    intervalId = setInterval(updateLiveData, CHART_INTERVAL_MS);
+
+    requestAnimationFrame(() => rebuildCharts());
   }
 
-  // ── Fecha o painel ─────────────────────────────────────────────────────────
-  function closePanel() {
-    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
-    destroyCharts(null);
-    ML.CHANNELS.forEach(ch => { ch._liveChart = null; ch._chartState = null; });
-    const el = document.getElementById(PANEL_ID);
-    if (el) el.remove();
-    chartPanel = null;
-  }
-
-  // ── API pública ────────────────────────────────────────────────────────────
+  // ── API pública ───────────────────────────────────────────────────────────
   ML.chart = {
+    toggle: openPanel,
     open:   openPanel,
     close:  closePanel,
-    toggle: () => document.getElementById(PANEL_ID) ? closePanel() : openPanel(),
+    // compatibilidade com código legado que chamar show(results)
+    show:   () => openPanel(),
   };
 
-  console.log('[MedLat] 40-chart v2.2. Shift corrigido: m>=0 recua janela, m<0 avança.');
+  console.log('[MedLat] 40-chart v2.0 carregado (live sliding, lum+chroma+âncoras).');
 })();
