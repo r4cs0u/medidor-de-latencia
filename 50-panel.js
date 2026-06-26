@@ -94,6 +94,9 @@
     btnTips.onclick  = () => ML.help && ML.help.toggleTips(panel);
     btnGuide.onclick = () => ML.help && ML.help.toggleGuide(panel);
 
+    const btnChart = ui.mkIconBtn('\ud83d\udcca', 'Abrir/fechar gr\u00e1ficos ao vivo', '#44ff88');
+    btnChart.onclick = () => ML.chart && ML.chart.toggle();
+
     const btnMin = ui.mkIconBtn('\u2212', 'Minimizar para widget', '#aaaaaa');
     const btnX   = document.createElement('button');
     btnX.textContent = '\u2715'; btnX.title = 'Fechar o medidor';
@@ -102,11 +105,12 @@
       ML.recorder.stopRolling();
       if (rtIntervalId)  clearInterval(rtIntervalId);
       if (lumIntervalId) clearInterval(lumIntervalId); // cancela o loop de lum
+      if (ML.chart) ML.chart.close();
       document.querySelectorAll('[id^="ml-"], .ml-search-overlay').forEach(e => e.remove());
     };
     btnMin.onclick = () => ui.minimizePanel(panel);
 
-    hdr.append(ttl, btnTips, btnGuide, btnMin, btnX);
+    hdr.append(ttl, btnTips, btnGuide, btnChart, btnMin, btnX);
     panel.appendChild(hdr);
 
     let pdrag = false, pox = 0, poy = 0;
@@ -513,5 +517,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado v1.3. lumIntervalId gerenciado. alpha badge funcional.');
+  console.log('[MedLat] 50-panel carregado v1.4. Botão 📊 charts adicionado ao header.');
 })();
