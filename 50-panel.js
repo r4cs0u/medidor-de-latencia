@@ -4,13 +4,11 @@
 
   (function injectStyles() { ui.injectStyles(); })();
 
-  // calcRTReal removida daqui — centralizada em ML.calcRTReal (00-core.js)
-
   function mkDeductionInput(ch) {
     const inp = document.createElement('input');
     inp.type = 'text'; inp.placeholder = '0.000s';
     inp.value = ch.deduction ? ui.formatDeduction(ch.deduction) : '';
-    inp.title = 'Offset fixo do multiviewer. Ex: 3 \u2192 -3.000s  +1.5 \u2192 +1.500s';
+    inp.title = 'Offset fixo do multiviewer. Ex: 3 → -3.000s  +1.5 → +1.500s';
     function applyDedStyle() {
       const t = ui.T;
       const hasVal = inp.value && inp.value !== '' && inp.value !== '0.000s';
@@ -41,16 +39,11 @@
     return inp;
   }
 
-  // ── init ────────────────────────────────────────────────────────
-
   function init() {
     ['ml-panel', 'ml-tips', 'ml-guide', 'ml-widget'].forEach(id => {
       const el = document.getElementById(id); if (el) el.remove();
     });
 
-    // lumIntervalId é guardado aqui e cancelado no btnX.onclick.
-    // Sem isso, cada F5 acumula uma nova instância do setInterval rodando
-    // em paralelo e gravando no DOM mesmo depois do painel ser fechado.
     let lumIntervalId = null;
 
     const panel = document.createElement('div');
@@ -86,20 +79,20 @@
     applyHdrStyle();
 
     const ttl = document.createElement('span');
-    ttl.textContent = '\u26a1 MEDIDOR DE LAT\u00CANCIA';
+    ttl.textContent = '⚡ MEDIDOR DE LATÊNCIA';
     ttl.style.cssText = `color:${ui.T.textPrimary};font-weight:bold;font-size:10px;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0`;
 
-    const btnChart = ui.mkIconBtn('\ud83d\udcca', 'Abrir/fechar gr\u00e1ficos ao vivo', '#44ff88');
+    const btnChart = ui.mkIconBtn('📊', 'Abrir/fechar gráficos ao vivo', '#44ff88');
     btnChart.onclick = () => ML.chart && ML.chart.toggle();
 
-    const btnMin = ui.mkIconBtn('\u2212', 'Minimizar para widget', '#aaaaaa');
+    const btnMin = ui.mkIconBtn('−', 'Minimizar para widget', '#aaaaaa');
     const btnX   = document.createElement('button');
-    btnX.textContent = '\u2715'; btnX.title = 'Fechar o medidor';
+    btnX.textContent = '✕'; btnX.title = 'Fechar o medidor';
     btnX.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnX.onclick = () => {
       ML.recorder.stopRolling();
       if (rtIntervalId)  clearInterval(rtIntervalId);
-      if (lumIntervalId) clearInterval(lumIntervalId); // cancela o loop de lum
+      if (lumIntervalId) clearInterval(lumIntervalId);
       if (ML.chart) ML.chart.close();
       document.querySelectorAll('[id^="ml-"], .ml-search-overlay').forEach(e => e.remove());
     };
@@ -131,7 +124,6 @@
     const scrollBody = document.createElement('div');
     scrollBody.style.cssText = 'flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column';
 
-    // ── Posicionamento ──
     const secTG = ui.sec('Posicionamento');
     const pxInp = ui.mkNum(ML.state.probeW, 16, 500, 2, 44);
     pxInp.title = 'Tamanho das probes em pixels';
@@ -144,17 +136,17 @@
         if (ch.active && ch.resize) ch.resize();
       });
     }
-    const btnPxM = ui.mkBtn('\u2212', '#1e2a3a', 'padding:1px 4px;font-size:8px;line-height:1.2');
-    const btnPxP = ui.mkBtn('+',     '#1e2a3a', 'padding:1px 4px;font-size:8px;line-height:1.2');
+    const btnPxM = ui.mkBtn('−', '#1e2a3a', 'padding:1px 4px;font-size:8px;line-height:1.2');
+    const btnPxP = ui.mkBtn('+', '#1e2a3a', 'padding:1px 4px;font-size:8px;line-height:1.2');
     btnPxM.onclick = () => applyGlobalPx(ML.state.probeW - 2);
     btnPxP.onclick = () => applyGlobalPx(ML.state.probeW + 2);
     pxInp.addEventListener('change', () => applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW));
     pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
 
     const btnSnap = ui.mkBtn('', '#0d4f3c', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box');
-    btnSnap.title = 'Ativa grade magn\u00e9tica para alinhar probes';
+    btnSnap.title = 'Ativa grade magnética para alinhar probes';
     function updateSnapBtn() {
-      btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF';
+      btnSnap.textContent = ML.state.snapGrid ? '⊞ SNAP ON' : '⊟ SNAP OFF';
       btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : ui.T.btnBg;
       btnSnap.style.color      = ML.state.snapGrid ? '#44ff88' : ui.T.btnColor;
     }
@@ -162,9 +154,9 @@
     updateSnapBtn();
 
     const btnCol = ui.mkBtn('', '#2a1a0d', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box');
-    btnCol.title = 'Evita sobreposi\u00e7\u00e3o entre probes';
+    btnCol.title = 'Evita sobreposição entre probes';
     function updateColBtn() {
-      btnCol.textContent = ML.state.noOverlap ? '\u26d4 COL ON' : '\u26aa COL OFF';
+      btnCol.textContent = ML.state.noOverlap ? '⛔ COL ON' : '⚪ COL OFF';
       btnCol.style.background = ML.state.noOverlap ? '#3a1a0d' : ui.T.btnBg;
       btnCol.style.color      = ML.state.noOverlap ? '#ff8844' : ui.T.btnColor;
     }
@@ -172,7 +164,7 @@
     updateColBtn();
 
     const selNumCh = document.createElement('select');
-    selNumCh.title = 'N\u00famero total de telas ativas (inclui refer\u00eancia)';
+    selNumCh.title = 'Número total de telas ativas (inclui referência)';
     for (let n = 2; n <= 12; n++) {
       const opt = document.createElement('option');
       opt.value = n; opt.textContent = n + ' telas';
@@ -320,9 +312,9 @@
     secDet.appendChild(probeGrid);
     scrollBody.appendChild(secDet);
 
-    const secRT = ui.sec('\u26a1 Tempo Real');
-    const btnRTStart = ui.mkBtn('\u25b6 INICIAR',  '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
-    const btnRTStop  = ui.mkBtn('\u25a0 DESLIGAR', '#3a0d0d', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold;opacity:.45');
+    const secRT = ui.sec('⚡ Tempo Real');
+    const btnRTStart = ui.mkBtn('▶ INICIAR',  '#0d3a1a', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold');
+    const btnRTStop  = ui.mkBtn('■ DESLIGAR', '#3a0d0d', 'flex:1;padding:1px 3px;font-size:8px;line-height:1;height:20px;box-sizing:border-box;letter-spacing:.04em;font-weight:bold;opacity:.45');
     btnRTStart.style.color = '#44ff88';
     btnRTStop.style.color  = '#ff4444';
     btnRTStart.title = 'Inicia a coleta de amostras em tempo real';
@@ -344,8 +336,26 @@
     rowRTBtns.append(btnRTStart, btnRTStop);
 
     const rtStatusEl = document.createElement('div');
-    rtStatusEl.style.cssText = 'font-size:8px;color:#aaaacc;text-align:center;margin-top:2px;letter-spacing:.04em';
+    rtStatusEl.style.cssText = 'font-size:8px;color:#aaaacc;text-align:center;margin-top:2px;letter-spacing:.04em;transition:color .3s,opacity .3s';
     rtStatusEl.textContent = 'Parado';
+
+    // ── flashStatus: exibe msg temporária por ms milissegundos e depois restaura o texto padrão.
+    let _flashTimer = null;
+    function flashStatus(msg, color, ms) {
+      if (_flashTimer) clearTimeout(_flashTimer);
+      rtStatusEl.textContent = msg;
+      rtStatusEl.style.color = color || '#ffd700';
+      _flashTimer = setTimeout(() => {
+        _flashTimer = null;
+        if (rtRunning) {
+          rtStatusEl.textContent = '● AO VIVO';
+          rtStatusEl.style.color = '#00d4ff';
+        } else {
+          rtStatusEl.textContent = 'Parado';
+          rtStatusEl.style.color = '#aaaacc';
+        }
+      }, ms || 5000);
+    }
 
     secRT.append(rowRTBtns, rtStatusEl);
     scrollBody.appendChild(secRT);
@@ -372,7 +382,7 @@
     function updateRTCard(ch, r) {
       if (r.isReference) return;
       const inactive = !ch.active || r.skipped;
-      const DASH = '\u2014';
+      const DASH = '—';
       if (inactive) {
         if (ch._rtVal)     { ch._rtVal.textContent = DASH;     ch._rtVal.style.color = '#555566'; }
         if (ch._rtValReal) { ch._rtValReal.textContent = DASH; ch._rtValReal.style.color = '#555566'; }
@@ -425,7 +435,7 @@
       }
       if (ch._rtAlphaBadge) {
         const alpha = r.alpha !== null && r.alpha !== undefined ? r.alpha : null;
-        ch._rtAlphaBadge.textContent = alpha !== null ? '\u03b1=' + alpha.toFixed(2) : '';
+        ch._rtAlphaBadge.textContent = alpha !== null ? 'α=' + alpha.toFixed(2) : '';
         ch._rtAlphaBadge.style.color = alpha !== null && alpha < 0.7 ? '#ffd700' : '#aaaacc';
       }
     }
@@ -434,8 +444,11 @@
       if (!rtRunning) return;
       const results = ML.correlator.correlateRollingAll();
       results.forEach(r => { const ch = r.channel; if (!ch) return; updateRTCard(ch, r); });
-      rtStatusEl.textContent = '\u25cf AO VIVO  \u2014  ' + new Date().toLocaleTimeString('pt-BR');
-      rtStatusEl.style.color = '#00d4ff';
+      // Só atualiza o status se não houver flash ativo
+      if (!_flashTimer) {
+        rtStatusEl.textContent = '● AO VIVO';
+        rtStatusEl.style.color = '#00d4ff';
+      }
     }
 
     function resetRTState() {
@@ -477,6 +490,10 @@
     requestAnimationFrame(() => applyScale(panel.offsetWidth, panel.offsetHeight));
     ui.minimizePanel(panel);
 
+    // Expõe flashStatus para outros módulos (ex: 30-correlator)
+    ML.panel = ML.panel || {};
+    ML.panel.flashStatus = flashStatus;
+
     lumIntervalId = setInterval(() => {
       ML.CHANNELS.forEach(ch => {
         if (!ch.active || !ch.lumEl) return;
@@ -485,7 +502,7 @@
         if (y === null) {
           ch.lumEl.textContent = '--'; ch.lumEl.style.color = ch.color; ch.lumEl.title = '';
         } else if (y === -1) {
-          ch.lumEl.textContent = '\ud83d\udd12'; ch.lumEl.style.color = '#ff4444'; ch.lumEl.title = 'CORS bloqueado';
+          ch.lumEl.textContent = '🔒'; ch.lumEl.style.color = '#ff4444'; ch.lumEl.title = 'CORS bloqueado';
         } else {
           ch.lumEl.textContent = Math.round(y);
           ch.lumEl.style.color = ch.color;
@@ -501,5 +518,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel carregado v1.5. Botões de ajuda removidos do header.');
+  console.log('[MedLat] 50-panel v1.6. flashStatus exposto + relógio removido do status bar.');
 })();

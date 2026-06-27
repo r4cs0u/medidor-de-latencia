@@ -1,43 +1,29 @@
 (function () {
   const ML = window.MedLat;
 
-  // ADAPT_FACTOR: fator sobre o desvio-padrão para calcular o limiar adaptativo de diff.
-  //   0.15 foi calibrado empiricamente: sensível o suficiente para capturar cortes de cena
-  //   sem gerar falsos positivos em ruído de compressão.
   const ADAPT_FACTOR          = 0.15;
   const DIFF_THRESHOLD_MIN    = 1;
-  // ANCHOR_TOP_N: máximo de picos de maior magnitude a considerar como âncoras.
   const ANCHOR_TOP_N          = 30;
-  // ANCHOR_MIN_ISOLATION: separação mínima em amostras entre duas âncoras.
   const ANCHOR_MIN_ISOLATION  = 60;
-  // ANCHOR_STRENGTH_RATIO: âncora deve ser pelo menos 2.5x a mediana dos picos.
   const ANCHOR_STRENGTH_RATIO = 2.5;
-  // ANCHOR_CONSENSUS_TOL: tolerância base em amostras entre duas âncoras.
   const ANCHOR_CONSENSUS_TOL  = 2;
-  // REFINE_WINDOW: janela de lag para refinamento após alinhamento grosseiro.
   const REFINE_WINDOW         = 15;
 
   const RT_MIN_LAG_MS = -5000;
   const RT_MAX_LAG_MS = 30000;
   const MIN_SAMPLES   = 60;
 
-  // BREAK_RATIO: fração do stableOffset para definir o limiar de ruptura.
-  //   Ex: stable=20000ms → limiar=8000ms.
   const BREAK_RATIO        = 0.40;
-  // BREAK_RATIO_MIN_MS: limiar mínimo absoluto para canais de baixa latência.
   const BREAK_RATIO_MIN_MS = 300;
-  // BREAK_CONFIRM_N: mínimo de leituras consecutivas para confirmar ruptura.
-  //   O valor efetivo é max(BREAK_CONFIRM_N, floor(historyLen * 0.25)):
-  //   histórico maduro exige mais evidência antes de ser descartado.
   const BREAK_CONFIRM_N    = 15;
 
-  // ── buildHybridSeries ───────────────────────────────────────────────
+  // ── buildHybridSeries ────────────────────────────────────────────────────
   function buildHybridSeries(buf) {
     if (!buf || !buf.length) return [];
     return buf.map(p => p.lum * 0.8 + Math.abs(p.cb) * 0.1 + Math.abs(p.cr) * 0.1);
   }
 
-  // ── Primitivas ──────────────────────────────────────────────────────────
+  // ── Primitivas ───────────────────────────────────────────────────────────
   function adaptiveThreshold(arr) {
     const n = arr.length;
     if (!n) return DIFF_THRESHOLD_MIN;
@@ -70,7 +56,6 @@
     const nb = normalize(db);
     const n  = Math.min(na.length, nb.length);
     const cap = Math.min(maxLagSamples, n - 1);
-    // cap < 0 pode ocorrer se n=0; retorna array vazio tratado abaixo.
     if (cap < 0) return [];
     const result = [];
     for (let lag = -cap; lag <= cap; lag++) {
@@ -95,7 +80,6 @@
   }
 
   function selectRobustPeak(corr) {
-    // Retorna null se corr estiver vazio — tratado em correlateRolling.
     if (!corr || !corr.length) return null;
     const globalPeak = corr.reduce((best, cur) => cur.r > best.r ? cur : best, corr[0]);
     const threshold  = globalPeak.r * 0.99;
@@ -114,7 +98,7 @@
     return (iv >= 10 && iv <= 200) ? iv : ML.INTERVAL_MS;
   }
 
-  // ── Âncoras de cena ───────────────────────────────────────────────────
+  // ── Âncoras de cena ──────────────────────────────────────────────────────
   function extractAnchors(lum) {
     const diff = diffSeries(lum);
     const peaks = [];
@@ -177,7 +161,7 @@
     return [...arr.slice(-n), ...new Array(Math.min(-n, arr.length)).fill(arr[arr.length - 1])];
   }
 
-  // ── Estatísticas ─────────────────────────────────────────────────────
+  // ── Estatísticas ─────────────────────────────────────────────────────────
   function median(s) {
     const m = Math.floor(s.length / 2);
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
@@ -197,7 +181,7 @@
     return Math.max(0, Math.min(1, 1 - relDiff));
   }
 
-  // ── correlateRolling (modo RT) ─────────────────────────────────────────
+  // ── correlateRolling (modo RT) ───────────────────────────────────────────
   function correlateRolling(chA, chB) {
     const confThresh   = (ML.config && ML.config.rtConfThreshold !== undefined)
       ? ML.config.rtConfThreshold : 0.50;
@@ -226,7 +210,7 @@
 
     const corr = crossCorrelation(hybA, hybBshifted, refineWindow);
 
-    // Guard: corr vazio (n=0 ou cap<0) — retorna sem atualizar histórico.
+    // Guard: corr vazio → retorna usando histórico existente sem travar.
     const peak = selectRobustPeak(corr);
     if (!peak) {
       const stableOffsetMs = trimmedMedian(chB._rtHistory.length ? chB._rtHistory : [0]);
@@ -251,21 +235,22 @@
     if (confidence >= confThresh) {
       if (rawOffsetMs >= RT_MIN_LAG_MS && rawOffsetMs <= RT_MAX_LAG_MS) {
 
-        // ── Detecção de ruptura adaptativa ─────────────────────────────
-        // Limiar = 40% do stableOffset atual, mínimo 300ms.
-        // confirmNeeded escala com o tamanho do histórico (25%): histórico
-        // maduro exige mais leituras divergentes antes de ser descartado.
         chB._rtBreakCount = chB._rtBreakCount || 0;
         const currentStable = trimmedMedian(chB._rtHistory.length ? chB._rtHistory : [rawOffsetMs]);
         if (currentStable !== null) {
-          const breakThresh    = Math.max(BREAK_RATIO_MIN_MS, Math.abs(currentStable) * BREAK_RATIO);
-          const confirmNeeded  = Math.max(BREAK_CONFIRM_N, Math.floor(chB._rtHistory.length * 0.25));
+          const breakThresh   = Math.max(BREAK_RATIO_MIN_MS, Math.abs(currentStable) * BREAK_RATIO);
+          const confirmNeeded = Math.max(BREAK_CONFIRM_N, Math.floor(chB._rtHistory.length * 0.25));
           if (Math.abs(rawOffsetMs - currentStable) > breakThresh) {
             chB._rtBreakCount++;
             if (chB._rtBreakCount >= confirmNeeded) {
-              console.log('[MedLat] ruptura ch=' + chB.label +
-                ' stable=' + Math.round(currentStable) + 'ms raw=' + Math.round(rawOffsetMs) + 'ms' +
-                ' thresh=' + Math.round(breakThresh) + 'ms confirm=' + confirmNeeded + '. Hist limpo.');
+              // Notifica o painel com flash de 5s (sem console.log)
+              if (ML.panel && ML.panel.flashStatus) {
+                ML.panel.flashStatus(
+                  '⚠ ' + chB.label + ' hist. limpo (' + Math.round(currentStable) + '→' + Math.round(rawOffsetMs) + 'ms)',
+                  '#ffd700',
+                  5000
+                );
+              }
               chB._rtHistory = [];
               chB._rtBreakCount = 0;
             }
@@ -273,7 +258,6 @@
             chB._rtBreakCount = 0;
           }
         }
-        // ────────────────────────────────────────────────────────────
 
         chB._rtHistory.push(rawOffsetMs);
         if (chB._rtHistory.length > historyMax) {
@@ -340,5 +324,5 @@
     calcAlpha,
   };
 
-  console.log('[MedLat] 30-correlator v1.6. Fix crash corr vazio + ruptura proporcional ao histórico (confirmNeeded=max(15, hist*25%)). Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
+  console.log('[MedLat] 30-correlator v1.7. flashStatus via ML.panel na ruptura. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
 })();
