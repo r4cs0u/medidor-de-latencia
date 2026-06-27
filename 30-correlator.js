@@ -13,7 +13,7 @@
   const RT_MAX_LAG_MS = 30000;
   const MIN_SAMPLES   = 60;
 
-  const BREAK_RATIO        = 0.40;
+  const BREAK_RATIO        = 0.25;   // era 0.40
   const BREAK_RATIO_MIN_MS = 300;
   const BREAK_CONFIRM_N    = 15;
 
@@ -210,7 +210,6 @@
 
     const corr = crossCorrelation(hybA, hybBshifted, refineWindow);
 
-    // Guard: corr vazio → retorna usando histórico existente sem travar.
     const peak = selectRobustPeak(corr);
     if (!peak) {
       const stableOffsetMs = trimmedMedian(chB._rtHistory.length ? chB._rtHistory : [0]);
@@ -240,10 +239,12 @@
         if (currentStable !== null) {
           const breakThresh   = Math.max(BREAK_RATIO_MIN_MS, Math.abs(currentStable) * BREAK_RATIO);
           const confirmNeeded = Math.max(BREAK_CONFIRM_N, Math.floor(chB._rtHistory.length * 0.25));
-          if (Math.abs(rawOffsetMs - currentStable) > breakThresh) {
+
+          // Ruptura só permitida quando o novo valor É MENOR que o estável (latência diminuindo).
+          // Se rawOffsetMs > currentStable (latência aumentando), ignora e reseta o contador.
+          if (rawOffsetMs < currentStable && Math.abs(rawOffsetMs - currentStable) > breakThresh) {
             chB._rtBreakCount++;
             if (chB._rtBreakCount >= confirmNeeded) {
-              // Notifica o painel com flash de 5s (sem console.log)
               if (ML.panel && ML.panel.flashStatus) {
                 ML.panel.flashStatus(
                   '⚠ ' + chB.label + ' hist. limpo (' + Math.round(currentStable) + '→' + Math.round(rawOffsetMs) + 'ms)',
@@ -324,5 +325,5 @@
     calcAlpha,
   };
 
-  console.log('[MedLat] 30-correlator v1.7. flashStatus via ML.panel na ruptura. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
+  console.log('[MedLat] 30-correlator v1.8. BREAK_RATIO=0.25, ruptura só se rawOffset < currentStable.');
 })();
