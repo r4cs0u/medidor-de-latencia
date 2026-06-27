@@ -152,7 +152,7 @@
     pxInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyGlobalPx(parseInt(pxInp.value) || ML.state.probeW); pxInp.blur(); } });
 
     const btnSnap = ui.mkBtn('', '#0d4f3c', 'flex:1;min-width:0;padding:1px 3px;font-size:8px;line-height:1;height:18px;box-sizing:border-box');
-    btnSnap.title = 'Ativa grade magnética para alinhar probes';
+    btnSnap.title = 'Ativa grade magn\u00e9tica para alinhar probes';
     function updateSnapBtn() {
       btnSnap.textContent = ML.state.snapGrid ? '\u229e SNAP ON' : '\u229f SNAP OFF';
       btnSnap.style.background = ML.state.snapGrid ? '#0d4f3c' : ui.T.btnBg;
@@ -218,6 +218,7 @@
         r1.style.cssText += ';overflow:hidden;min-width:0';
         const tog = ui.mkToggle(ch.active, v => {
           ch.active = v;
+          if (v && !ch.probe && ML.ensureProbe) ML.ensureProbe(ch);
           if (ch.probe) { ch.probe.style.display = v ? 'block' : 'none'; }
           card.style.opacity = v ? '1' : '.4';
         });
