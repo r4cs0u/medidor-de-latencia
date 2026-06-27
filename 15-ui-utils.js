@@ -472,6 +472,7 @@
     const t = ML.ui.T;
     const inp = document.createElement('input');
     inp.type = 'number'; inp.min = min; inp.max = max; inp.step = step; inp.value = val;
+    inp.className = 'ml-sz-inp'; // suprime setas nativas (webkit + moz)
     inp.style.cssText = `background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.textPrimary};font:bold 10px monospace;width:${w}px;border-radius:3px;padding:1px 3px;text-align:center;outline:none;-moz-appearance:textfield`;
     inp.addEventListener('focus', () => inp.style.borderColor = t.inputBorder + 'cc');
     inp.addEventListener('blur',  () => inp.style.borderColor = t.inputBorder);
@@ -574,5 +575,5 @@
     mkIconBtn, mkBtn, mkNum, mkToggle, sec, row, sp,
   });
 
-  console.log('[MedLat] 15-ui-utils carregado (dark fixo).');
+  console.log('[MedLat] 15-ui-utils carregado (dark fixo). mkNum com ml-sz-inp: setas nativas ocultas.');
 })();
