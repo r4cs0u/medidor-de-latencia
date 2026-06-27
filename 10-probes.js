@@ -195,6 +195,30 @@
     if (ch) applyFocusStyle(ch);
   }
 
+  function getInitialProbePosition(ch, i) {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const pw = probeW(ch);
+    const ph = probeH(ch);
+    const total = Math.max(1, ML.state.numChannels || ML.CHANNELS.length);
+    const gap = Math.max(12, Math.round(ph * 0.35));
+    const pitch = ph + gap;
+    const stackH = total * ph + (total - 1) * gap;
+    const x = Math.round((vw - pw) / 2);
+    const y = Math.round((vh - stackH) / 2 + i * pitch);
+    return { x: Math.max(0, x), y: Math.max(0, y) };
+  }
+
+  function ensureProbe(ch) {
+    if (ch.probe) return ch.probe;
+    makeOff(ch);
+    let i = ML.CHANNELS.indexOf(ch);
+    if (i < 0) i = 0;
+    const pos = getInitialProbePosition(ch, i);
+    mkProbe(ch, pos.x, pos.y);
+    return ch.probe;
+  }
+
   function mkProbe(ch, x, y) {
     const pw = probeW(ch), ph = probeH(ch);
     const d = document.createElement('div');
@@ -313,54 +337,23 @@
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  // Tamanho inicial = 1/6 da menor dimensão da tela, arredondado para par, mínimo 60px
-  const responsiveW = Math.round(Math.max(60, Math.min(vw, vh) / 6) / 2) * 2;
+  // Tamanho inicial = 1/9.4 da menor dimensão da tela, arredondado para par, mínimo 60px
+  const responsiveW = Math.round(Math.max(60, Math.min(vw, vh) / 9.4) / 2) * 2;
   ML.state.probeW = responsiveW;
 
-  // Linha 1: ch0–ch5 em y~32%, linha 2: ch6–ch9 em y~58%, linha 3: ch10–ch11 em y~78%
-  const INIT_CENTER = [
-    [0.555, 0.322],
-    [0.308, 0.322],
-    [0.432, 0.322],
-    [0.681, 0.322],
-    [0.804, 0.322],
-    [0.927, 0.322],
-    [0.308, 0.580],
-    [0.432, 0.580],
-    [0.555, 0.580],
-    [0.681, 0.580],
-    [0.308, 0.780],  // ch10
-    [0.432, 0.780],  // ch11
-  ];
-  const INIT_FINE = [
-    [  0, -5],
-    [  0, -5],
-    [  0, -5],
-    [ -2, -5],
-    [ -2, -5],
-    [ -2, -5],
-    [  0, -5],
-    [  0, -5],
-    [  0, -5],
-    [ -2, -5],
-    [  0, -5],  // ch10
-    [  0, -5],  // ch11
-  ];
-
-  // Cria probes apenas para os canais ativos no seletor (numChannels)
+  // Cria as probes iniciais centralizadas, espaçadas apenas na vertical
   const numCh = ML.state.numChannels || ML.CHANNELS.length;
   ML.CHANNELS.slice(0, numCh).forEach((ch, i) => {
     makeOff(ch);
-    const pw = probeW(ch);
-    const ph = probeH(ch);
-    const x = Math.round(vw * INIT_CENTER[i][0] - pw / 2) + INIT_FINE[i][0];
-    const y = Math.round(vh * INIT_CENTER[i][1] - ph / 2) + INIT_FINE[i][1];
-    mkProbe(ch, Math.max(0, x), Math.max(0, y));
+    const pos = getInitialProbePosition(ch, i);
+    mkProbe(ch, pos.x, pos.y);
   });
 
-  ML.getLum    = getLum;
-  ML.getSample = getSample;
-  ML.setFocus  = setFocus;
+  ML.getLum      = getLum;
+  ML.getSample   = getSample;
+  ML.setFocus    = setFocus;
+  ML.mkProbe     = mkProbe;
+  ML.ensureProbe = ensureProbe;
 
-  console.log(`[MedLat] 10-probes v1.4 carregado. getSample() com cache de elemento. px=1/6 tela=${responsiveW} (viewport ${vw}×${vh}). ${numCh} canais posicionados.`);
+  console.log(`[MedLat] 10-probes v1.5 carregado. getSample() com cache de elemento. px=1/9.4 tela=${responsiveW} (viewport ${vw}×${vh}). ${numCh} canais posicionados em coluna central.`);
 })();
