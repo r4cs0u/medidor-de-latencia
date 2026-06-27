@@ -184,7 +184,7 @@
   // ── correlateRolling (modo RT) ───────────────────────────────────────────
   function correlateRolling(chA, chB) {
     const confThresh   = (ML.config && ML.config.rtConfThreshold !== undefined)
-      ? ML.config.rtConfThreshold : 0.50;
+      ? ML.config.rtConfThreshold : 0.45;
     const rtIntervalMs = (ML.config && ML.config.rtIntervalMs) || 500;
 
     const bufA = chA.rollingBuffer ? chA.rollingBuffer.toArray() : [];
@@ -325,5 +325,5 @@
     calcAlpha,
   };
 
-  console.log('[MedLat] 30-correlator v1.8. BREAK_RATIO=0.25, ruptura só se rawOffset < currentStable.');
+  console.log('[MedLat] 30-correlator v1.9. confThresh padrão=0.45, BREAK_RATIO=0.25, ruptura só se rawOffset < currentStable.');
 })();
