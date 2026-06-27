@@ -8,44 +8,36 @@
   const DIFF_THRESHOLD_MIN    = 1;
   // ANCHOR_TOP_N: máximo de picos de maior magnitude a considerar como âncoras.
   const ANCHOR_TOP_N          = 30;
-  // ANCHOR_MIN_ISOLATION: separação mínima em amostras entre duas âncoras
-  //   (evita agrupar picos de um mesmo corte prolongado).
+  // ANCHOR_MIN_ISOLATION: separação mínima em amostras entre duas âncoras.
   const ANCHOR_MIN_ISOLATION  = 60;
   // ANCHOR_STRENGTH_RATIO: âncora deve ser pelo menos 2.5x a mediana dos picos.
   const ANCHOR_STRENGTH_RATIO = 2.5;
-  // ANCHOR_CONSENSUS_TOL: tolerância base em amostras para duas âncoras serem consideradas
-  //   o mesmo evento. Escalada dinamicamente com o delta (0.5%) para absorver jitter
-  //   acumulado em latências longas.
+  // ANCHOR_CONSENSUS_TOL: tolerância base em amostras entre duas âncoras.
   const ANCHOR_CONSENSUS_TOL  = 2;
-  // REFINE_WINDOW: janela de lag (± amostras) para a cross-correlação de refinamento
-  //   após o alinhamento grosseiro por âncoras.
+  // REFINE_WINDOW: janela de lag para refinamento após alinhamento grosseiro.
   const REFINE_WINDOW         = 15;
 
   const RT_MIN_LAG_MS = -5000;
   const RT_MAX_LAG_MS = 30000;
   const MIN_SAMPLES   = 60;
 
-  // BREAK_RATIO: fração do stableOffset para definir o limiar de detecção de ruptura.
-  //   Ex: stable=20000ms → limiar=8000ms. Divergências menores deixam a mediana se ajustar.
-  const BREAK_RATIO      = 0.40;
+  // BREAK_RATIO: fração do stableOffset para definir o limiar de ruptura.
+  //   Ex: stable=20000ms → limiar=8000ms.
+  const BREAK_RATIO        = 0.40;
   // BREAK_RATIO_MIN_MS: limiar mínimo absoluto para canais de baixa latência.
   const BREAK_RATIO_MIN_MS = 300;
-  // BREAK_CONFIRM_N: leituras consecutivas acima do limiar para confirmar ruptura e
-  //   limpar o histórico. ~15 × 500ms = ~7,5s de divergência contínua.
-  const BREAK_CONFIRM_N  = 15;
+  // BREAK_CONFIRM_N: mínimo de leituras consecutivas para confirmar ruptura.
+  //   O valor efetivo é max(BREAK_CONFIRM_N, floor(historyLen * 0.25)):
+  //   histórico maduro exige mais evidência antes de ser descartado.
+  const BREAK_CONFIRM_N    = 15;
 
   // ── buildHybridSeries ───────────────────────────────────────────────
-  // Combina lum + |cb| + |cr| para melhorar a detecção de eventos em cenas
-  // de baixo contraste de luminância (ex: fades, telas brancas, grafismos).
-  // Pesos: lum=80%, componentes de cor=10% cada (cb e cr já chegam como inteiros 0–255).
-
   function buildHybridSeries(buf) {
     if (!buf || !buf.length) return [];
     return buf.map(p => p.lum * 0.8 + Math.abs(p.cb) * 0.1 + Math.abs(p.cr) * 0.1);
   }
 
   // ── Primitivas ──────────────────────────────────────────────────────────
-
   function adaptiveThreshold(arr) {
     const n = arr.length;
     if (!n) return DIFF_THRESHOLD_MIN;
@@ -71,9 +63,6 @@
     return arr.map(v => (v - mean) / std);
   }
 
-  // crossCorrelation usa o array completo (sem windowedSlice) para que eventos
-  // em extremos opostos do buffer — situação comum em latências longas — sejam
-  // incluídos na correlação. O parâmetro maxLagSamples controla o range de lag.
   function crossCorrelation(a, b, maxLagSamples) {
     const da = diffSeries(a);
     const db = diffSeries(b);
@@ -81,6 +70,8 @@
     const nb = normalize(db);
     const n  = Math.min(na.length, nb.length);
     const cap = Math.min(maxLagSamples, n - 1);
+    // cap < 0 pode ocorrer se n=0; retorna array vazio tratado abaixo.
+    if (cap < 0) return [];
     const result = [];
     for (let lag = -cap; lag <= cap; lag++) {
       let sum = 0, count = 0;
@@ -104,6 +95,8 @@
   }
 
   function selectRobustPeak(corr) {
+    // Retorna null se corr estiver vazio — tratado em correlateRolling.
+    if (!corr || !corr.length) return null;
     const globalPeak = corr.reduce((best, cur) => cur.r > best.r ? cur : best, corr[0]);
     const threshold  = globalPeak.r * 0.99;
     const candidates = corr.filter(c => c.r >= threshold);
@@ -122,7 +115,6 @@
   }
 
   // ── Âncoras de cena ───────────────────────────────────────────────────
-
   function extractAnchors(lum) {
     const diff = diffSeries(lum);
     const peaks = [];
@@ -186,7 +178,6 @@
   }
 
   // ── Estatísticas ─────────────────────────────────────────────────────
-
   function median(s) {
     const m = Math.floor(s.length / 2);
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
@@ -200,9 +191,6 @@
     return median(s.slice(cut, s.length - cut));
   }
 
-  // Alpha EMA: mede o quanto o novo valor bruto diverge da mediana histórica.
-  // Próximo de 1.0 = estimativa estável; próximo de 0.0 = alta variância.
-  // Exibido no painel como indicador de qualidade da correlação.
   function calcAlpha(rawOffsetMs, stableOffsetMs) {
     if (stableOffsetMs === null || stableOffsetMs === 0) return null;
     const relDiff = Math.abs(rawOffsetMs - stableOffsetMs) / (Math.abs(stableOffsetMs) + 1);
@@ -210,14 +198,11 @@
   }
 
   // ── correlateRolling (modo RT) ─────────────────────────────────────────
-  // Lê ch.rollingBuffer (ring buffer mantido pelo 20-recorder).
-
   function correlateRolling(chA, chB) {
     const confThresh   = (ML.config && ML.config.rtConfThreshold !== undefined)
       ? ML.config.rtConfThreshold : 0.50;
     const rtIntervalMs = (ML.config && ML.config.rtIntervalMs) || 500;
 
-    // Materializa o ring buffer em array para processamento
     const bufA = chA.rollingBuffer ? chA.rollingBuffer.toArray() : [];
     const bufB = chB.rollingBuffer ? chB.rollingBuffer.toArray() : [];
 
@@ -239,8 +224,20 @@
     const hybBshifted  = anchorSamples !== null ? shiftArr(hybB, anchorSamples) : hybB;
     const refineWindow = anchorSamples !== null ? REFINE_WINDOW : maxLagSamples;
 
-    const corr     = crossCorrelation(hybA, hybBshifted, refineWindow);
-    const peak     = selectRobustPeak(corr);
+    const corr = crossCorrelation(hybA, hybBshifted, refineWindow);
+
+    // Guard: corr vazio (n=0 ou cap<0) — retorna sem atualizar histórico.
+    const peak = selectRobustPeak(corr);
+    if (!peak) {
+      const stableOffsetMs = trimmedMedian(chB._rtHistory.length ? chB._rtHistory : [0]);
+      return {
+        offsetMs: stableOffsetMs, rawOffsetMs: null, confidence: 0, alpha: null,
+        anchorConfidence: anchor ? anchor.confidence : null, intervalMs: ivMs,
+        samples: Math.min(hybA.length, hybB.length), historyLen: chB._rtHistory.length,
+        labelA: chA.label, labelB: chB.label,
+      };
+    }
+
     const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
     const subFrame = parabolicPeak(corr, peakIdx);
 
@@ -255,26 +252,24 @@
       if (rawOffsetMs >= RT_MIN_LAG_MS && rawOffsetMs <= RT_MAX_LAG_MS) {
 
         // ── Detecção de ruptura adaptativa ─────────────────────────────
-        // Limiar = 40% do stableOffset atual, mínimo 300 ms.
-        // Se rawOffsetMs divergir mais que o limiar por BREAK_CONFIRM_N leituras
-        // consecutivas, o histórico é limpo para reconvergência rápida.
-        // Divergências menores (ex: +17k vs +20k stable) não disparam —
-        // a mediana se ajusta naturalmente.
+        // Limiar = 40% do stableOffset atual, mínimo 300ms.
+        // confirmNeeded escala com o tamanho do histórico (25%): histórico
+        // maduro exige mais leituras divergentes antes de ser descartado.
         chB._rtBreakCount = chB._rtBreakCount || 0;
         const currentStable = trimmedMedian(chB._rtHistory.length ? chB._rtHistory : [rawOffsetMs]);
         if (currentStable !== null) {
-          const breakThresh = Math.max(BREAK_RATIO_MIN_MS, Math.abs(currentStable) * BREAK_RATIO);
+          const breakThresh    = Math.max(BREAK_RATIO_MIN_MS, Math.abs(currentStable) * BREAK_RATIO);
+          const confirmNeeded  = Math.max(BREAK_CONFIRM_N, Math.floor(chB._rtHistory.length * 0.25));
           if (Math.abs(rawOffsetMs - currentStable) > breakThresh) {
             chB._rtBreakCount++;
-            if (chB._rtBreakCount >= BREAK_CONFIRM_N) {
-              console.log('[MedLat] ruptura detectada ch=' + chB.label +
+            if (chB._rtBreakCount >= confirmNeeded) {
+              console.log('[MedLat] ruptura ch=' + chB.label +
                 ' stable=' + Math.round(currentStable) + 'ms raw=' + Math.round(rawOffsetMs) + 'ms' +
-                ' thresh=' + Math.round(breakThresh) + 'ms. Histórico limpo.');
+                ' thresh=' + Math.round(breakThresh) + 'ms confirm=' + confirmNeeded + '. Hist limpo.');
               chB._rtHistory = [];
               chB._rtBreakCount = 0;
             }
           } else {
-            // Leitura dentro do limiar: zera contador
             chB._rtBreakCount = 0;
           }
         }
@@ -345,5 +340,5 @@
     calcAlpha,
   };
 
-  console.log('[MedLat] 30-correlator v1.5. Ruptura adaptativa: BREAK_RATIO=40%, BREAK_CONFIRM_N=15, BREAK_RATIO_MIN_MS=300. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
+  console.log('[MedLat] 30-correlator v1.6. Fix crash corr vazio + ruptura proporcional ao histórico (confirmNeeded=max(15, hist*25%)). Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
 })();
