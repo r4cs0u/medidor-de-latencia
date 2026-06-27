@@ -2,11 +2,9 @@
   const ML = window.MedLat;
   const ui = ML.ui;
 
-  // ── Constantes ───────────────────────────────────────────────────────────
-  const CHART_INTERVAL_MS = 500;   // atualiza a cada 500ms
-  const ANCHOR_TOP_N      = 8;     // número máximo de âncoras por canal
+  const CHART_INTERVAL_MS = 500;
+  const ANCHOR_TOP_N      = 8;
 
-  // ── Carrega Chart.js via CDN ──────────────────────────────────────────────
   function loadChartJs() {
     return new Promise(resolve => {
       if (window.Chart) { resolve(); return; }
@@ -17,7 +15,14 @@
     });
   }
 
-  // ── Calcula âncoras (picos de |diff| da série de lum) ────────────────────
+  // ─ Magnitude do croma: sqrt(Cb² + Cr²), normalizada para 0–255
+  function computeChroma(cbs, crs) {
+    return cbs.map((cb, i) => {
+      const cr = crs[i] !== undefined ? crs[i] : 0;
+      return Math.min(255, Math.round(Math.sqrt(cb * cb + cr * cr) / Math.SQRT2));
+    });
+  }
+
   function computeAnchors(lumArr, n) {
     const anchors = [];
     for (let i = 1; i < lumArr.length; i++) {
@@ -28,11 +33,10 @@
     return anchors.slice(0, n).map(a => a.idx);
   }
 
-  // ── Estado do painel ──────────────────────────────────────────────────────
-  let panel       = null;
-  let intervalId  = null;
-  let chartMode   = 'parallel'; // 'parallel' | 'overlay'
-  let showAnchors = true;
+  let panel        = null;
+  let intervalId   = null;
+  let chartMode    = 'parallel';
+  let showAnchors  = true;
   let chartInstances = [];
 
   function isOpen() { return !!document.getElementById('ml-chart-panel'); }
@@ -46,34 +50,23 @@
     panel = null;
   }
 
-  // ── Pega TODO o buffer disponível (sem truncar em N pontos fixos) ─────────
-  // Retorna { lums, cbs, crs, tsSec, tsMs }
-  // tsSec: tempo relativo ao primeiro ponto do buffer de REFERÊNCIA (canal 0)
-  //        para que a referência fique fixa e os demais se desloquem.
-  // tsMs:  timestamps absolutos (ms) usados para calcular xRef0.
-  let _refT0Ms = null; // t0 global fixado na primeira amostra da referência
-
   function getWindowedData(ch, refT0Ms) {
-    const buf   = ch.rollingBuffer ? ch.rollingBuffer.toArray() : [];
-    const t0    = refT0Ms !== null ? refT0Ms : (buf.length ? buf[0].ts : 0);
+    const buf = ch.rollingBuffer ? ch.rollingBuffer.toArray() : [];
+    const t0  = refT0Ms !== null ? refT0Ms : (buf.length ? buf[0].ts : 0);
+    const cbs  = buf.map(p => p.cb);
+    const crs  = buf.map(p => p.cr);
     return {
-      lums:  buf.map(p => p.lum),
-      cbs:   buf.map(p => p.cb),
-      crs:   buf.map(p => p.cr),
-      tsSec: buf.map(p => (p.ts - t0) / 1000),
-      tsMs:  buf.map(p => p.ts),
+      lums:   buf.map(p => p.lum),
+      chroma: computeChroma(cbs, crs),
+      tsSec:  buf.map(p => (p.ts - t0) / 1000),
     };
   }
 
-  // ── Eixo X ajustado por latência ─────────────────────────────────────────
-  // Referência: x = tsSec  (m = 0, eixo fixo)
-  // Outros:     x = tsSec - m   (m em segundos, pode ser negativo)
   function makeXValues(tsSec, mMs) {
     const mSec = (mMs !== null && mMs !== undefined) ? mMs / 1000 : 0;
     return tsSec.map(s => parseFloat((s - mSec).toFixed(3)));
   }
 
-  // ── Range Y real dos dados visíveis ───────────────────────────────────────
   function yRange(lums) {
     if (!lums.length) return { yMin: 0, yMax: 255 };
     let mn = lums[0], mx = lums[0];
@@ -85,7 +78,6 @@
     return { yMin: Math.max(0, mn - pad), yMax: Math.min(255, mx + pad) };
   }
 
-  // ── Chart options base ────────────────────────────────────────────────────
   function baseOptions(showXAxis, yMin, yMax, ticks, xMin, xMax) {
     return {
       animation:    false,
@@ -99,8 +91,8 @@
           type:       'linear',
           min:        xMin !== undefined ? xMin : undefined,
           max:        xMax !== undefined ? xMax : undefined,
-          ticks: { color: '#556688', font: { size: 7 }, maxRotation: 0, autoSkip: true, maxTicksLimit: ticks,
-                   callback: v => parseFloat(v).toFixed(1) },
+          ticks: { color: '#556688', font: { size: 7 }, maxRotation: 0, autoSkip: true,
+                   maxTicksLimit: ticks, callback: v => parseFloat(v).toFixed(1) },
           title: { display: showXAxis, text: 's', color: '#556688', font: { size: 7 } },
           grid: { color: 'transparent' },
         },
@@ -114,8 +106,6 @@
     };
   }
 
-  // ── Calcula o range X global entre todos os canais visíveis ───────────────
-  // A referência define o eixo; todos os canais são deslocados pelo seu offset.
   function globalXRange(channels, refT0Ms) {
     let xMin = Infinity, xMax = -Infinity;
     channels.forEach(ch => {
@@ -123,7 +113,7 @@
       const { tsSec } = getWindowedData(ch, refT0Ms);
       const xs = makeXValues(tsSec, mMs);
       if (xs.length) {
-        if (xs[0]            < xMin) xMin = xs[0];
+        if (xs[0]             < xMin) xMin = xs[0];
         if (xs[xs.length - 1] > xMax) xMax = xs[xs.length - 1];
       }
     });
@@ -132,20 +122,13 @@
     return { xMin: xMin - pad, xMax: xMax + pad };
   }
 
-  // ── Estado do painel ──────────────────────────────────────────────────────
-  let intervalId2  = null; // alias interno (usa intervalId acima)
-
   async function openPanel() {
     if (isOpen()) { closePanel(); return; }
-
     await loadChartJs();
 
     const mainPanel = document.getElementById('ml-panel');
-    const mpRect    = mainPanel
-      ? mainPanel.getBoundingClientRect()
-      : { right: window.innerWidth - 20 };
-
-    const GAP   = 6;
+    const mpRect    = mainPanel ? mainPanel.getBoundingClientRect() : { right: window.innerWidth - 20 };
+    const GAP = 6;
     const initL = mpRect.right + GAP;
     const initT = GAP;
     const initW = Math.max(360, window.innerWidth  - initL - GAP);
@@ -163,7 +146,7 @@
       'user-select:none;overflow:hidden;display:flex;flex-direction:column',
     ].join(';');
 
-    // ── Header ──────────────────────────────────────────────────────────────
+    // ─ Header
     const hdr = document.createElement('div');
     hdr.style.cssText = [
       'display:flex;align-items:center;gap:5px;padding:5px 8px 4px;flex-shrink:0',
@@ -172,7 +155,7 @@
     ].join(';');
 
     const htitle = document.createElement('span');
-    htitle.textContent = '📊 Gráficos ao vivo';
+    htitle.innerHTML = '📊 Gráficos ao vivo &nbsp;<span style="font-size:7px;opacity:.55;letter-spacing:.04em">— Lum &nbsp;<span style="border-bottom:1px dashed #aaa">- - -</span> Chroma (√Cb²+Cr²)</span>';
     htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.05em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 
     const btnMode = document.createElement('button');
@@ -204,10 +187,8 @@
       if (e.target !== hdr && e.target !== htitle) return;
       pdrag = true;
       const r = panel.getBoundingClientRect();
-      panel.style.left  = r.left + 'px';
-      panel.style.right = 'auto';
-      pox = e.clientX - r.left;
-      poy = e.clientY - r.top;
+      panel.style.left = r.left + 'px'; panel.style.right = 'auto';
+      pox = e.clientX - r.left; poy = e.clientY - r.top;
       e.preventDefault();
     });
     window.addEventListener('mousemove', e => {
@@ -225,15 +206,15 @@
       h.style.cssText = `position:absolute;width:14px;height:14px;cursor:${cur};z-index:10;${pos}`;
       panel.appendChild(h);
       let rsx=0,rsy=0,rsw=0,rsh=0,rsl=0,rst=0;
-      const isN = cls[0]==='n', isW = cls[1]==='w';
+      const isN=cls[0]==='n', isW=cls[1]==='w';
       h.addEventListener('mousedown', e => {
         e.stopPropagation(); e.preventDefault();
         rsx=e.clientX;rsy=e.clientY;rsw=panel.offsetWidth;rsh=panel.offsetHeight;rsl=panel.offsetLeft;rst=panel.offsetTop;
         function onMove(ev) {
-          const dx=ev.clientX-rsx,dy=ev.clientY-rsy;
+          const dx=ev.clientX-rsx, dy=ev.clientY-rsy;
           let nw=rsw,nh=rsh,nl=rsl,nt=rst;
-          if (isW){nw=Math.max(200,rsw-dx);nl=rsl+rsw-nw;}else{nw=Math.max(200,rsw+dx);}
-          if (isN){nh=Math.max(220,rsh-dy);nt=rst+rsh-nh;}else{nh=Math.max(220,rsh+dy);}
+          if(isW){nw=Math.max(200,rsw-dx);nl=rsl+rsw-nw;}else{nw=Math.max(200,rsw+dx);}
+          if(isN){nh=Math.max(220,rsh-dy);nt=rst+rsh-nh;}else{nh=Math.max(220,rsh+dy);}
           panel.style.width=nw+'px';panel.style.height=nh+'px';panel.style.left=nl+'px';panel.style.top=nt+'px';
           rebuildCharts();
         }
@@ -242,10 +223,9 @@
       });
     });
 
-    // ── Toggle de canais ────────────────────────────────────────────────────
+    // ─ Toggle de canais
     const toggleBar = document.createElement('div');
     toggleBar.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;padding:4px 8px 2px;flex-shrink:0';
-
     const activeChannels = ML.CHANNELS.filter(ch => ch.active);
     activeChannels.forEach((ch, idx) => {
       const btn = document.createElement('button');
@@ -260,32 +240,23 @@
     });
     panel.appendChild(toggleBar);
 
-    // ── Área de gráficos ────────────────────────────────────────────────────
+    // ─ Área de gráficos
     const chartsArea = document.createElement('div');
     chartsArea.style.cssText = 'flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;overflow:hidden;padding:2px 6px 4px';
     panel.appendChild(chartsArea);
-
     document.body.appendChild(panel);
 
-    // ── Helpers ───────────────────────────────────────────────────────────
     function getVisible() {
       return activeChannels.filter((_, i) => {
         const b = toggleBar.children[i];
         return b && b.dataset.on === '1';
       });
     }
-
     function destroyCharts() {
       chartInstances.forEach(c => { try { c.destroy(); } catch(e) {} });
-      chartInstances = [];
-      chartsArea.innerHTML = '';
+      chartInstances = []; chartsArea.innerHTML = '';
     }
-
-    function xMaxTicks() {
-      return Math.max(4, Math.floor((chartsArea.offsetWidth || 400) / 65));
-    }
-
-    // Retorna o t0 da referência (canal 0 ativo) para ancorar o eixo X
+    function xMaxTicks() { return Math.max(4, Math.floor((chartsArea.offsetWidth || 400) / 65)); }
     function getRefT0() {
       const ref = activeChannels[0];
       if (!ref || !ref.rollingBuffer) return null;
@@ -293,50 +264,38 @@
       return arr.length ? arr[0].ts : null;
     }
 
-    // ── Mapa de refs vivos para update incremental ────────────────────────
-    // chId → { ci, anchorXSecsRef: { list: [] } }
     const liveRefs = {};
 
-    // ── Update incremental ────────────────────────────────────────────────
     function updateLiveData() {
       const visible = getVisible();
       if (!visible.length) return;
-      const refT0   = getRefT0();
+      const refT0 = getRefT0();
       const { xMin, xMax } = globalXRange(visible, refT0);
-      const ticks   = xMaxTicks();
-
-      if (chartMode === 'overlay') {
-        updateOverlay(visible, refT0, xMin, xMax, ticks);
-      } else {
-        updateParallel(visible, refT0, xMin, xMax, ticks);
-      }
+      const ticks = xMaxTicks();
+      if (chartMode === 'overlay') updateOverlay(visible, refT0, xMin, xMax, ticks);
+      else                         updateParallel(visible, refT0, xMin, xMax, ticks);
     }
 
     function updateParallel(channels, refT0, xMin, xMax, ticks) {
       channels.forEach((ch, idx) => {
         const ref = liveRefs[ch.id];
         if (!ref) return;
-        const mMs  = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : 0;
-        const { lums, cbs, crs, tsSec } = getWindowedData(ch, refT0);
-        const xs   = makeXValues(tsSec, mMs);
+        const mMs = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : 0;
+        const { lums, chroma, tsSec } = getWindowedData(ch, refT0);
+        const xs = makeXValues(tsSec, mMs);
         const { yMin, yMax } = yRange(lums);
 
         ref.ci.data.labels = xs;
-        ref.ci.data.datasets[0].data = lums.map((y, i) => ({ x: xs[i], y }));
-        ref.ci.data.datasets[1].data = cbs.map((y, i)  => ({ x: xs[i], y }));
-        ref.ci.data.datasets[2].data = crs.map((y, i)  => ({ x: xs[i], y }));
+        ref.ci.data.datasets[0].data = lums.map((y, i)   => ({ x: xs[i], y }));
+        ref.ci.data.datasets[1].data = chroma.map((y, i) => ({ x: xs[i], y }));
 
-        // eixo X global fixo — todos os canais na mesma escala
         ref.ci.options.scales.x.min = xMin;
         ref.ci.options.scales.x.max = xMax;
         ref.ci.options.scales.x.ticks.maxTicksLimit = ticks;
-        // eixo X só visível no último canal
         ref.ci.options.scales.x.display = (idx === channels.length - 1);
-        // eixo Y range real
         ref.ci.options.scales.y.min = yMin;
         ref.ci.options.scales.y.max = yMax;
 
-        // âncoras: recalcula e persiste na ref para o plugin
         ref.anchorXSecsRef.list = showAnchors
           ? computeAnchors(lums, ANCHOR_TOP_N).map(i => xs[i])
           : [];
@@ -351,7 +310,7 @@
       channels.forEach((ch, idx) => {
         const mMs = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : 0;
         const { lums, tsSec } = getWindowedData(ch, refT0);
-        const xs  = makeXValues(tsSec, mMs);
+        const xs = makeXValues(tsSec, mMs);
         ref.ci.data.datasets[idx].data = lums.map((y, i) => ({ x: xs[i], y }));
         ref.anchorsMap[ch.id] = {
           anchorXSecs: showAnchors ? computeAnchors(lums, ANCHOR_TOP_N).map(i => xs[i]) : [],
@@ -364,24 +323,23 @@
       ref.ci.update('none');
     }
 
-    // ── Build parallel ────────────────────────────────────────────────────
     function buildParallel(channels) {
-      const refT0  = getRefT0();
+      const refT0 = getRefT0();
       const { xMin, xMax } = globalXRange(channels, refT0);
-      const gap    = (channels.length - 1) * 2;
-      const rowH   = Math.max(52, Math.floor((chartsArea.offsetHeight - gap) / channels.length));
-      const ticks  = xMaxTicks();
+      const gap  = (channels.length - 1) * 2;
+      const rowH = Math.max(52, Math.floor((chartsArea.offsetHeight - gap) / channels.length));
+      const ticks = xMaxTicks();
 
       channels.forEach((ch, idx) => {
-        const mMs  = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : 0;
-        const { lums, cbs, crs, tsSec } = getWindowedData(ch, refT0);
-        const xs   = makeXValues(tsSec, mMs);
+        const mMs = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : 0;
+        const { lums, chroma, tsSec } = getWindowedData(ch, refT0);
+        const xs = makeXValues(tsSec, mMs);
         const { yMin, yMax } = yRange(lums);
 
         const row = document.createElement('div');
         row.style.cssText = [
           `display:flex;align-items:stretch;gap:4px;height:${rowH}px;flex-shrink:0`,
-          `padding:2px 3px;border-radius:4px`,
+          'padding:2px 3px;border-radius:4px',
           `background:${ch.color}0d;box-shadow:inset 0 0 0 1px ${ch.color}22;overflow:hidden`,
         ].join(';');
 
@@ -396,48 +354,62 @@
         row.append(lbl, wrap);
         chartsArea.appendChild(row);
 
-        // anchorXSecsRef é o objeto mutável que o plugin lê a cada draw
-        const anchorXSecsRef = { list: showAnchors
-          ? computeAnchors(lums, ANCHOR_TOP_N).map(i => xs[i])
-          : [] };
+        const anchorXSecsRef = {
+          list: showAnchors ? computeAnchors(lums, ANCHOR_TOP_N).map(i => xs[i]) : []
+        };
 
         const ancPlugin = {
           id: 'anchorLines_' + ch.id,
           afterDraw(chart) {
             if (!anchorXSecsRef.list.length) return;
-            const ctx    = chart.ctx;
-            const xScale = chart.scales.x;
-            const yScale = chart.scales.y;
+            const ctx = chart.ctx, xScale = chart.scales.x, yScale = chart.scales.y;
             if (!xScale || !yScale) return;
             ctx.save();
             anchorXSecsRef.list.forEach(xVal => {
-              if (xVal === undefined || xVal === null) return;
+              if (xVal == null) return;
               const xPx = xScale.getPixelForValue(xVal);
               if (xPx < xScale.left || xPx > xScale.right) return;
               ctx.beginPath();
               ctx.moveTo(xPx, yScale.top);
               ctx.lineTo(xPx, yScale.bottom);
               ctx.strokeStyle = 'rgba(255,255,255,0.40)';
-              ctx.lineWidth   = 1;
+              ctx.lineWidth = 1;
               ctx.stroke();
             });
             ctx.restore();
           },
         };
 
-        const opts = baseOptions(
-          idx === channels.length - 1,
-          yMin, yMax, ticks, xMin, xMax
-        );
+        const opts = baseOptions(idx === channels.length - 1, yMin, yMax, ticks, xMin, xMax);
 
         const ci = new Chart(cvs, {
           type: 'line',
           data: {
-            labels:   xs,
+            labels: xs,
             datasets: [
-              { data: lums.map((y,i) => ({ x: xs[i], y })), borderColor: ch.color,  backgroundColor: ch.color + '18', borderWidth: 1.4, pointRadius: 0, tension: 0.2, fill: true,  spanGaps: false },
-              { data: cbs.map((y,i)  => ({ x: xs[i], y })), borderColor: '#00d4ff', backgroundColor: 'transparent',   borderWidth: 1,   pointRadius: 0, tension: 0.2, fill: false, spanGaps: false },
-              { data: crs.map((y,i)  => ({ x: xs[i], y })), borderColor: '#ff6680', backgroundColor: 'transparent',   borderWidth: 1,   pointRadius: 0, tension: 0.2, fill: false, spanGaps: false },
+              // dataset 0: Luminância — linha sólida com fill
+              {
+                data:            lums.map((y, i) => ({ x: xs[i], y })),
+                borderColor:     ch.color,
+                backgroundColor: ch.color + '18',
+                borderWidth:     1.4,
+                pointRadius:     0,
+                tension:         0.2,
+                fill:            true,
+                spanGaps:        false,
+              },
+              // dataset 1: Chroma sqrt(Cb²+Cr²) — linha pontilhada branca
+              {
+                data:            chroma.map((y, i) => ({ x: xs[i], y })),
+                borderColor:     'rgba(200,200,220,0.65)',
+                backgroundColor: 'transparent',
+                borderWidth:     1.2,
+                borderDash:      [4, 4],
+                pointRadius:     0,
+                tension:         0.2,
+                fill:            false,
+                spanGaps:        false,
+              },
             ],
           },
           options: opts,
@@ -449,11 +421,10 @@
       });
     }
 
-    // ── Build overlay ─────────────────────────────────────────────────────
     function buildOverlay(channels) {
-      const refT0  = getRefT0();
+      const refT0 = getRefT0();
       const { xMin, xMax } = globalXRange(channels, refT0);
-      const ticks  = xMaxTicks();
+      const ticks = xMaxTicks();
 
       const wrap = document.createElement('div');
       wrap.style.cssText = `flex:1;min-height:0;overflow:hidden;border-radius:4px;background:#0a0a16;border:1px solid ${ui.T.panelBorder}`;
@@ -462,10 +433,10 @@
       chartsArea.appendChild(wrap);
 
       const anchorsMap = {};
-      const datasets   = channels.map(ch => {
+      const datasets = channels.map(ch => {
         const mMs = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : 0;
         const { lums, tsSec } = getWindowedData(ch, refT0);
-        const xs  = makeXValues(tsSec, mMs);
+        const xs = makeXValues(tsSec, mMs);
         const ancs = showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [];
         anchorsMap[ch.id] = { anchorXSecs: ancs.map(i => xs[i]), color: ch.color };
         return {
@@ -490,14 +461,14 @@
           ctx.save();
           Object.values(anchorsMap).forEach(({ anchorXSecs, color }) => {
             (anchorXSecs || []).forEach(xVal => {
-              if (xVal === undefined || xVal === null) return;
+              if (xVal == null) return;
               const xPx = xScale.getPixelForValue(xVal);
               if (xPx < xScale.left || xPx > xScale.right) return;
               ctx.beginPath();
               ctx.moveTo(xPx, yScale.top);
               ctx.lineTo(xPx, yScale.bottom);
               ctx.strokeStyle = color + '77';
-              ctx.lineWidth   = 1;
+              ctx.lineWidth = 1;
               ctx.stroke();
             });
           });
@@ -505,13 +476,8 @@
         },
       };
 
-      // Y range do overlay: union de todos os canais
-      const allLums = channels.flatMap(ch => {
-        const { lums } = getWindowedData(ch, refT0);
-        return lums;
-      });
+      const allLums = channels.flatMap(ch => getWindowedData(ch, refT0).lums);
       const { yMin, yMax } = yRange(allLums);
-
       const opts = baseOptions(true, yMin, yMax, ticks, xMin, xMax);
       opts.plugins.legend = {
         display: true, position: 'bottom',
@@ -529,7 +495,6 @@
       liveRefs['__overlay__'] = { ci, anchorsMap };
     }
 
-    // ── Rebuild completo ──────────────────────────────────────────────────
     function rebuildCharts() {
       destroyCharts();
       Object.keys(liveRefs).forEach(k => delete liveRefs[k]);
@@ -539,14 +504,11 @@
       else                         buildParallel(visible);
     }
 
-    // ── Loop de atualização ───────────────────────────────────────────────
     if (intervalId) clearInterval(intervalId);
     intervalId = setInterval(updateLiveData, CHART_INTERVAL_MS);
-
     requestAnimationFrame(() => rebuildCharts());
   }
 
-  // ── API pública ───────────────────────────────────────────────────────────
   ML.chart = {
     toggle: openPanel,
     open:   openPanel,
@@ -554,5 +516,5 @@
     show:   () => openPanel(),
   };
 
-  console.log('[MedLat] 40-chart v3.0 — ref fixa, buffer completo, X global, âncoras persistentes, Y range real.');
+  console.log('[MedLat] 40-chart v3.1 — chroma unificado sqrt(Cb²+Cr²) como linha pontilhada.');
 })();
