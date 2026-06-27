@@ -338,7 +338,7 @@
   const vh = window.innerHeight;
 
   // Tamanho inicial = 1/9.4 da menor dimensão da tela, arredondado para par, mínimo 60px
-  const responsiveW = Math.round(Math.max(60, Math.min(vw, vh) / 3.8) / 2) * 2;
+  const responsiveW = Math.round(Math.max(60, Math.min(vw, vh) / 9.4) / 2) * 2;
   ML.state.probeW = responsiveW;
 
   // Cria as probes iniciais centralizadas, espaçadas apenas na vertical
