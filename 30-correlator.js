@@ -2,13 +2,12 @@
   const ML = window.MedLat;
 
   // ADAPT_FACTOR: fator sobre o desvio-padrão para calcular o limiar adaptativo de diff.
-  //   0.08 (era 0.15): limiar mais baixo deixa mais eventos passarem, gerando séries
-  //   menos esparsas e picos de correlação mais nítidos.
-  const ADAPT_FACTOR          = 0.08;
+  //   0.15 foi calibrado empiricamente: sensível o suficiente para capturar cortes de cena
+  //   sem gerar falsos positivos em ruído de compressão.
+  const ADAPT_FACTOR          = 0.15;
   const DIFF_THRESHOLD_MIN    = 1;
   // ANCHOR_TOP_N: máximo de picos de maior magnitude a considerar como âncoras.
-  //   50 (era 30): mais candidatos aumentam a chance de consenso em gravações longas.
-  const ANCHOR_TOP_N          = 50;
+  const ANCHOR_TOP_N          = 30;
   // ANCHOR_MIN_ISOLATION: separação mínima em amostras entre duas âncoras
   //   (evita agrupar picos de um mesmo corte prolongado).
   const ANCHOR_MIN_ISOLATION  = 60;
@@ -207,9 +206,8 @@
   // Lê ch.rollingBuffer (ring buffer mantido pelo 20-recorder).
 
   function correlateRolling(chA, chB) {
-    // confThresh 0.35 (era 0.50): ajustado para a nova escala de confidence (razão pico/vizinho).
     const confThresh   = (ML.config && ML.config.rtConfThreshold !== undefined)
-      ? ML.config.rtConfThreshold : 0.35;
+      ? ML.config.rtConfThreshold : 0.50;
     const rtIntervalMs = (ML.config && ML.config.rtIntervalMs) || 500;
 
     // Materializa o ring buffer em array para processamento
@@ -238,21 +236,15 @@
       ? REFINE_WINDOW
       : maxLagSamples;
 
-    const corr    = crossCorrelation(hybA, hybBshifted, refineWindow);
-    const peak    = selectRobustPeak(corr);
-    const peakIdx = corr.findIndex(c => c.lag === peak.lag);
+    const corr     = crossCorrelation(hybA, hybBshifted, refineWindow);
+    const peak     = selectRobustPeak(corr);
+    const peakIdx  = corr.findIndex(c => c.lag === peak.lag);
     const subFrame = parabolicPeak(corr, peakIdx);
 
     const refineLag   = peak.lag + subFrame;
     const totalLag    = (anchorSamples !== null ? anchorSamples : 0) + refineLag;
     const rawOffsetMs = totalLag * ivMs;
-
-    // confidence: razão entre o pico e o segundo maior valor da correlação.
-    // Reflete o quão isolado está o pico — mais robusto que o valor absoluto.
-    // Normalizado por 3: razão ≥3× → confidence ~1.0; razão ~1× → confidence ~0.
-    const sortedR  = [...corr].sort((a, b) => b.r - a.r);
-    const second   = sortedR.length > 1 ? sortedR[1].r : 0;
-    const confidence = Math.min(1, peak.r / ((second || 1e-6) * 3));
+    const confidence  = peak.r;
 
     const historyMax = Math.max(20, Math.ceil(Math.abs(RT_MAX_LAG_MS) / rtIntervalMs) * 2);
 
@@ -328,5 +320,5 @@
     calcAlpha,
   };
 
-  console.log('[MedLat] 30-correlator v1.5. confidence=peak ratio, ADAPT_FACTOR=0.08, ANCHOR_TOP_N=50, confThresh=0.35. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
+  console.log('[MedLat] 30-correlator v1.4. Fix latências longas: crossCorrelation sem windowedSlice, refineWindow=maxLagSamples sem âncoras, anchorConsensus tolerância adaptativa. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
 })();
