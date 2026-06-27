@@ -25,6 +25,15 @@
   const RT_MAX_LAG_MS = 30000;
   const MIN_SAMPLES   = 60;
 
+  // BREAK_RATIO: fração do stableOffset para definir o limiar de detecção de ruptura.
+  //   Ex: stable=20000ms → limiar=8000ms. Divergências menores deixam a mediana se ajustar.
+  const BREAK_RATIO      = 0.40;
+  // BREAK_RATIO_MIN_MS: limiar mínimo absoluto para canais de baixa latência.
+  const BREAK_RATIO_MIN_MS = 300;
+  // BREAK_CONFIRM_N: leituras consecutivas acima do limiar para confirmar ruptura e
+  //   limpar o histórico. ~15 × 500ms = ~7,5s de divergência contínua.
+  const BREAK_CONFIRM_N  = 15;
+
   // ── buildHybridSeries ───────────────────────────────────────────────
   // Combina lum + |cb| + |cr| para melhorar a detecção de eventos em cenas
   // de baixo contraste de luminância (ex: fades, telas brancas, grafismos).
@@ -156,8 +165,6 @@
     if (deltas.length < 2) return null;
     const groups = [];
     deltas.forEach(entry => {
-      // Tolerância escala com o delta para absorver jitter acumulado em latências longas
-      // (0.5% do delta, mínimo ANCHOR_CONSENSUS_TOL amostras).
       const tol = Math.max(ANCHOR_CONSENSUS_TOL, Math.ceil(Math.abs(entry.delta) * 0.005));
       const g = groups.find(g => Math.abs(g.delta - entry.delta) <= tol);
       if (g) {
@@ -230,11 +237,7 @@
     const anchorSamples = anchor ? anchor.delta : null;
 
     const hybBshifted  = anchorSamples !== null ? shiftArr(hybB, anchorSamples) : hybB;
-    // Sem âncoras: força bruta no range completo (maxLagSamples).
-    // Com âncoras: refinamento fino (REFINE_WINDOW) ao redor do alinhamento grosseiro.
-    const refineWindow = anchorSamples !== null
-      ? REFINE_WINDOW
-      : maxLagSamples;
+    const refineWindow = anchorSamples !== null ? REFINE_WINDOW : maxLagSamples;
 
     const corr     = crossCorrelation(hybA, hybBshifted, refineWindow);
     const peak     = selectRobustPeak(corr);
@@ -250,10 +253,34 @@
 
     if (confidence >= confThresh) {
       if (rawOffsetMs >= RT_MIN_LAG_MS && rawOffsetMs <= RT_MAX_LAG_MS) {
-        // _rtHistory é garantido pelo 00-core (inicializado como []) e resetado
-        // pelo recorder em start/stop.
+
+        // ── Detecção de ruptura adaptativa ─────────────────────────────
+        // Limiar = 40% do stableOffset atual, mínimo 300 ms.
+        // Se rawOffsetMs divergir mais que o limiar por BREAK_CONFIRM_N leituras
+        // consecutivas, o histórico é limpo para reconvergência rápida.
+        // Divergências menores (ex: +17k vs +20k stable) não disparam —
+        // a mediana se ajusta naturalmente.
+        chB._rtBreakCount = chB._rtBreakCount || 0;
+        const currentStable = trimmedMedian(chB._rtHistory.length ? chB._rtHistory : [rawOffsetMs]);
+        if (currentStable !== null) {
+          const breakThresh = Math.max(BREAK_RATIO_MIN_MS, Math.abs(currentStable) * BREAK_RATIO);
+          if (Math.abs(rawOffsetMs - currentStable) > breakThresh) {
+            chB._rtBreakCount++;
+            if (chB._rtBreakCount >= BREAK_CONFIRM_N) {
+              console.log('[MedLat] ruptura detectada ch=' + chB.label +
+                ' stable=' + Math.round(currentStable) + 'ms raw=' + Math.round(rawOffsetMs) + 'ms' +
+                ' thresh=' + Math.round(breakThresh) + 'ms. Histórico limpo.');
+              chB._rtHistory = [];
+              chB._rtBreakCount = 0;
+            }
+          } else {
+            // Leitura dentro do limiar: zera contador
+            chB._rtBreakCount = 0;
+          }
+        }
+        // ────────────────────────────────────────────────────────────
+
         chB._rtHistory.push(rawOffsetMs);
-        // splice em vez de shift: descarta várias entradas de uma vez se necessário
         if (chB._rtHistory.length > historyMax) {
           chB._rtHistory.splice(0, chB._rtHistory.length - historyMax);
         }
@@ -264,8 +291,6 @@
       chB._rtHistory.length ? chB._rtHistory : [rawOffsetMs]
     );
 
-    // alpha: indicador de estabilidade (0=instável, 1=estável).
-    // Próximo de 1.0 quando rawOffset converge para stableOffset.
     const alpha = calcAlpha(rawOffsetMs, stableOffsetMs);
 
     return {
@@ -320,5 +345,5 @@
     calcAlpha,
   };
 
-  console.log('[MedLat] 30-correlator v1.4. Fix latências longas: crossCorrelation sem windowedSlice, refineWindow=maxLagSamples sem âncoras, anchorConsensus tolerância adaptativa. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
+  console.log('[MedLat] 30-correlator v1.5. Ruptura adaptativa: BREAK_RATIO=40%, BREAK_CONFIRM_N=15, BREAK_RATIO_MIN_MS=300. Range: ' + RT_MIN_LAG_MS + 'ms…' + RT_MAX_LAG_MS + 'ms.');
 })();
