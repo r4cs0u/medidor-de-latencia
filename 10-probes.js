@@ -337,8 +337,8 @@
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  // Tamanho inicial = 1/9.4 da menor dimensão da tela, arredondado para par, mínimo 60px
-  const responsiveW = Math.round(Math.max(60, Math.min(vw, vh) / 9.4) / 2) * 2;
+  // Tamanho inicial = 1/3.83 da menor dimensão da tela, arredondado para par, mínimo 60px
+  const responsiveW = Math.round(Math.max(60, Math.min(vw, vh) / 3.83) / 2) * 2;
   ML.state.probeW = responsiveW;
 
   // Cria as probes iniciais centralizadas, espaçadas apenas na vertical
@@ -355,5 +355,5 @@
   ML.mkProbe     = mkProbe;
   ML.ensureProbe = ensureProbe;
 
-  console.log(`[MedLat] 10-probes v1.5 carregado. getSample() com cache de elemento. px=1/9.4 tela=${responsiveW} (viewport ${vw}×${vh}). ${numCh} canais posicionados em coluna central.`);
+  console.log(`[MedLat] 10-probes v1.6 carregado. getSample() com cache de elemento. px=1/3.83 tela=${responsiveW} (viewport ${vw}×${vh}). ${numCh} canais posicionados em coluna central.`);
 })();
