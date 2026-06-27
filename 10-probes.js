@@ -313,7 +313,8 @@
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  const responsiveW = Math.round(Math.max(120, Math.min(300, Math.min(vw, vh) * 0.22)) / 2) * 2;
+  // Tamanho inicial = 1/6 da menor dimensão da tela, arredondado para par, mínimo 60px
+  const responsiveW = Math.round(Math.max(60, Math.min(vw, vh) / 6) / 2) * 2;
   ML.state.probeW = responsiveW;
 
   // Linha 1: ch0–ch5 em y~32%, linha 2: ch6–ch9 em y~58%, linha 3: ch10–ch11 em y~78%
@@ -361,5 +362,5 @@
   ML.getSample = getSample;
   ML.setFocus  = setFocus;
 
-  console.log(`[MedLat] 10-probes v1.3 carregado. getSample() com cache de elemento. px responsivo=${responsiveW} (viewport ${vw}×${vh}). ${numCh} canais posicionados.`);
+  console.log(`[MedLat] 10-probes v1.4 carregado. getSample() com cache de elemento. px=1/6 tela=${responsiveW} (viewport ${vw}×${vh}). ${numCh} canais posicionados.`);
 })();
