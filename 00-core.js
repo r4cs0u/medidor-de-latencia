@@ -45,7 +45,7 @@
     },
 
     config: {
-      rtConfThreshold: 0.60,
+      rtConfThreshold: 0.45,
       rtIntervalMs:    500,
       rtWindowMs:      30000,
       rtUseLongBuffer: true,
@@ -76,5 +76,5 @@
     ch._cachedMediaEl = null; // cache do elemento de vídeo (10-probes)
   });
 
-  console.log('[MedLat] 00-core carregado v1.3. 12 canais (ch0–ch11). rollingBuffer=RingBufferStub seguro.');
+  console.log('[MedLat] 00-core carregado v1.4. rtConfThreshold=0.45.');
 })();

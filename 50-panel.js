@@ -51,12 +51,16 @@
 
     function applyPanelStyle() {
       const t = ui.T;
+      const hasW = panel.style.width  && panel.style.width  !== '340px';
+      const hasH = panel.style.height && panel.style.height !== '';
       panel.style.cssText = [
         'position:fixed;top:4px;left:4px;z-index:99999',
         `background:${t.panelBg};border:1px solid ${t.panelBorder}`,
         'border-radius:6px;box-shadow:0 4px 24px #000c',
         `font-family:monospace;font-size:11px;color:${t.textPrimary}`,
-        'user-select:none;width:340px',
+        `user-select:none;width:${hasW ? panel.style.width : '340px'}`,
+        `max-height:${hasH ? panel.style.height : 'calc(100vh - 8px)'}`,
+        ...(hasH ? [`height:${panel.style.height}`] : []),
         'display:flex;flex-direction:column;overflow:hidden',
       ].join(';');
     }
@@ -81,9 +85,6 @@
     const btnChart = ui.mkIconBtn('📊', 'Abrir/fechar gráficos ao vivo', '#44ff88');
     btnChart.onclick = () => ML.chart && ML.chart.toggle();
 
-    const btnScaleD = ui.mkIconBtn('A−', 'Diminuir escala do painel', '#aaaaaa');
-    const btnScaleU = ui.mkIconBtn('A+', 'Aumentar escala do painel', '#aaaaaa');
-
     const btnMin = ui.mkIconBtn('−', 'Minimizar para widget', '#aaaaaa');
     const btnX   = document.createElement('button');
     btnX.textContent = '✕'; btnX.title = 'Fechar o medidor';
@@ -97,7 +98,7 @@
     };
     btnMin.onclick = () => ui.minimizePanel(panel);
 
-    hdr.append(ttl, btnScaleD, btnScaleU, btnChart, btnMin, btnX);
+    hdr.append(ttl, btnChart, btnMin, btnX);
     panel.appendChild(hdr);
 
     let pdrag = false, pox = 0, poy = 0;
@@ -338,6 +339,7 @@
     rtStatusEl.style.cssText = 'font-size:8px;color:#aaaacc;text-align:center;margin-top:2px;letter-spacing:.04em;transition:color .3s,opacity .3s';
     rtStatusEl.textContent = 'Parado';
 
+    // ── flashStatus: exibe msg temporária por ms milissegundos e depois restaura o texto padrão.
     let _flashTimer = null;
     function flashStatus(msg, color, ms) {
       if (_flashTimer) clearTimeout(_flashTimer);
@@ -359,43 +361,14 @@
     scrollBody.appendChild(secRT);
     panel.appendChild(scrollBody);
 
-    // ── Escala proporcional ────────────────────────────────────────────
     const BASE_W = 340, BASE_H = 520;
-    let _applyScaleLock = false;
-
     function applyScale(w, h) {
-      if (_applyScaleLock) return;
-      const scaleW = Math.max(0.7, Math.min(2.5, w / BASE_W));
-      const scaleH = h != null ? Math.max(0.7, Math.min(2.5, h / BASE_H)) : scaleW;
-      // usa o eixo que mais se afastou de 1.0 (dominante)
-      const scale = h != null
-        ? (Math.abs(scaleW - 1) >= Math.abs(scaleH - 1) ? scaleW : scaleH)
-        : scaleW;
-
-      const targetW = Math.round(BASE_W * scale);
-      const targetH = Math.round(BASE_H * scale);
-
-      _applyScaleLock = true;
-      if (Math.abs(panel.offsetWidth  - targetW) > 2) panel.style.width  = targetW + 'px';
-      if (Math.abs(panel.offsetHeight - targetH) > 2) panel.style.height = targetH + 'px';
-      _applyScaleLock = false;
-
+      const scale = Math.min(Math.max(0.7, Math.min(2.5, w / BASE_W)), h != null ? Math.max(1.0, Math.min(2.5, h / BASE_H)) : 2.5);
       panel.style.fontSize = Math.max(8, Math.round(11 * scale)) + 'px';
-      panel.style.maxHeight = '';  // remove max-height para deixar height fixo dominar
-      const cols = targetW >= 320 ? 3 : targetW >= 220 ? 2 : 1;
+      const cols = w >= 320 ? 3 : w >= 220 ? 2 : 1;
       probeGrid.style.gridTemplateColumns = `repeat(${cols},1fr)`;
-      secTG.style.display = targetH < 260 ? 'none' : '';
+      if (h != null) secTG.style.display = h < 260 ? 'none' : '';
     }
-
-    btnScaleD.onclick = () => {
-      const newH = Math.max(180, panel.offsetHeight - Math.round(BASE_H * 0.1));
-      applyScale(panel.offsetWidth, newH);
-    };
-    btnScaleU.onclick = () => {
-      const newH = Math.min(window.innerHeight - 8, panel.offsetHeight + Math.round(BASE_H * 0.1));
-      applyScale(panel.offsetWidth, newH);
-    };
-
     ui.makeResizable(panel, { minW: 220, minH: 180, onResize: (w, h) => applyScale(w, h) });
     if (window.ResizeObserver) {
       new ResizeObserver(entries => {
@@ -459,8 +432,8 @@
         const thr = ML.config.rtConfThreshold;
         const pct = Math.round(conf * 100);
         ch._rtConfBar.style.width      = pct + '%';
-        ch._rtConfBar.style.background = conf >= thr         ? '#44ff88'
-                                       : conf >= thr * 0.7   ? '#ffd700'
+        ch._rtConfBar.style.background = conf >= thr       ? '#44ff88'
+                                       : conf >= thr * 0.7 ? '#ffd700'
                                        : '#ff4444';
       }
       if (ch._rtAlphaBadge) {
@@ -474,6 +447,7 @@
       if (!rtRunning) return;
       const results = ML.correlator.correlateRollingAll();
       results.forEach(r => { const ch = r.channel; if (!ch) return; updateRTCard(ch, r); });
+      // Só atualiza o status se não houver flash ativo
       if (!_flashTimer) {
         rtStatusEl.textContent = '● AO VIVO';
         rtStatusEl.style.color = '#00d4ff';
@@ -519,6 +493,7 @@
     requestAnimationFrame(() => applyScale(panel.offsetWidth, panel.offsetHeight));
     ui.minimizePanel(panel);
 
+    // Expõe flashStatus para outros módulos (ex: 30-correlator)
     ML.panel = ML.panel || {};
     ML.panel.flashStatus = flashStatus;
 
@@ -546,5 +521,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel v1.7. Escala proporcional A+B + confBar threshold-relativo.');
+  console.log('[MedLat] 50-panel v1.8. applyScale original + confBar threshold-relativo (thr=0.45).');
 })();
