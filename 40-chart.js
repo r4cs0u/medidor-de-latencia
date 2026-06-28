@@ -15,7 +15,6 @@
     });
   }
 
-  // ─ Magnitude do croma: sqrt(Cb² + Cr²), normalizada para 0–255
   function computeChroma(cbs, crs) {
     return cbs.map((cb, i) => {
       const cr = crs[i] !== undefined ? crs[i] : 0;
@@ -33,10 +32,11 @@
     return anchors.slice(0, n).map(a => a.idx);
   }
 
-  let panel        = null;
-  let intervalId   = null;
-  let chartMode    = 'parallel';
-  let showAnchors  = true;
+  let panel          = null;
+  let intervalId     = null;
+  let chartMode      = 'parallel';
+  let showAnchors    = true;
+  let showChroma     = true;
   let chartInstances = [];
 
   function isOpen() { return !!document.getElementById('ml-chart-panel'); }
@@ -53,8 +53,8 @@
   function getWindowedData(ch, refT0Ms) {
     const buf = ch.rollingBuffer ? ch.rollingBuffer.toArray() : [];
     const t0  = refT0Ms !== null ? refT0Ms : (buf.length ? buf[0].ts : 0);
-    const cbs  = buf.map(p => p.cb);
-    const crs  = buf.map(p => p.cr);
+    const cbs = buf.map(p => p.cb);
+    const crs = buf.map(p => p.cr);
     return {
       lums:   buf.map(p => p.lum),
       chroma: computeChroma(cbs, crs),
@@ -67,15 +67,17 @@
     return tsSec.map(s => parseFloat((s - mSec).toFixed(3)));
   }
 
-  function yRange(lums) {
-    if (!lums.length) return { yMin: 0, yMax: 255 };
-    let mn = lums[0], mx = lums[0];
-    for (let i = 1; i < lums.length; i++) {
-      if (lums[i] < mn) mn = lums[i];
-      if (lums[i] > mx) mx = lums[i];
-    }
-    const pad = Math.max(4, Math.round((mx - mn) * 0.08));
-    return { yMin: Math.max(0, mn - pad), yMax: Math.min(255, mx + pad) };
+  // yMin = min do chroma, yMax = max da luma — garante que ambas as séries ficam visíveis
+  function yRange(lums, chroma) {
+    const lumArr = lums   && lums.length   ? lums   : [0, 255];
+    const chrArr = chroma && chroma.length ? chroma : lumArr;
+    let lumMax = lumArr[0];
+    for (let i = 1; i < lumArr.length; i++) if (lumArr[i] > lumMax) lumMax = lumArr[i];
+    let chrMin = chrArr[0];
+    for (let i = 1; i < chrArr.length; i++) if (chrArr[i] < chrMin) chrMin = chrArr[i];
+    const range = Math.max(1, lumMax - chrMin);
+    const pad   = Math.max(4, Math.round(range * 0.08));
+    return { yMin: Math.max(0, chrMin - pad), yMax: Math.min(255, lumMax + pad) };
   }
 
   function baseOptions(showXAxis, yMin, yMax, ticks, xMin, xMax) {
@@ -155,7 +157,7 @@
     ].join(';');
 
     const htitle = document.createElement('span');
-    htitle.innerHTML = '📊 Gráficos ao vivo &nbsp;<span style="font-size:7px;opacity:.55;letter-spacing:.04em">— Lum &nbsp;<span style="border-bottom:1px dashed #aaa">- - -</span> Chroma (√Cb²+Cr²)</span>';
+    htitle.textContent = '📊 Gráficos ao vivo';
     htitle.style.cssText = 'color:#00d4ff;font-weight:bold;font-size:10px;letter-spacing:.05em;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
 
     const btnMode = document.createElement('button');
@@ -173,12 +175,21 @@
     updateAncBtn();
     btnAnc.onclick = () => { showAnchors = !showAnchors; updateAncBtn(); rebuildCharts(); };
 
+    const btnChr = document.createElement('button');
+    function updateChrBtn() {
+      btnChr.textContent = showChroma ? '◼ Chroma' : '◻ Chroma';
+      btnChr.style.opacity = showChroma ? '1' : '0.45';
+    }
+    btnChr.style.cssText = `background:${ui.T.btnBg};border:1px solid #ccccee55;color:#ccccee;border-radius:3px;padding:2px 6px;cursor:pointer;font:bold 8px monospace;flex-shrink:0`;
+    updateChrBtn();
+    btnChr.onclick = () => { showChroma = !showChroma; updateChrBtn(); rebuildCharts(); };
+
     const btnClose = document.createElement('button');
     btnClose.textContent = '✕';
     btnClose.style.cssText = 'background:#c62828;border:none;color:#fff;border-radius:3px;padding:0 6px;cursor:pointer;font-size:11px;line-height:17px;flex-shrink:0';
     btnClose.onclick = closePanel;
 
-    hdr.append(htitle, btnMode, btnAnc, btnClose);
+    hdr.append(htitle, btnMode, btnAnc, btnChr, btnClose);
     panel.appendChild(hdr);
 
     // drag
@@ -283,11 +294,12 @@
         const mMs = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : 0;
         const { lums, chroma, tsSec } = getWindowedData(ch, refT0);
         const xs = makeXValues(tsSec, mMs);
-        const { yMin, yMax } = yRange(lums);
+        const { yMin, yMax } = yRange(lums, showChroma ? chroma : null);
 
         ref.ci.data.labels = xs;
         ref.ci.data.datasets[0].data = lums.map((y, i)   => ({ x: xs[i], y }));
         ref.ci.data.datasets[1].data = chroma.map((y, i) => ({ x: xs[i], y }));
+        ref.ci.data.datasets[1].borderColor = showChroma ? 'rgba(200,200,220,0.65)' : 'transparent';
 
         ref.ci.options.scales.x.min = xMin;
         ref.ci.options.scales.x.max = xMax;
@@ -334,7 +346,7 @@
         const mMs = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : 0;
         const { lums, chroma, tsSec } = getWindowedData(ch, refT0);
         const xs = makeXValues(tsSec, mMs);
-        const { yMin, yMax } = yRange(lums);
+        const { yMin, yMax } = yRange(lums, showChroma ? chroma : null);
 
         const row = document.createElement('div');
         row.style.cssText = [
@@ -387,7 +399,6 @@
           data: {
             labels: xs,
             datasets: [
-              // dataset 0: Luminância — linha sólida com fill
               {
                 data:            lums.map((y, i) => ({ x: xs[i], y })),
                 borderColor:     ch.color,
@@ -398,10 +409,9 @@
                 fill:            true,
                 spanGaps:        false,
               },
-              // dataset 1: Chroma sqrt(Cb²+Cr²) — linha pontilhada branca
               {
                 data:            chroma.map((y, i) => ({ x: xs[i], y })),
-                borderColor:     'rgba(200,200,220,0.65)',
+                borderColor:     showChroma ? 'rgba(200,200,220,0.65)' : 'transparent',
                 backgroundColor: 'transparent',
                 borderWidth:     1.2,
                 borderDash:      [4, 4],
@@ -433,12 +443,20 @@
       chartsArea.appendChild(wrap);
 
       const anchorsMap = {};
+      let globalLumMax = -Infinity, globalChrMin = Infinity;
+
       const datasets = channels.map(ch => {
         const mMs = (ch._measuredOffsetMs !== undefined) ? ch._measuredOffsetMs : 0;
-        const { lums, tsSec } = getWindowedData(ch, refT0);
+        const { lums, chroma, tsSec } = getWindowedData(ch, refT0);
         const xs = makeXValues(tsSec, mMs);
         const ancs = showAnchors ? computeAnchors(lums, ANCHOR_TOP_N) : [];
         anchorsMap[ch.id] = { anchorXSecs: ancs.map(i => xs[i]), color: ch.color };
+        if (lums.length) {
+          const lm = Math.max(...lums);
+          const cm = Math.min(...chroma);
+          if (lm > globalLumMax) globalLumMax = lm;
+          if (cm < globalChrMin) globalChrMin = cm;
+        }
         return {
           label:           ch.label,
           data:            lums.map((y, i) => ({ x: xs[i], y })),
@@ -476,8 +494,11 @@
         },
       };
 
-      const allLums = channels.flatMap(ch => getWindowedData(ch, refT0).lums);
-      const { yMin, yMax } = yRange(allLums);
+      // yRange global: max da luma e min do chroma de todos os canais
+      const fakeLums   = globalLumMax > -Infinity ? [globalLumMax] : [255];
+      const fakeChromas = showChroma && globalChrMin < Infinity ? [globalChrMin] : null;
+      const { yMin, yMax } = yRange(fakeLums, fakeChromas);
+
       const opts = baseOptions(true, yMin, yMax, ticks, xMin, xMax);
       opts.plugins.legend = {
         display: true, position: 'bottom',
@@ -516,5 +537,5 @@
     show:   () => openPanel(),
   };
 
-  console.log('[MedLat] 40-chart v3.1 — chroma unificado sqrt(Cb²+Cr²) como linha pontilhada.');
+  console.log('[MedLat] 40-chart v3.2 — btn Chroma no header + yRange min(chroma)/max(luma).');
 })();
