@@ -133,7 +133,8 @@
       ML.CHANNELS.forEach(ch => {
         ch.probeW = c;
         if (ch._szInp) ch._szInp.value = c;
-        if (ch.active && ch.resize) ch.resize();
+        // Redimensiona mesmo se inativo — garante tamanho correto ao ativar
+        if (ch.resize) ch.resize();
       });
     }
     const btnPxM = ui.mkBtn('−', '#1e2a3a', 'padding:1px 4px;font-size:8px;line-height:1.2');
@@ -339,7 +340,6 @@
     rtStatusEl.style.cssText = 'font-size:8px;color:#aaaacc;text-align:center;margin-top:2px;letter-spacing:.04em;transition:color .3s,opacity .3s';
     rtStatusEl.textContent = 'Parado';
 
-    // ── flashStatus: exibe msg temporária por ms milissegundos e depois restaura o texto padrão.
     let _flashTimer = null;
     function flashStatus(msg, color, ms) {
       if (_flashTimer) clearTimeout(_flashTimer);
@@ -447,7 +447,6 @@
       if (!rtRunning) return;
       const results = ML.correlator.correlateRollingAll();
       results.forEach(r => { const ch = r.channel; if (!ch) return; updateRTCard(ch, r); });
-      // Só atualiza o status se não houver flash ativo
       if (!_flashTimer) {
         rtStatusEl.textContent = '● AO VIVO';
         rtStatusEl.style.color = '#00d4ff';
@@ -493,7 +492,6 @@
     requestAnimationFrame(() => applyScale(panel.offsetWidth, panel.offsetHeight));
     ui.minimizePanel(panel);
 
-    // Expõe flashStatus para outros módulos (ex: 30-correlator)
     ML.panel = ML.panel || {};
     ML.panel.flashStatus = flashStatus;
 
@@ -521,5 +519,5 @@
     init();
   }
 
-  console.log('[MedLat] 50-panel v1.8. applyScale original + confBar threshold-relativo (thr=0.45).');
+  console.log('[MedLat] 50-panel v1.9. fix: applyGlobalPx redimensiona probes inativas (removido guard ch.active).');
 })();
